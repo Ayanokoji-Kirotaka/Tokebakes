@@ -1,0 +1,70 @@
+<!-- ================== order.html ================== -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Toke Bakes — Your Order</title>
+    <link rel="icon" href="images/logo.jpg" type="image/png" />
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+  </head>
+  <body>
+    <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes" /></div>
+    <!-- <div class="background-carousel">
+      <img src="images/bg1.jpg" class="active" alt="Background" />
+      <img src="images/bg2.jpg" alt="Background" />
+      <img src="images/bg3.jpg" alt="Background" />
+    </div> -->
+    <header>
+      <div class="header-inner">
+        <div class="brand">
+          <img src="images/logo.jpg" alt="logo" class="logo-sm" />
+          <h1>Toke Bakes</h1>
+        </div>
+        <nav class="navbar">
+          <button class="navbar-toggle" id="navbarToggle">☰</button>
+          <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="menu.html">Menu</a></li>
+            <li><a href="gallery.html">Gallery</a></li>
+            <li>
+              <a href="order.html" class="cart-link"
+                ><i class="fas fa-shopping-cart"></i>
+                <span id="cart-count">0</span></a
+              >
+            </li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+    <main>
+      <section class="order-section">
+        <h2>Your Cart</h2>
+        <p class="lead">
+          Review the items you have added. Adjust quantities or remove items.
+          When ready, click <strong>Proceed to Order</strong> to open Gmail with
+          your order pre-filled.
+        </p>
+        <div id="cart-container"><!-- Cart items inserted here by JS --></div>
+        <div class="order-actions">
+          <button id="clear-cart" class="btn-secondary">Clear Cart</button>
+          <button id="proceed-order" class="btn">Proceed to Order</button>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div class="footer-inner">
+        <div><strong>Toke Bakes</strong></div>
+        <div>
+          <a href="privacy.html">Privacy</a> |
+          <a href="terms-of-use.html">Terms</a>
+        </div>
+      </div>
+    </footer>
+    <script src="script.js"></script>
+  </body>
+</html>
