@@ -4,7 +4,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Menu | Coffee Bliss</title>
+    <title>Menu | Toke Bakes</title>
+    <link rel="icon" href="images/logo.jpg" type="image/png" />
     <link rel="stylesheet" href="style.css" />
     <link
       rel="stylesheet"
@@ -15,18 +16,13 @@
   <body>
     <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes" /></div>
 
-    <!-- <div class="background-carousel">
-      <img src="images/bg2.jpg" class="active" alt="Background 2" />
-      <img src="images/bg3.jpg" alt="Background 3" />
-      <img src="images/bg4.jpg" alt="Background 4" />
-    </div> -->
-
     <header>
       <div class="header-inner">
         <div class="brand">
           <img src="images/logo.jpg" alt="Toke Bakes logo" class="logo-sm" />
           <h1>Toke Bakes</h1>
         </div>
+
         <nav class="navbar">
           <button class="navbar-toggle" id="navbarToggle">☰</button>
           <ul>
@@ -52,41 +48,29 @@
           locally so you can browse freely.
         </p>
 
-        <div class="menu-grid">
-          <!-- Each .menu-item has data-item and data-price for cart behavior -->
-          <div
-            class="menu-item"
-            data-item="Chocolate Fudge Cake"
-            data-price="1200"
-          >
+        <div class="menu-grid" id="menu-grid">
+          <!-- Keep adding .menu-item blocks here — script reads data-price/data-item -->
+          <div class="menu-item" data-item="Chocolate Fudge Cake" data-price="12000">
             <img src="images/cake1.jpg" alt="Chocolate Fudge Cake" />
             <h3>Chocolate Fudge Cake</h3>
-            <p>
-              Decadent, moist layers finished with rich ganache. Serves 8–10.
-            </p>
+            <p>Decadent, moist layers finished with rich ganache. Serves 8–10.</p>
             <div class="popup">
               <button class="add-cart">Add to Cart</button>
               <a class="order-now" href="#">Order Now</a>
             </div>
           </div>
 
-          <div class="menu-item" data-item="Red Velvet Cake" data-price="1100">
+          <div class="menu-item" data-item="Red Velvet Cake" data-price="11000">
             <img src="images/cake2.jpg" alt="Red Velvet Cake" />
             <h3>Red Velvet Cake</h3>
-            <p>
-              Velvety red sponge with cream cheese frosting. Elegant & classic.
-            </p>
+            <p>Velvety red sponge with cream cheese frosting. Elegant & classic.</p>
             <div class="popup">
               <button class="add-cart">Add to Cart</button>
               <a class="order-now" href="#">Order Now</a>
             </div>
           </div>
 
-          <div
-            class="menu-item"
-            data-item="Vanilla Dream Cupcakes"
-            data-price="350"
-          >
+          <div class="menu-item" data-item="Vanilla Dream Cupcakes (6 pcs)" data-price="3500">
             <img src="images/cupcakes.jpg" alt="Cupcakes" />
             <h3>Vanilla Dream Cupcakes (6 pcs)</h3>
             <p>Light vanilla sponge with velvety buttercream and sprinkles.</p>
@@ -96,13 +80,9 @@
             </div>
           </div>
 
-          <div
-            class="menu-item"
-            data-item="Fruit Pastries (box of 4)"
-            data-price="600"
-          >
+          <div class="menu-item" data-item="Fruit Pastries (box of 4)" data-price="6000">
             <img src="images/pastry.jpg" alt="Fruit Pastries" />
-            <h3>Fruit Pastries</h3>
+            <h3>Fruit Pastries (box of 4)</h3>
             <p>Flaky pastry filled with seasonal fruits and vanilla cream.</p>
             <div class="popup">
               <button class="add-cart">Add to Cart</button>
