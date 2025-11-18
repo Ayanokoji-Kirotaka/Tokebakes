@@ -1,30 +1,29 @@
-<!-- ================== gallery.html ================== -->
+<!-- gallery.html -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gallery | Coffee Bliss</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Gallery — Toke Bakes</title>
+    <link rel="icon" href="images/logo.jpg" />
     <link rel="stylesheet" href="style.css" />
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
     />
   </head>
-
   <body>
     <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes" /></div>
-
-    <!-- <div class="background-carousel">
-      <img src="images/bg3.jpg" class="active" alt="Background 3" />
-      <img src="images/bg1.jpg" alt="Background 1" />
-      <img src="images/bg2.jpg" alt="Background 2" />
-    </div> -->
 
     <header>
       <div class="header-inner">
         <div class="brand">
-          <img src="images/logo.jpg" alt="logo" class="logo-sm" />
+          <img
+            src="images/logo.jpg"
+            alt="logo"
+            class="logo-sm"
+            loading="lazy"
+          />
           <h1>Toke Bakes</h1>
         </div>
         <nav class="navbar">
@@ -35,8 +34,8 @@
             <li><a href="gallery.html">Gallery</a></li>
             <li>
               <a href="order.html" class="cart-link"
-                ><i class="fas fa-shopping-cart"></i>
-                <span id="cart-count">0</span></a
+                ><i class="fas fa-shopping-cart"></i
+                ><span id="cart-count">0</span></a
               >
             </li>
           </ul>
@@ -51,24 +50,34 @@
           Browse handcrafted cakes, cupcakes and dessert tables. Click an image
           to view full size.
         </p>
-
         <div class="gallery-grid">
-          <img src="images/gallery1.jpg" alt="Cake 1" />
-          <img src="images/gallery2.jpg" alt="Cupcakes" />
-          <img src="images/gallery3.jpg" alt="Pastries" />
-          <img src="images/gallery4.jpg" alt="Cookies" />
-          <img src="images/gallery5.jpg" alt="Wedding Cake" />
-          <img src="images/gallery6.jpg" alt="Dessert table" />
+          <img src="images/gallery1.jpg" alt="Cake 1" loading="lazy" />
+          <img src="images/gallery2.jpg" alt="Cupcakes" loading="lazy" />
+          <img src="images/gallery3.jpg" alt="Pastries" loading="lazy" />
+          <img src="images/gallery4.jpg" alt="Cookies" loading="lazy" />
+          <img src="images/gallery5.jpg" alt="Wedding Cake" loading="lazy" />
+          <img src="images/gallery6.jpg" alt="Dessert table" loading="lazy" />
         </div>
       </section>
     </main>
 
     <footer>
       <div class="footer-inner">
-        <div><strong>Toke Bakes</strong></div>
-        <div>
-          <a href="privacy.html">Privacy</a> |
+        <div class="brand-block">
+          <img src="images/logo.jpg" class="logo-sm" loading="lazy" />
+          <div><strong>Toke Bakes</strong></div>
+        </div>
+        <div class="legal">
+          <a href="privacy.html">Privacy</a> •
           <a href="terms-of-use.html">Terms</a>
+        </div>
+        <div class="socials">
+          <a href="#" aria-label="Instagram"
+            ><i class="fa-brands fa-instagram"></i
+          ></a>
+          <a href="#" aria-label="TikTok"
+            ><i class="fa-brands fa-tiktok"></i
+          ></a>
         </div>
       </div>
     </footer>

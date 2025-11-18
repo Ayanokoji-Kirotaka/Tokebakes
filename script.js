@@ -1,189 +1,253 @@
-/* ================== script.js (updated) ================== */
-
+/* ================== script.js (final) ================== */
 /* --------- CONFIG --------- */
-// change this number any time
 const WHATSAPP_NUMBER = "+2347063466822";
-// email used by Gmail compose links
 const BUSINESS_EMAIL = "tokebakes@gmail.com";
-// localStorage key for cart and theme
 const CART_KEY = "toke_bakes_cart_v1";
 const THEME_KEY = "toke_bakes_theme_v1";
 
-/* Utility: safe current page name */
+/* small helpers */
+function qs(sel, root = document) {
+  return root.querySelector(sel);
+}
+function qsa(sel, root = document) {
+  return Array.from(root.querySelectorAll(sel));
+}
+function formatPrice(n) {
+  return Number(n).toLocaleString("en-NG");
+}
+function escapeHtml(t = "") {
+  return (t + "").replace(
+    /[&<>"']/g,
+    (m) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[
+        m
+      ])
+  );
+}
+
+/* safe current page */
 const currentPage = (() => {
   const p = window.location.pathname.split("/").pop();
   return p === "" ? "index.html" : p;
 })();
 
-/* --- Loader fade --- */
+/* Loader + page-ready */
 window.addEventListener("load", () => {
-  const loader = document.getElementById("loader");
+  const loader = qs("#loader");
   if (loader) {
-    setTimeout(() => {
-      loader.style.opacity = "0";
-      setTimeout(() => loader.remove(), 600);
-    }, 600);
+    loader.style.opacity = "0";
+    setTimeout(() => loader.remove(), 450);
   }
+  document.body.classList.add("ready");
 });
 
-/* --- Inject theme toggle button & bottom-sheet markup (so all pages get them) --- */
+/* ---------- THEME & UI injection (bottom sheet + theme toggle + back-to-top) ---------- */
 function injectUI() {
-  // Theme toggle (only one)
-  if (!document.getElementById("themeToggle")) {
-    const t = document.createElement("button");
-    t.id = "themeToggle";
-    t.title = "Toggle theme";
-    t.innerHTML = `<i class="fa-solid fa-moon"></i>`;
-    document.body.appendChild(t);
+  if (!qs("#themeToggle")) {
+    const btn = document.createElement("button");
+    btn.id = "themeToggle";
+    btn.title = "Toggle theme";
+    btn.innerHTML = '<i class="fa-solid fa-moon"></i>';
+    document.body.appendChild(btn);
   }
 
-  // bottom-sheet/backdrop
-  if (!document.getElementById("bottomSheetBackdrop")) {
+  if (!qs("#bottomSheetBackdrop")) {
     const bs = document.createElement("div");
     bs.id = "bottomSheetBackdrop";
     bs.className = "bottom-sheet-backdrop";
     bs.innerHTML = `
       <div class="bottom-sheet" id="bottomSheet">
         <div class="handle"></div>
-        <div class="sheet-title">How would you like to order?</div>
+        <div class="sheet-title" style="text-align:center;font-weight:800;margin-bottom:10px;">How would you like to order?</div>
         <div class="sheet-actions">
-          <button class="sheet-btn whatsapp" id="sheetWhats"> <i class="fa-brands fa-whatsapp"></i> WhatsApp</button>
-          <button class="sheet-btn gmail" id="sheetGmail"> <i class="fa-solid fa-envelope"></i> Gmail</button>
+          <button id="sheetWhats" class="sheet-btn whatsapp"><i class="fa-brands fa-whatsapp"></i> WhatsApp</button>
+          <button id="sheetGmail" class="sheet-btn gmail"><i class="fa-solid fa-envelope"></i> Gmail</button>
         </div>
-      </div>
-    `;
+      </div>`;
     document.body.appendChild(bs);
+  }
+
+  if (!qs("#backToTop")) {
+    const up = document.createElement("button");
+    up.id = "backToTop";
+    up.title = "Back to top";
+    up.innerHTML = '<i class="fa-solid fa-arrow-up"></i>';
+    document.body.appendChild(up);
+    up.addEventListener("click", () =>
+      window.scrollTo({ top: 0, behavior: "smooth" })
+    );
   }
 }
 injectUI();
 
-/* --- Theme system --- */
-function setTheme(theme) {
-  if (theme === "dark") document.documentElement.classList.add("dark-theme");
-  else document.documentElement.classList.remove("dark-theme");
-  localStorage.setItem(THEME_KEY, theme);
-  updateThemeIcon();
-}
+/* Theme management */
 function updateThemeIcon() {
-  const btn = document.getElementById("themeToggle");
+  const btn = qs("#themeToggle");
   if (!btn) return;
   const isDark = document.documentElement.classList.contains("dark-theme");
-  btn.innerHTML = isDark ? `<i class="fa-solid fa-sun"></i>` : `<i class="fa-solid fa-moon"></i>`;
+  btn.innerHTML = isDark
+    ? '<i class="fa-solid fa-sun"></i>'
+    : '<i class="fa-solid fa-moon"></i>';
+}
+function setTheme(t) {
+  if (t === "dark") document.documentElement.classList.add("dark-theme");
+  else document.documentElement.classList.remove("dark-theme");
+  localStorage.setItem(THEME_KEY, t);
+  updateThemeIcon();
 }
 function initTheme() {
   const saved = localStorage.getItem(THEME_KEY);
   if (saved) setTheme(saved);
   else {
-    // prefer system dark if available
-    const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const prefersDark =
+      window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches;
     setTheme(prefersDark ? "dark" : "light");
   }
 }
 initTheme();
+
+/* toggle click */
 document.body.addEventListener("click", (e) => {
-  const t = e.target.closest("#themeToggle");
-  if (!t) return;
-  const nowDark = document.documentElement.classList.contains("dark-theme");
-  setTheme(nowDark ? "light" : "dark");
+  if (e.target.closest("#themeToggle")) {
+    const nowDark = document.documentElement.classList.contains("dark-theme");
+    setTheme(nowDark ? "light" : "dark");
+  }
 });
 
-/* --- Nav active highlighting --- */
+/* ---------- NAV: active link + hamburger toggle + scroll-shrink ---------- */
 (function highlightNav() {
-  const navLinks = document.querySelectorAll("nav a");
-  navLinks.forEach((a) => {
+  qsa("nav a").forEach((a) => {
     const href = a.getAttribute("href");
     if (!href) return;
-    if ((href === "index.html" && currentPage === "index.html") || href === currentPage) {
+    if (
+      (href === "index.html" && currentPage === "index.html") ||
+      href === currentPage
+    )
       a.classList.add("active");
-    }
   });
 })();
 
-/* --------- CART (localStorage) --------- */
-function readCart() {
-  try { return JSON.parse(localStorage.getItem(CART_KEY)) || []; } catch { return []; }
+/* hamburger toggle */
+const toggleBtn = qs("#navbarToggle");
+const navList = qs(".navbar ul");
+if (toggleBtn)
+  toggleBtn.addEventListener("click", () => navList.classList.toggle("show"));
+
+/* ensure hamburger hidden on desktop (class-level safety) */
+function ensureNavDisplay() {
+  if (window.innerWidth >= 769) navList && navList.classList.remove("show");
 }
-function saveCart(cart) {
-  localStorage.setItem(CART_KEY, JSON.stringify(cart));
+window.addEventListener("resize", ensureNavDisplay);
+ensureNavDisplay();
+
+/* scroll-shrink header + back-to-top show */
+let lastY = window.scrollY;
+const header = qs("header");
+const backBtn = qs("#backToTop");
+window.addEventListener("scroll", () => {
+  // shrink header
+  if (!header) return;
+  const y = window.scrollY;
+  if (y > 70) header.classList.add("shrink");
+  else header.classList.remove("shrink");
+
+  // back-to-top
+  if (backBtn) {
+    if (y > 300) backBtn.classList.add("show");
+    else backBtn.classList.remove("show");
+  }
+  lastY = y;
+});
+
+/* ---------- CART (localStorage) ---------- */
+function readCart() {
+  try {
+    return JSON.parse(localStorage.getItem(CART_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+function saveCart(c) {
+  localStorage.setItem(CART_KEY, JSON.stringify(c));
   refreshCartCount();
 }
 function refreshCartCount() {
-  const els = document.querySelectorAll("#cart-count");
+  const els = qsa("#cart-count");
   const cart = readCart();
-  const total = cart.reduce((s, it) => s + (it.quantity || 1), 0);
+  const total = cart.reduce((s, i) => s + (i.quantity || 1), 0);
   els.forEach((el) => (el.textContent = total));
 }
 document.addEventListener("DOMContentLoaded", refreshCartCount);
 
-/* --- MENU interactions (popup + add to cart) --- */
+/* ---------- MENU interactions (popup + add to cart + Order Now bottom sheet) ---------- */
 document.addEventListener("click", (e) => {
-  // close popups when clicking outside menu-item
-  if (!e.target.closest(".menu-item")) {
-    document.querySelectorAll(".menu-item.show-popup").forEach((el) => el.classList.remove("show-popup"));
-  }
+  // close popups when clicking outside .menu-item
+  if (!e.target.closest(".menu-item"))
+    qsa(".menu-item.show-popup").forEach((el) =>
+      el.classList.remove("show-popup")
+    );
 });
 
-// toggle item popup
-document.querySelectorAll(".menu-item").forEach((item) => {
+/* toggle popup on item click (unless clicking buttons inside) */
+qsa(".menu-item").forEach((item) => {
   item.addEventListener("click", (ev) => {
-    if (ev.target.closest(".add-cart") || ev.target.closest(".order-now")) return;
-    const wasOpen = item.classList.contains("show-popup");
-    document.querySelectorAll(".menu-item").forEach((i) => i.classList.remove("show-popup"));
-    if (!wasOpen) item.classList.add("show-popup");
+    if (ev.target.closest(".add-cart") || ev.target.closest(".order-now"))
+      return;
+    const open = item.classList.contains("show-popup");
+    qsa(".menu-item").forEach((i) => i.classList.remove("show-popup"));
+    if (!open) item.classList.add("show-popup");
   });
 });
 
-// add to cart
+/* add to cart */
 document.addEventListener("click", (e) => {
   const btn = e.target.closest(".add-cart");
   if (!btn) return;
   e.stopPropagation();
   const item = btn.closest(".menu-item");
-  const name = item.dataset.item || item.querySelector("h3")?.textContent?.trim();
+  const name =
+    item.dataset.item || item.querySelector("h3")?.textContent?.trim();
   const price = Number(item.dataset.price || 0);
-  const image = item.querySelector("img")?.src || "";
-
+  const image =
+    item.querySelector("img")?.getAttribute("src") || "images/logo.jpg";
   if (!name) return;
   const cart = readCart();
-  const existing = cart.find((c) => c.name === name);
-  if (existing) existing.quantity = (existing.quantity || 1) + 1;
+  const found = cart.find((c) => c.name === name);
+  if (found) found.quantity = (found.quantity || 1) + 1;
   else cart.push({ name, price, quantity: 1, image });
   saveCart(cart);
   btn.textContent = "Added ✓";
   setTimeout(() => (btn.textContent = "Add to Cart"), 900);
 });
 
-/* --- Bottom-sheet ordering flow --- */
-const backdrop = document.getElementById("bottomSheetBackdrop");
-const bottomSheet = document.getElementById("bottomSheet");
+/* ---------- Bottom-sheet order flow ---------- */
+const bottomBackdrop = qs("#bottomSheetBackdrop");
+const bottomSheet = qs("#bottomSheet");
 let currentOrderItem = null;
 
 function openBottomSheetFor(menuItemElement) {
-  // store item info
-  const name = menuItemElement.dataset.item || menuItemElement.querySelector("h3")?.textContent?.trim();
+  const name =
+    menuItemElement.dataset.item ||
+    menuItemElement.querySelector("h3")?.textContent?.trim();
   const price = menuItemElement.dataset.price || "";
   currentOrderItem = { name, price };
-  if (backdrop) backdrop.style.display = "flex";
-  // small delay to trigger translate animation
-  setTimeout(() => bottomSheet.classList.add("show"), 10);
+  if (bottomBackdrop) bottomBackdrop.style.display = "flex";
+  setTimeout(() => bottomSheet && bottomSheet.classList.add("show"), 20);
 }
-
-// close sheet
 function closeBottomSheet() {
   if (!bottomSheet) return;
   bottomSheet.classList.remove("show");
   setTimeout(() => {
-    if (backdrop) backdrop.style.display = "none";
+    if (bottomBackdrop) bottomBackdrop.style.display = "none";
     currentOrderItem = null;
-  }, 300);
+  }, 280);
 }
-
-// clicking outside sheet closes it
 document.addEventListener("click", (e) => {
-  if (backdrop && e.target === backdrop) closeBottomSheet();
+  if (e.target === bottomBackdrop) closeBottomSheet();
 });
 
-// hook the Order Now buttons to show the sheet (Option 3 behavior)
+/* hook Order Now buttons on menu to open sheet */
 document.addEventListener("click", (e) => {
   const ord = e.target.closest(".order-now");
   if (!ord) return;
@@ -194,118 +258,130 @@ document.addEventListener("click", (e) => {
   openBottomSheetFor(menuItem);
 });
 
-/* bottom-sheet action buttons */
-document.getElementById("sheetWhats").addEventListener("click", (ev) => {
-  ev.preventDefault();
-  if (!currentOrderItem) return;
-  // build WhatsApp message
-  const lines = [
-    `Hello Toke Bakes,`,
-    ``,
-    `I would like to order:`,
-    `- ${currentOrderItem.name}${currentOrderItem.price ? ` (₦${currentOrderItem.price})` : ""}`,
-    ``,
-    `Please provide delivery details and payment instructions.`,
-    ``,
-    `Name: `,
-    `Phone: `,
-    `Delivery address: `,
-    ``,
-    `Thanks!`
-  ];
-  const text = encodeURIComponent(lines.join("\n"));
-  // use the universal api link
-  const phone = WHATSAPP_NUMBER.replace(/\D/g, ""); // only digits
-  const waUrl = `https://api.whatsapp.com/send?phone=${phone}&text=${text}`;
-  window.open(waUrl, "_blank");
-  closeBottomSheet();
+/* bottom sheet actions */
+document.addEventListener("click", (e) => {
+  if (e.target.closest("#sheetWhats")) {
+    if (!currentOrderItem) return;
+    const lines = [
+      `Hello Toke Bakes,`,
+      ``,
+      `I would like to order:`,
+      `- ${currentOrderItem.name}${
+        currentOrderItem.price ? ` (₦${currentOrderItem.price})` : ""
+      }`,
+      ``,
+      `Please provide delivery details and payment instructions.`,
+      ``,
+      `Name: `,
+      `Phone: `,
+      `Delivery address: `,
+      ``,
+      `Thanks!`,
+    ];
+    const text = encodeURIComponent(lines.join("\n"));
+    const phone = WHATSAPP_NUMBER.replace(/\D/g, "");
+    const waUrl = `https://api.whatsapp.com/send?phone=${phone}&text=${text}`;
+    window.open(waUrl, "_blank");
+    closeBottomSheet();
+  }
+  if (e.target.closest("#sheetGmail")) {
+    if (!currentOrderItem) return;
+    const subject = encodeURIComponent(
+      `Order Inquiry: ${currentOrderItem.name}`
+    );
+    const bodyLines = [
+      `Hello Toke Bakes,`,
+      ``,
+      `I would like to order:`,
+      `- ${currentOrderItem.name}${
+        currentOrderItem.price ? ` (₦${currentOrderItem.price})` : ""
+      }`,
+      ``,
+      `Please provide delivery details and payment instructions.`,
+      ``,
+      `Name: `,
+      `Phone: `,
+      `Delivery address: `,
+      ``,
+      `Thank you!`,
+    ];
+    const body = encodeURIComponent(bodyLines.join("\n"));
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
+      BUSINESS_EMAIL
+    )}&su=${subject}&body=${body}`;
+    window.open(gmailUrl, "_blank");
+    closeBottomSheet();
+  }
 });
 
-document.getElementById("sheetGmail").addEventListener("click", (ev) => {
-  ev.preventDefault();
-  if (!currentOrderItem) return;
-  const subject = encodeURIComponent(`Order Inquiry: ${currentOrderItem.name}`);
-  const bodyLines = [
-    `Hello Toke Bakes,`,
-    ``,
-    `I would like to order:`,
-    `- ${currentOrderItem.name}${currentOrderItem.price ? ` (₦${currentOrderItem.price})` : ""}`,
-    ``,
-    `Please provide delivery details and payment instructions.`,
-    ``,
-    `Name: `,
-    `Phone: `,
-    `Delivery address: `,
-    ``,
-    `Thank you!`
-  ];
-  const body = encodeURIComponent(bodyLines.join("\n"));
-  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(BUSINESS_EMAIL)}&su=${subject}&body=${body}`;
-  window.open(gmailUrl, "_blank");
-  closeBottomSheet();
-});
-
-/* --- Order page render functions (same as before) --- */
+/* ---------- ORDER PAGE: render cart, qty changes, remove, proceed (shows bottom sheet option) ---------- */
 function renderCartOnOrderPage() {
-  const container = document.getElementById("cart-container");
+  const container = qs("#cart-container");
   if (!container) return;
-  let cart = readCart();
+  const cart = readCart();
   container.innerHTML = "";
-  if (cart.length === 0) {
-    container.innerHTML = '<p>Your cart is empty. Visit the <a href="menu.html">menu</a> to add items.</p>';
+  if (!cart || cart.length === 0) {
+    container.innerHTML =
+      '<p class="small-muted">Your cart is empty. Visit the <a href="menu.html">menu</a> to add items.</p>';
     return;
   }
   cart.forEach((it, idx) => {
-    const row = document.createElement("div");
-    row.className = "cart-row";
-    row.innerHTML = `
-      <img src="${it.image || 'images/logo.jpg'}" alt="${escapeHtml(it.name)}" />
-      <div class="item-info">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
+    const div = document.createElement("div");
+    div.className = "cart-row";
+    div.innerHTML = `
+      <img src="${escapeHtml(it.image || "images/logo.jpg")}" alt="${escapeHtml(
+      it.name
+    )}">
+      <div class="item-info" style="flex:1;">
+        <div style="display:flex;justify-content:space-between;align-items:center">
           <strong>${escapeHtml(it.name)}</strong>
-          <button class="remove-item" data-index="${idx}">Remove</button>
+          <button class="remove-item" data-index="${idx}" style="background:transparent;border:0;color:#e55;font-weight:800;cursor:pointer">Remove</button>
         </div>
-        <div class="qty-controls" data-index="${idx}">
+        <div class="qty-controls" style="margin-top:10px;display:flex;align-items:center;gap:12px;">
           <button class="qty-decrease" data-index="${idx}">-</button>
-          <span class="qty" data-index="${idx}">${it.quantity}</span>
+          <span class="qty">${it.quantity}</span>
           <button class="qty-increase" data-index="${idx}">+</button>
-          <div style="margin-left:auto;font-weight:700;">NGN ${formatPrice((it.price||0)*(it.quantity||1))}</div>
+          <div style="margin-left:auto;font-weight:800">NGN ${formatPrice(
+            (it.price || 0) * (it.quantity || 1)
+          )}</div>
         </div>
       </div>
     `;
-    container.appendChild(row);
+    container.appendChild(div);
   });
 
-  container.querySelectorAll(".remove-item").forEach((btn) => {
+  qsa(".remove-item", container).forEach((btn) =>
     btn.addEventListener("click", () => {
-      let cart = readCart();
-      cart.splice(Number(btn.dataset.index), 1);
+      const idx = Number(btn.dataset.index);
+      const cart = readCart();
+      cart.splice(idx, 1);
       saveCart(cart);
       renderCartOnOrderPage();
-    });
-  });
+    })
+  );
 
-  container.querySelectorAll(".qty-increase").forEach((btn) => {
+  qsa(".qty-increase", container).forEach((btn) =>
     btn.addEventListener("click", () => {
-      let cart = readCart();
-      cart[Number(btn.dataset.index)].quantity++;
+      const idx = Number(btn.dataset.index);
+      const cart = readCart();
+      cart[idx].quantity = (cart[idx].quantity || 1) + 1;
       saveCart(cart);
       renderCartOnOrderPage();
-    });
-  });
-
-  container.querySelectorAll(".qty-decrease").forEach((btn) => {
+    })
+  );
+  qsa(".qty-decrease", container).forEach((btn) =>
     btn.addEventListener("click", () => {
-      let cart = readCart();
-      cart[Number(btn.dataset.index)].quantity--;
-      if (cart[Number(btn.dataset.index)].quantity < 1) cart.splice(Number(btn.dataset.index), 1);
+      const idx = Number(btn.dataset.index);
+      const cart = readCart();
+      cart[idx].quantity = (cart[idx].quantity || 1) - 1;
+      if (cart[idx].quantity < 1) cart.splice(idx, 1);
       saveCart(cart);
       renderCartOnOrderPage();
-    });
-  });
+    })
+  );
 }
 
-/* Clear cart button handler (order page) */
+/* clear cart */
 document.addEventListener("click", (e) => {
   if (e.target && e.target.id === "clear-cart") {
     saveCart([]);
@@ -313,49 +389,110 @@ document.addEventListener("click", (e) => {
   }
 });
 
-/* Proceed to order: opens Gmail with full cart summary */
+/* proceed -> open bottom sheet (so user chooses WhatsApp or Gmail) */
 document.addEventListener("click", (e) => {
   if (e.target && e.target.id === "proceed-order") {
     const cart = readCart();
     if (!cart || cart.length === 0) return;
-    const lines = ["Hello Toke Bakes,", "", "I would like to place the following order:", ""];
-    let total = 0;
-    cart.forEach((it) => {
-      const qty = it.quantity || 1;
-      const price = Number(it.price || 0);
-      total += price * qty;
-      lines.push(`- ${it.name} x ${qty} (NGN ${price} each)`);
-    });
-    lines.push("", `Order total: NGN ${formatPrice(total)}`, "", "Name:", "Phone:", "Delivery address:", "", "Please confirm availability and payment method.", "", "Thank you!");
-    const subject = encodeURIComponent("New Order from Website");
-    const body = encodeURIComponent(lines.join("\n"));
-    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(BUSINESS_EMAIL)}&su=${subject}&body=${body}`;
-    window.open(gmailUrl, "_blank");
+    // create order summary into currentOrderItem so sheet can use it
+    const lines = cart.map(
+      (it) => `- ${it.name} x ${it.quantity} (NGN ${it.price})`
+    );
+    const total = cart.reduce(
+      (s, it) => s + Number(it.price || 0) * (it.quantity || 1),
+      0
+    );
+    currentOrderItem = {
+      name: `Order (${cart.length} items)`,
+      price: total,
+      items: lines,
+    };
+    // open sheet
+    if (bottomBackdrop) bottomBackdrop.style.display = "flex";
+    setTimeout(() => bottomSheet && bottomSheet.classList.add("show"), 20);
+    // When sheet actions use currentOrderItem, the handlers above will include name+price
   }
 });
 
-/* When pages load, render order page if present */
-document.addEventListener("DOMContentLoaded", () => {
-  refreshCartCount();
-  injectUI(); // ensure UI exists even on pages loaded later
-  if (currentPage === "order.html") renderCartOnOrderPage();
+/* When Gmail/WhatsApp from sheet is clicked for multi-item order, build full body */
+document.addEventListener("click", (e) => {
+  if (!currentOrderItem) return;
+  // when sheetWhats clicked (we handle earlier) - override to include cart breakdown
+  if (e.target.closest("#sheetWhats")) {
+    const cart = readCart();
+    const lines = [
+      `Hello Toke Bakes,`,
+      ``,
+      `I would like to place the following order:`,
+      ``,
+      ...cart.map(
+        (it) => `- ${it.name} x ${it.quantity} (NGN ${it.price} each)`
+      ),
+      ``,
+      `Order total: NGN ${formatPrice(
+        cart.reduce(
+          (s, it) => s + Number(it.price || 0) * (it.quantity || 1),
+          0
+        )
+      )}`,
+      ``,
+      `Name: `,
+      `Phone: `,
+      `Delivery address: `,
+      ``,
+      `Thanks!`,
+    ];
+    const text = encodeURIComponent(lines.join("\n"));
+    const phone = WHATSAPP_NUMBER.replace(/\D/g, "");
+    const waUrl = `https://api.whatsapp.com/send?phone=${phone}&text=${text}`;
+    window.open(waUrl, "_blank");
+    closeBottomSheet();
+  }
+  if (e.target.closest("#sheetGmail")) {
+    const cart = readCart();
+    const lines = [
+      `Hello Toke Bakes,`,
+      ``,
+      `I would like to place the following order:`,
+      ``,
+      ...cart.map(
+        (it) => `- ${it.name} x ${it.quantity} (NGN ${it.price} each)`
+      ),
+      ``,
+      `Order total: NGN ${formatPrice(
+        cart.reduce(
+          (s, it) => s + Number(it.price || 0) * (it.quantity || 1),
+          0
+        )
+      )}`,
+      ``,
+      `Name: `,
+      `Phone: `,
+      `Delivery address: `,
+      ``,
+      `Thank you!`,
+    ];
+    const subject = encodeURIComponent("New Order from Website");
+    const body = encodeURIComponent(lines.join("\n"));
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
+      BUSINESS_EMAIL
+    )}&su=${subject}&body=${body}`;
+    window.open(gmailUrl, "_blank");
+    closeBottomSheet();
+  }
 });
 
-/* helpers */
-function formatPrice(n) { return Number(n).toLocaleString("en-NG"); }
-function escapeHtml(t = "") { return (t + "").replace(/[&<>"']/g, (m) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m])); }
+/* ---------- On DOMContentLoaded: run init tasks ---------- */
+document.addEventListener("DOMContentLoaded", () => {
+  refreshCartCount();
+  injectUI();
+  initTheme();
+  updateThemeIcon();
+  // render order page if present
+  if (currentPage === "order.html") renderCartOnOrderPage();
 
-/* Mobile navbar toggle */
-const toggleBtn = document.getElementById("navbarToggle");
-const navList = document.querySelector(".navbar ul");
-if (toggleBtn) toggleBtn.addEventListener("click", () => navList.classList.toggle("show"));
-
-/* Optional: auto-hide header on scroll for mobile (keeps UX neat) */
-let lastY = window.scrollY;
-const header = document.querySelector("header");
-window.addEventListener("scroll", () => {
-  if (!header) return;
-  if (window.scrollY > lastY && window.scrollY > 80) header.style.transform = "translateY(-100%)";
-  else header.style.transform = "translateY(0)";
-  lastY = window.scrollY;
+  // lazy-load images (native)
+  qsa("img").forEach((img) => {
+    if (!img.getAttribute("loading")) img.setAttribute("loading", "lazy");
+  });
 });
