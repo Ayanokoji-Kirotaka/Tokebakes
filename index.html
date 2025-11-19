@@ -16,13 +16,6 @@
     <!-- Loader -->
     <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes" /></div>
 
-    <!-- Background carousel -->
-    <!-- <div class="background-carousel">
-      <img src="images/bg1.jpg" class="active" alt="Background 1" />
-      <img src="images/bg2.jpg" alt="Background 2" />
-      <img src="images/bg3.jpg" alt="Background 3" />
-    </div> -->
-
     <!-- Header -->
     <header>
       <div class="header-inner">
@@ -120,26 +113,42 @@
       </section>
     </main>
 
-    <!-- Footer -->
+    <!-- Footer (Option C: contact, legal, socials) -->
     <footer>
       <div class="footer-inner">
-        <div class="footer-about">
-          <h4>About Toke Bakes</h4>
-          <p>Baking love into every bite since 2020.</p>
-        </div>
+        <!-- Contact Section -->
         <div class="footer-contact">
           <h4>Contact</h4>
           <p><i class="fas fa-phone"></i> +234 800 123 4567</p>
           <p><i class="fas fa-envelope"></i> hello@tokebakes.com</p>
         </div>
+
+        <!-- Legal Links -->
         <div class="footer-legal">
           <a href="privacy.html">Privacy Policy</a> |
           <a href="terms-of-use.html">Terms of Use</a>
         </div>
+
+        <!-- Social Media Icons -->
+        <div class="footer-socials">
+          <a href="#" class="social-icon" aria-label="Instagram"
+            ><i class="fab fa-instagram"></i
+          ></a>
+          <a href="#" class="social-icon" aria-label="TikTok"
+            ><i class="fab fa-tiktok"></i
+          ></a>
+        </div>
       </div>
-      <p class="copyright">&copy; 2025 Toke Bakes</p>
+
+      <p class="copyright">&copy; <span id="current-year"></span> Toke Bakes</p>
     </footer>
 
     <script src="script.js"></script>
+
+    <!-- Auto update year for footer -->
+    <script>
+      const yEl = document.getElementById("current-year");
+      if (yEl) yEl.textContent = new Date().getFullYear();
+    </script>
   </body>
 </html>

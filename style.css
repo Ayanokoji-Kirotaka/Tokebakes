@@ -51,32 +51,6 @@ a {
   }
 }
 
-/* ================== BACKGROUND CAROUSEL ================== */
-/* .background-carousel {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  z-index: -1;
-}
-
-.background-carousel img {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0;
-  transition: opacity 1.5s ease-in-out;
-}
-
-.background-carousel img.active {
-  opacity: 1;
-} */
-
 /* ================== HEADER ================== */
 header {
   width: 100%;
@@ -134,6 +108,7 @@ header {
 }
 
 /* Cart icon */
+/* Hides the badge when count is zero (fixes the "always visible" issue) */
 .cart-link {
   position: relative;
   display: flex;
@@ -146,10 +121,16 @@ header {
   color: #fff;
   border-radius: 50%;
   font-size: 0.7rem;
-  padding: 2px 5px;
+  padding: 2px 6px;
   position: absolute;
   top: -6px;
   right: -10px;
+  transition: transform 0.15s ease, opacity 0.2s ease;
+}
+
+/* hide when zero using attribute set by JS */
+.cart-link #cart-count[data-count="0"] {
+  display: none;
 }
 
 /* Navbar toggle (mobile) */
@@ -192,12 +173,15 @@ header {
   color: #fff;
   padding: 12px 30px;
   border-radius: 25px;
-  transition: 0.3s;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
   font-weight: 500;
+  position: relative;
+  overflow: hidden;
 }
 
 .btn:hover {
-  background: #cf6f00;
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(230, 122, 0, 0.18);
 }
 
 /* ================== ABOUT PREVIEW ================== */
@@ -314,17 +298,21 @@ header {
 .menu-item.show-popup .popup {
   display: flex;
   justify-content: space-between;
+  gap: 8px;
 }
 
+/* Buttons inside menu */
 .add-cart,
 .order-now {
   background: #e67a00;
   border: none;
   color: #fff;
   padding: 8px 14px;
-  border-radius: 5px;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  position: relative;
+  overflow: hidden;
 }
 
 .order-now {
@@ -378,28 +366,38 @@ header {
   background: rgba(255, 255, 255, 0.9);
 }
 
+/* Slightly stronger card styling for cart rows */
 .cart-row {
   display: flex;
   align-items: center;
   gap: 15px;
-  margin: 10px 0;
-  background: #fff;
-  border-radius: 8px;
-  padding: 10px;
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.1);
+  margin: 16px 0;
+  background: linear-gradient(180deg, #ffffff, #fffdfb);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(230, 122, 0, 0.04);
 }
 
 .cart-row img {
-  width: 70px;
-  height: 70px;
-  border-radius: 8px;
+  width: 76px;
+  height: 76px;
+  border-radius: 10px;
   object-fit: cover;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
 }
 
+/* item info layout tweak */
+.item-info {
+  flex: 1;
+}
+
+/* quantity controls */
 .qty-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  margin-top: 8px;
 }
 
 .qty-controls button {
@@ -407,11 +405,40 @@ header {
   background: #e67a00;
   color: #fff;
   border-radius: 50%;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   cursor: pointer;
+  font-weight: 600;
+  box-shadow: 0 6px 12px rgba(230, 122, 0, 0.12);
 }
 
+/* =========== REMOVE BUTTON (styled) =========== */
+/* Use the .remove-item button inserted by JS */
+.remove-item {
+  background: transparent;
+  border: 1px solid rgba(230, 74, 74, 0.12);
+  color: #c94b4b;
+  padding: 6px 10px;
+  border-radius: 18px;
+  font-size: 0.87rem;
+  cursor: pointer;
+  transition: background 160ms ease, transform 120ms ease, box-shadow 160ms;
+  display: inline-block;
+  margin-left: 10px;
+}
+
+.remove-item:hover {
+  background: rgba(230, 74, 74, 0.06);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(201, 73, 73, 0.08);
+}
+
+/* small inline "Remove" appearance override for legacy markup */
+.cart-row .remove-item {
+  vertical-align: middle;
+}
+
+/* ================== ORDER ACTIONS ================== */
 .order-actions {
   margin-top: 25px;
   display: flex;
@@ -420,30 +447,245 @@ header {
 }
 
 .btn-secondary {
-  background: #ccc;
-  color: #000;
+  background: #f1f1f1;
+  color: #333;
   padding: 10px 20px;
-  border-radius: 20px;
+  border-radius: 22px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  transition: transform 0.12s ease;
+}
+
+.btn-secondary:hover {
+  transform: translateY(-3px);
+}
+
+/* cart message area inserted dynamically */
+#cart-message {
+  background: #fff4e6;
+  color: #6a4b14;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 220ms, transform 220ms;
+}
+#cart-message.show {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* ================== FOOTER ================== */
 footer {
-  background: #fff;
+  background: #faf7f5;
+  padding: 36px 20px;
   text-align: center;
-  padding: 30px 15px;
   border-top: 1px solid #eee;
 }
 
 .footer-inner {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
   flex-wrap: wrap;
-  justify-content: center;
-  gap: 25px;
-  margin-bottom: 10px;
+  gap: 20px;
+  max-width: 980px;
+  margin: 0 auto;
 }
 
-footer a:hover {
-  color: #e67a00;
+.footer-contact h4,
+.footer-legal a {
+  color: #3b2d2f;
+}
+
+.footer-contact p {
+  margin: 4px 0;
+  color: #5a4b4e;
+}
+
+.footer-legal a {
+  text-decoration: none;
+  margin: 0 6px;
+  color: #5a4b4e;
+}
+
+.footer-legal a:hover {
+  text-decoration: underline;
+}
+
+/* Social Icons */
+.footer-socials .social-icon {
+  font-size: 1.4rem;
+  margin: 0 8px;
+  color: #3b2d2f;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.footer-socials .social-icon:hover {
+  transform: translateY(-3px);
+  color: #e66a6a;
+}
+
+footer p.copyright {
+  margin-top: 18px;
+  color: #6e5d5f;
+  font-size: 0.95rem;
+}
+
+/* ================== BOTTOM SHEET (NEW) ================== */
+.order-bottom-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  pointer-events: none;
+  font-family: inherit;
+}
+
+.order-bottom-sheet .sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity 240ms ease;
+  backdrop-filter: blur(2px);
+}
+
+.order-bottom-sheet .sheet-panel {
+  position: absolute;
+  left: 50%;
+  transform: translate(-50%, 110%);
+  bottom: 24px;
+  width: calc(100% - 28px);
+  max-width: 640px;
+  background: linear-gradient(180deg, #ffffff, #fffaf5);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  padding: 18px;
+  pointer-events: auto;
+  transition: transform 360ms cubic-bezier(0.2, 0.9, 0.3, 1), opacity 260ms;
+  opacity: 0;
+}
+
+.order-bottom-sheet.visible {
+  pointer-events: auto;
+}
+
+.order-bottom-sheet.visible .sheet-backdrop {
+  opacity: 1;
+}
+
+.order-bottom-sheet.visible .sheet-panel {
+  transform: translate(-50%, 0);
+  opacity: 1;
+}
+
+.sheet-close {
+  position: absolute;
+  right: 12px;
+  top: 10px;
+  border: none;
+  background: transparent;
+  font-size: 1.05rem;
+  cursor: pointer;
+}
+
+.sheet-panel h3 {
+  font-size: 1.1rem;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.order-summary {
+  margin: 6px 0 12px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(246, 246, 246, 0.9);
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 0.95rem;
+  color: #444;
+}
+
+.summary-total {
+  padding-top: 8px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.sheet-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.order-option-btn {
+  flex: 1;
+  padding: 12px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  transition: transform 0.12s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* UX-friendly shades requested */
+#order-via-gmail.order-option-btn {
+  background: linear-gradient(180deg, #ff6b6b, #e64a4a); /* soft modern red */
+  color: white;
+  box-shadow: 0 6px 18px rgba(230, 74, 74, 0.18);
+}
+
+#order-via-gmail.order-option-btn:hover {
+  transform: translateY(-3px);
+}
+
+#order-via-whatsapp.order-option-btn {
+  background: linear-gradient(180deg, #30d46f, #1ebe5b); /* pleasant green */
+  color: white;
+  box-shadow: 0 6px 18px rgba(30, 190, 91, 0.16);
+}
+#order-via-whatsapp.order-option-btn:hover {
+  transform: translateY(-3px);
+}
+
+.sheet-note {
+  display: block;
+  margin-top: 12px;
+  font-size: 0.82rem;
+  color: #666;
+}
+
+/* ================== RIPPLE EFFECT (tasteful) ================== */
+.ripple-effect {
+  position: absolute;
+  border-radius: 50%;
+  transform: scale(0);
+  animation: ripple 600ms ease-out;
+  background: rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+@keyframes ripple {
+  to {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+/* Ensure elements we want ripples on have overflow hidden and relative position */
+.btn,
+.add-cart,
+.order-now,
+.order-option-btn {
+  position: relative;
+  overflow: hidden;
 }
 
 /* ================== RESPONSIVE ================== */
@@ -483,6 +725,18 @@ footer a:hover {
 
   .menu-item img {
     height: 160px;
+  }
+
+  .sheet-panel {
+    width: calc(100% - 20px);
+    bottom: 12px;
+    left: 50%;
+    max-width: none;
+    border-radius: 12px;
+  }
+
+  .order-summary {
+    font-size: 0.95rem;
   }
 }
 
