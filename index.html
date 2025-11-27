@@ -1,4 +1,3 @@
-<!-- ================== index.html ================== -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -13,10 +12,8 @@
     />
   </head>
   <body>
-    <!-- Loader -->
     <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes" /></div>
 
-    <!-- Header -->
     <header>
       <div class="header-inner">
         <div class="brand">
@@ -24,23 +21,37 @@
           <h1>Toke Bakes</h1>
         </div>
         <nav class="navbar">
-          <button class="navbar-toggle" id="navbarToggle">☰</button>
+          <!-- Navigation links (visible on desktop) -->
           <ul>
             <li><a href="index.html">Home</a></li>
             <li><a href="menu.html">Menu</a></li>
             <li><a href="gallery.html">Gallery</a></li>
-            <li>
-              <a href="order.html" class="cart-link"
-                ><i class="fas fa-shopping-cart"></i>
-                <span id="cart-count">0</span></a
-              >
-            </li>
           </ul>
+
+          <!-- Cart -->
+          <a href="order.html" class="cart-link">
+            <i class="fas fa-shopping-cart"></i>
+            <span id="cart-count">0</span>
+          </a>
+
+          <!-- Theme toggle -->
+          <button
+            class="theme-toggle"
+            id="themeToggle"
+            aria-label="Toggle theme"
+          >
+            <i class="fas fa-sun icon sun"></i>
+            <i class="fas fa-moon icon moon"></i>
+          </button>
+
+          <!-- Hamburger menu (visible on mobile only) -->
+          <button class="navbar-toggle" id="navbarToggle">
+            <i class="fas fa-bars"></i>
+          </button>
         </nav>
       </div>
     </header>
 
-    <!-- Hero -->
     <main>
       <section class="hero">
         <img src="images/logo.jpg" alt="Toke Bakes logo" class="hero-logo" />
@@ -52,7 +63,6 @@
         <a class="btn" href="menu.html">Explore Our Menu</a>
       </section>
 
-      <!-- About preview -->
       <section class="about-preview">
         <h3>Our Story</h3>
         <p>
@@ -80,7 +90,6 @@
         </div>
       </section>
 
-      <!-- Featured creations -->
       <section class="featured">
         <h3>Featured Creations</h3>
         <div class="featured-grid">
@@ -113,42 +122,56 @@
       </section>
     </main>
 
-    <!-- Footer (Option C: contact, legal, socials) -->
-    <footer>
-      <div class="footer-inner">
-        <!-- Contact Section -->
-        <div class="footer-contact">
-          <h4>Contact</h4>
-          <p><i class="fas fa-phone"></i> +234 800 123 4567</p>
-          <p><i class="fas fa-envelope"></i> hello@tokebakes.com</p>
+    <footer class="bakes-footer">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <h3>Toke Bakes</h3>
+          <p class="tagline">Taking Love, One Slice at a Time</p>
         </div>
 
-        <!-- Legal Links -->
-        <div class="footer-legal">
-          <a href="privacy.html">Privacy Policy</a> |
-          <a href="terms-of-use.html">Terms of Use</a>
-        </div>
+        <div class="footer-info">
+          <!-- Phone should be a clickable link, not just text -->
+          <a href="tel:+2348001234567" class="phone-link">
+            <i class="fas fa-phone"></i>
+            <span>+234 800 123 4567</span>
+          </a>
 
-        <!-- Social Media Icons -->
-        <div class="footer-socials">
-          <a href="#" class="social-icon" aria-label="Instagram"
-            ><i class="fab fa-instagram"></i
-          ></a>
-          <a href="#" class="social-icon" aria-label="TikTok"
-            ><i class="fab fa-tiktok"></i
-          ></a>
+          <div class="social-links">
+            <span class="follow-text">Follow Us</span>
+            <div class="social-icons">
+              <a href="#" class="social-icon" aria-label="Instagram">
+                <i class="fab fa-instagram"></i>
+              </a>
+              <a href="#" class="social-icon" aria-label="TikTok">
+                <i class="fab fa-tiktok"></i>
+              </a>
+            </div>
+          </div>
         </div>
       </div>
 
-      <p class="copyright">&copy; <span id="current-year"></span> Toke Bakes</p>
+      <div class="footer-bottom">
+        <!-- Add legal-link class to these -->
+        <div class="legal-links">
+          <a href="privacy.html" class="legal-link">Privacy Policy</a>
+          <a href="terms-of-use.html" class="legal-link">Terms of Use</a>
+        </div>
+        <p class="copyright">
+          &copy; <span id="current-year">2024</span> Toke Bakes. All rights
+          reserved.
+        </p>
+      </div>
     </footer>
 
-    <script src="script.js"></script>
+    <!-- SCROLL TO TOP BUTTON - FIXED -->
+    <button
+      class="scroll-to-top-btn"
+      title="Scroll to top"
+      aria-label="Scroll to top"
+    >
+      ↑
+    </button>
 
-    <!-- Auto update year for footer -->
-    <script>
-      const yEl = document.getElementById("current-year");
-      if (yEl) yEl.textContent = new Date().getFullYear();
-    </script>
+    <script src="script.js"></script>
   </body>
 </html>

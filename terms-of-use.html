@@ -24,18 +24,33 @@
           <h1>Toke Bakes</h1>
         </div>
         <nav class="navbar">
-          <button class="navbar-toggle" id="navbarToggle">☰</button>
+          <!-- Navigation links (visible on desktop) -->
           <ul>
             <li><a href="index.html">Home</a></li>
             <li><a href="menu.html">Menu</a></li>
             <li><a href="gallery.html">Gallery</a></li>
-            <li>
-              <a href="order.html" class="cart-link">
-                <i class="fas fa-shopping-cart"></i>
-                <span id="cart-count">0</span>
-              </a>
-            </li>
           </ul>
+
+          <!-- Cart -->
+          <a href="order.html" class="cart-link">
+            <i class="fas fa-shopping-cart"></i>
+            <span id="cart-count">0</span>
+          </a>
+
+          <!-- Theme toggle -->
+          <button
+            class="theme-toggle"
+            id="themeToggle"
+            aria-label="Toggle theme"
+          >
+            <i class="fas fa-sun icon sun"></i>
+            <i class="fas fa-moon icon moon"></i>
+          </button>
+
+          <!-- Hamburger menu (visible on mobile only) -->
+          <button class="navbar-toggle" id="navbarToggle">
+            <i class="fas fa-bars"></i>
+          </button>
         </nav>
       </div>
     </header>
@@ -58,13 +73,44 @@
     </main>
 
     <!-- Footer -->
-    <footer>
-      <div class="footer-inner">
-        <div><strong>Toke Bakes</strong></div>
-        <div>
-          <a href="privacy.html">Privacy</a> |
-          <a href="terms-of-use.html">Terms</a>
+    <footer class="bakes-footer">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <h3>Toke Bakes</h3>
+          <p class="tagline">Taking Love, One Slice at a Time</p>
         </div>
+
+        <div class="footer-info">
+          <!-- Phone should be a clickable link, not just text -->
+          <a href="tel:+2348001234567" class="phone-link">
+            <i class="fas fa-phone"></i>
+            <span>+234 800 123 4567</span>
+          </a>
+
+          <div class="social-links">
+            <span class="follow-text">Follow Us</span>
+            <div class="social-icons">
+              <a href="#" class="social-icon" aria-label="Instagram">
+                <i class="fab fa-instagram"></i>
+              </a>
+              <a href="#" class="social-icon" aria-label="TikTok">
+                <i class="fab fa-tiktok"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <!-- Add legal-link class to these -->
+        <div class="legal-links">
+          <a href="privacy.html" class="legal-link">Privacy Policy</a>
+          <a href="terms-of-use.html" class="legal-link">Terms of Use</a>
+        </div>
+        <p class="copyright">
+          &copy; <span id="current-year">2024</span> Toke Bakes. All rights
+          reserved.
+        </p>
       </div>
     </footer>
 
