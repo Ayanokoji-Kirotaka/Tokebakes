@@ -10,8 +10,8 @@ const CART_KEY = "toke_bakes_cart_v1";
 const THEME_KEY = "toke_bakes_theme";
 
 /* Business info */
-const BUSINESS_PHONE_E164 = "+2348001234567";
-const BUSINESS_PHONE_WAME = "2348001234567";
+const BUSINESS_PHONE_E164 = "+234 706 346 6822";
+const BUSINESS_PHONE_WAME = "2347063466822";
 const BUSINESS_EMAIL = "tokebakes@gmail.com";
 
 /* Utility functions */
@@ -44,31 +44,6 @@ function escapeHtml(text) {
         "'": "&#039;",
       }[m])
   );
-}
-
-/* ================== SCROLL TO TOP FUNCTIONALITY ================== */
-function initScrollToTop() {
-  const scrollToTopBtn = document.querySelector(".scroll-to-top-btn");
-  const SCROLL_THRESHOLD = 300;
-
-  if (!scrollToTopBtn) {
-    console.log("Scroll to top button not found on this page");
-    return;
-  }
-
-  console.log("Scroll to top button initialized");
-
-  window.addEventListener("scroll", () => {
-    const shouldShow = window.scrollY > SCROLL_THRESHOLD;
-    scrollToTopBtn.classList.toggle("visible", shouldShow);
-  });
-
-  scrollToTopBtn.addEventListener("click", () => {
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
-  });
 }
 
 /* ================== LOADER ================== */
@@ -621,7 +596,6 @@ document.addEventListener("DOMContentLoaded", () => {
   initMenuInteractions();
   initOrderFunctionality();
   initBottomSheet();
-  initScrollToTop(); // ← ADDED THIS LINE
   initRipple(
     ".btn, .add-cart, .order-now, .qty-controls button, .order-option-btn, .remove-item"
   );

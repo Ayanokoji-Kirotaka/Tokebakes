@@ -1864,7 +1864,7 @@ html {
 }
 
 /* ================== SCROLL TO TOP BUTTON ================== */
-.scroll-to-top-btn {
+/* .scroll-to-top-btn {
   position: fixed;
   bottom: 30px;
   right: 30px;
@@ -1926,16 +1926,16 @@ html {
 }
 
 /* Dark theme adjustments */
-[data-theme="dark"] .scroll-to-top-btn {
+/* [data-theme="dark"] .scroll-to-top-btn {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="dark"] .scroll-to-top-btn:hover {
   box-shadow: 0 6px 25px rgba(0, 0, 0, 0.5);
-}
+} */
 
 /* Mobile responsiveness */
-@media (max-width: 768px) {
+/* @media (max-width: 768px) {
   .scroll-to-top-btn {
     bottom: 20px;
     right: 20px;
@@ -1943,9 +1943,9 @@ html {
     height: 44px;
     font-size: 1.1rem;
   }
-}
+} */
 
-@media (max-width: 480px) {
+/* @media (max-width: 480px) {
   .scroll-to-top-btn {
     bottom: 15px;
     right: 15px;
@@ -1953,4 +1953,4 @@ html {
     height: 40px;
     font-size: 1rem;
   }
-}
+}  */
