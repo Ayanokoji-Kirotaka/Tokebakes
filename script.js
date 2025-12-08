@@ -109,8 +109,6 @@ function loadMenuItems() {
                 </div>
             </div>
         `;
-    // Reinitialize menu interactions for default items
-    setTimeout(() => initMenuInteractions(), 100);
     return;
   }
 
@@ -132,9 +130,6 @@ function loadMenuItems() {
     `
     )
     .join("");
-
-  // Reinitialize menu interactions for dynamic items
-  setTimeout(() => initMenuInteractions(), 100);
 }
 
 // Load gallery images on gallery page
@@ -359,9 +354,9 @@ function initFooterTheme() {
     .addListener(applyFooterTheme);
 }
 
-/* ================== MENU INTERACTIONS ================== */
+/* ================== FIXED MENU INTERACTIONS (USING EVENT DELEGATION) ================== */
 function initMenuInteractions() {
-  // Close popups when clicking outside
+  // Close popups when clicking outside - USING EVENT DELEGATION
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".menu-item")) {
       document.querySelectorAll(".menu-item.show-popup").forEach((el) => {
@@ -370,20 +365,22 @@ function initMenuInteractions() {
     }
   });
 
-  // Menu item click handling
-  document.querySelectorAll(".menu-item").forEach((item) => {
-    item.addEventListener("click", (ev) => {
-      if (ev.target.closest(".add-cart") || ev.target.closest(".order-now"))
-        return;
-      const isShown = item.classList.contains("show-popup");
-      document
-        .querySelectorAll(".menu-item")
-        .forEach((i) => i.classList.remove("show-popup"));
-      if (!isShown) item.classList.add("show-popup");
-    });
+  // Menu item click handling - USING EVENT DELEGATION
+  document.addEventListener("click", (e) => {
+    const menuItem = e.target.closest(".menu-item");
+    if (!menuItem) return;
+
+    // Don't trigger if clicking on add-cart or order-now buttons
+    if (e.target.closest(".add-cart") || e.target.closest(".order-now")) return;
+
+    const isShown = menuItem.classList.contains("show-popup");
+    document
+      .querySelectorAll(".menu-item")
+      .forEach((i) => i.classList.remove("show-popup"));
+    if (!isShown) menuItem.classList.add("show-popup");
   });
 
-  // Add to cart functionality
+  // Add to cart functionality - USING EVENT DELEGATION
   document.addEventListener("click", (e) => {
     const addBtn = e.target.closest(".add-cart");
     if (!addBtn) return;
@@ -415,7 +412,7 @@ function initMenuInteractions() {
 
 /* ================== ORDER FUNCTIONALITY ================== */
 function initOrderFunctionality() {
-  // Order now buttons
+  // Order now buttons - USING EVENT DELEGATION
   document.addEventListener("click", (e) => {
     const orderNow = e.target.closest(".order-now");
     if (!orderNow) return;
