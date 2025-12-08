@@ -1,4 +1,190 @@
-/* ================== script.js (FIXED FOOTER THEME VERSION) ================== */
+/* ================== script.js - TOKE BAKES (WITH ADMIN INTEGRATION) ================== */
+
+// ================== DYNAMIC CONTENT LOADING ==================
+// Storage keys for Toke Bakes dynamic content
+const TB_STORAGE_KEYS = {
+  FEATURED: "tokebakes_featured",
+  MENU: "tokebakes_menu",
+  GALLERY: "tokebakes_gallery",
+};
+
+// Load data from localStorage for dynamic content
+function tbLoadData(key) {
+  try {
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : null;
+  } catch (error) {
+    console.error(`Error loading ${key}:`, error);
+    return null;
+  }
+}
+
+// Load featured items on homepage
+function loadFeaturedItems() {
+  const container = document.getElementById("featured-container");
+  if (!container) return;
+
+  const items = tbLoadData(TB_STORAGE_KEYS.FEATURED);
+
+  // If no data exists, show default items
+  if (!items || items.length === 0) {
+    container.innerHTML = `
+            <article class="featured-item">
+                <img src="images/cake1.jpg" alt="Chocolate Fudge Cake">
+                <h4>Chocolate Fudge Cake</h4>
+                <p>Rich layers of dark chocolate and silky ganache — a crowd favorite.</p>
+            </article>
+            <article class="featured-item">
+                <img src="images/cupcakes.jpg" alt="Cupcake Assortment">
+                <h4>Vanilla Dream Cupcakes</h4>
+                <p>Light, fluffy cupcakes topped with creamy frosting and edible pearls.</p>
+            </article>
+            <article class="featured-item">
+                <img src="images/pastry.jpg" alt="Fruit Pastries">
+                <h4>Seasonal Fruit Pastries</h4>
+                <p>Buttery, flaky pastry filled with fresh fruit and a vanilla cream.</p>
+            </article>
+        `;
+    return;
+  }
+
+  // Generate HTML from stored data
+  container.innerHTML = items
+    .map(
+      (item) => `
+        <article class="featured-item">
+            <img src="${item.image}" alt="${item.title}">
+            <h4>${escapeHtml(item.title)}</h4>
+            <p>${escapeHtml(item.description)}</p>
+        </article>
+    `
+    )
+    .join("");
+}
+
+// Load menu items on menu page
+function loadMenuItems() {
+  const container = document.getElementById("menu-container");
+  if (!container) return;
+
+  const items = tbLoadData(TB_STORAGE_KEYS.MENU);
+
+  // If no data exists, show default items
+  if (!items || items.length === 0) {
+    container.innerHTML = `
+            <div class="menu-item" data-item="Chocolate Fudge Cake" data-price="1200">
+                <img src="images/cake1.jpg" alt="Chocolate Fudge Cake">
+                <h3>Chocolate Fudge Cake</h3>
+                <p>Decadent, moist layers finished with rich ganache. Serves 8–10.</p>
+                <div class="popup">
+                    <button class="add-cart">Add to Cart</button>
+                    <a class="order-now" href="#">Order Now</a>
+                </div>
+            </div>
+            <div class="menu-item" data-item="Red Velvet Cake" data-price="1100">
+                <img src="images/cake2.jpg" alt="Red Velvet Cake">
+                <h3>Red Velvet Cake</h3>
+                <p>Velvety red sponge with cream cheese frosting. Elegant & classic.</p>
+                <div class="popup">
+                    <button class="add-cart">Add to Cart</button>
+                    <a class="order-now" href="#">Order Now</a>
+                </div>
+            </div>
+            <div class="menu-item" data-item="Vanilla Dream Cupcakes" data-price="350">
+                <img src="images/cupcakes.jpg" alt="Cupcakes">
+                <h3>Vanilla Dream Cupcakes (6 pcs)</h3>
+                <p>Light vanilla sponge with velvety buttercream and sprinkles.</p>
+                <div class="popup">
+                    <button class="add-cart">Add to Cart</button>
+                    <a class="order-now" href="#">Order Now</a>
+                </div>
+            </div>
+            <div class="menu-item" data-item="Fruit Pastries (box of 4)" data-price="600">
+                <img src="images/pastry.jpg" alt="Fruit Pastries">
+                <h3>Fruit Pastries</h3>
+                <p>Flaky pastry filled with seasonal fruits and vanilla cream.</p>
+                <div class="popup">
+                    <button class="add-cart">Add to Cart</button>
+                    <a class="order-now" href="#">Order Now</a>
+                </div>
+            </div>
+        `;
+    // Reinitialize menu interactions for default items
+    setTimeout(() => initMenuInteractions(), 100);
+    return;
+  }
+
+  // Generate HTML from stored data
+  container.innerHTML = items
+    .map(
+      (item) => `
+        <div class="menu-item" data-item="${escapeHtml(
+          item.title
+        )}" data-price="${item.price}">
+            <img src="${item.image}" alt="${item.title}">
+            <h3>${escapeHtml(item.title)}</h3>
+            <p>${escapeHtml(item.description)}</p>
+            <div class="popup">
+                <button class="add-cart">Add to Cart</button>
+                <a class="order-now" href="#">Order Now</a>
+            </div>
+        </div>
+    `
+    )
+    .join("");
+
+  // Reinitialize menu interactions for dynamic items
+  setTimeout(() => initMenuInteractions(), 100);
+}
+
+// Load gallery images on gallery page
+function loadGalleryImages() {
+  const container = document.getElementById("gallery-container");
+  if (!container) return;
+
+  const items = tbLoadData(TB_STORAGE_KEYS.GALLERY);
+
+  // If no data exists, show default images
+  if (!items || items.length === 0) {
+    container.innerHTML = `
+            <img src="images/gallery1.jpg" alt="Cake 1">
+            <img src="images/gallery2.jpg" alt="Cupcakes">
+            <img src="images/gallery3.jpg" alt="Pastries">
+            <img src="images/gallery4.jpg" alt="Cookies">
+            <img src="images/gallery5.jpg" alt="Wedding Cake">
+            <img src="images/gallery6.jpg" alt="Dessert table">
+        `;
+    return;
+  }
+
+  // Generate HTML from stored data
+  container.innerHTML = items
+    .map(
+      (item) => `
+        <img src="${item.image}" alt="${item.alt}">
+    `
+    )
+    .join("");
+}
+
+// Determine which page we're on and load appropriate content
+function loadDynamicContent() {
+  const currentPage = window.location.pathname.split("/").pop();
+
+  if (
+    currentPage === "index.html" ||
+    currentPage === "" ||
+    currentPage.includes("index")
+  ) {
+    loadFeaturedItems();
+  } else if (currentPage === "menu.html") {
+    loadMenuItems();
+  } else if (currentPage === "gallery.html") {
+    loadGalleryImages();
+  }
+}
+
+// ================== ORIGINAL TOKE BAKES CODE (WITH YOUR EXACT FUNCTIONS) ==================
 
 const currentPage = (() => {
   const p = window.location.pathname.split("/").pop();
@@ -589,6 +775,10 @@ function initRipple(selector) {
 document.addEventListener("DOMContentLoaded", () => {
   console.log("Initializing Toke Bakes...");
 
+  // Load dynamic content based on page
+  loadDynamicContent();
+
+  // Your existing initialization code
   refreshCartCount();
   initMobileMenu();
   initThemeToggle();
