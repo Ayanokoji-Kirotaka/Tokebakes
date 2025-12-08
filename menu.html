@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Menu | Toke Bakes</title>
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+  </head>
+
+  <body>
+    <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes" /></div>
+
+    <header>
+      <div class="header-inner">
+        <div class="brand">
+          <img src="images/logo.jpg" alt="Toke Bakes logo" class="logo-sm" />
+          <h1>Toke Bakes</h1>
+        </div>
+        <nav class="navbar">
+          <!-- Navigation links (visible on desktop) -->
+          <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="menu.html">Menu</a></li>
+            <li><a href="gallery.html">Gallery</a></li>
+          </ul>
+
+          <!-- Cart -->
+          <a href="order.html" class="cart-link">
+            <i class="fas fa-shopping-cart"></i>
+            <span id="cart-count">0</span>
+          </a>
+
+          <!-- Theme toggle -->
+          <button
+            class="theme-toggle"
+            id="themeToggle"
+            aria-label="Toggle theme"
+          >
+            <i class="fas fa-sun icon sun"></i>
+            <i class="fas fa-moon icon moon"></i>
+          </button>
+
+          <!-- Hamburger menu (visible on mobile only) -->
+          <button class="navbar-toggle" id="navbarToggle">
+            <i class="fas fa-bars"></i>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="menu-section">
+        <h2>Our Signature Menu</h2>
+        <p class="lead">
+          Tap an item for options — add to cart or order now. Items are saved
+          locally so you can browse freely.
+        </p>
+
+        <div class="menu-grid">
+          <div
+            class="menu-item"
+            data-item="Chocolate Fudge Cake"
+            data-price="1200"
+          >
+            <img src="images/cake1.jpg" alt="Chocolate Fudge Cake" />
+            <h3>Chocolate Fudge Cake</h3>
+            <p>
+              Decadent, moist layers finished with rich ganache. Serves 8–10.
+            </p>
+            <div class="popup">
+              <button class="add-cart">Add to Cart</button>
+              <a class="order-now" href="#">Order Now</a>
+            </div>
+          </div>
+
+          <div class="menu-item" data-item="Red Velvet Cake" data-price="1100">
+            <img src="images/cake2.jpg" alt="Red Velvet Cake" />
+            <h3>Red Velvet Cake</h3>
+            <p>
+              Velvety red sponge with cream cheese frosting. Elegant & classic.
+            </p>
+            <div class="popup">
+              <button class="add-cart">Add to Cart</button>
+              <a class="order-now" href="#">Order Now</a>
+            </div>
+          </div>
+
+          <div
+            class="menu-item"
+            data-item="Vanilla Dream Cupcakes"
+            data-price="350"
+          >
+            <img src="images/cupcakes.jpg" alt="Cupcakes" />
+            <h3>Vanilla Dream Cupcakes (6 pcs)</h3>
+            <p>Light vanilla sponge with velvety buttercream and sprinkles.</p>
+            <div class="popup">
+              <button class="add-cart">Add to Cart</button>
+              <a class="order-now" href="#">Order Now</a>
+            </div>
+          </div>
+
+          <div
+            class="menu-item"
+            data-item="Fruit Pastries (box of 4)"
+            data-price="600"
+          >
+            <img src="images/pastry.jpg" alt="Fruit Pastries" />
+            <h3>Fruit Pastries</h3>
+            <p>Flaky pastry filled with seasonal fruits and vanilla cream.</p>
+            <div class="popup">
+              <button class="add-cart">Add to Cart</button>
+              <a class="order-now" href="#">Order Now</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="bakes-footer">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <h3>Toke Bakes</h3>
+          <p class="tagline">Taking Love, One Slice at a Time</p>
+        </div>
+
+        <div class="footer-info">
+          <!-- Phone should be a clickable link, not just text -->
+          <a href="tel:07063466822" class="phone-link">
+            <i class="fas fa-phone"></i>
+            <span>07063466822</span>
+          </a>
+
+          <div class="social-links">
+            <span class="follow-text">Follow Us</span>
+            <div class="social-icons">
+              <a href="#" class="social-icon" aria-label="Instagram">
+                <i class="fab fa-instagram"></i>
+              </a>
+              <a href="#" class="social-icon" aria-label="TikTok">
+                <i class="fab fa-tiktok"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <!-- Add legal-link class to these -->
+        <div class="legal-links">
+          <a href="privacy.html" class="legal-link">Privacy Policy</a>
+          <a href="terms-of-use.html" class="legal-link">Terms of Use</a>
+        </div>
+        <p class="copyright">
+          &copy; <span id="current-year">2024</span> Toke Bakes. All rights
+          reserved.
+        </p>
+      </div>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
+</html>

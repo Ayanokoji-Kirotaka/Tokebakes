@@ -1,0 +1,119 @@
+<!-- ================== terms-of-use.html ================== -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Terms of Use — Toke Bakes</title>
+    <link rel="icon" href="images/logo.jpg" type="image/png" />
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+  </head>
+  <body>
+    <!-- Loader -->
+    <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes" /></div>
+
+    <!-- Header -->
+    <header>
+      <div class="header-inner">
+        <div class="brand">
+          <img src="images/logo.jpg" alt="Toke Bakes logo" class="logo-sm" />
+          <h1>Toke Bakes</h1>
+        </div>
+        <nav class="navbar">
+          <!-- Navigation links (visible on desktop) -->
+          <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="menu.html">Menu</a></li>
+            <li><a href="gallery.html">Gallery</a></li>
+          </ul>
+
+          <!-- Cart -->
+          <a href="order.html" class="cart-link">
+            <i class="fas fa-shopping-cart"></i>
+            <span id="cart-count">0</span>
+          </a>
+
+          <!-- Theme toggle -->
+          <button
+            class="theme-toggle"
+            id="themeToggle"
+            aria-label="Toggle theme"
+          >
+            <i class="fas fa-sun icon sun"></i>
+            <i class="fas fa-moon icon moon"></i>
+          </button>
+
+          <!-- Hamburger menu (visible on mobile only) -->
+          <button class="navbar-toggle" id="navbarToggle">
+            <i class="fas fa-bars"></i>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="content-wrapper legal-content">
+      <h1>Terms of Use</h1>
+      <p><strong>Last updated:</strong> November 2025</p>
+
+      <p>
+        By using this website, you agree to these terms. All images and content
+        are the property of <strong>Toke Bakes</strong>. Orders are subject to
+        availability and confirmation by Toke Bakes.
+      </p>
+
+      <p>
+        Unauthorized use of our content, images, or brand materials is strictly
+        prohibited. We reserve the right to update these terms at any time.
+      </p>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bakes-footer">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <h3>Toke Bakes</h3>
+          <p class="tagline">Taking Love, One Slice at a Time</p>
+        </div>
+
+        <div class="footer-info">
+          <!-- Phone should be a clickable link, not just text -->
+          <a href="tel:07063466822" class="phone-link">
+            <i class="fas fa-phone"></i>
+            <span>07063466822</span>
+          </a>
+
+          <div class="social-links">
+            <span class="follow-text">Follow Us</span>
+            <div class="social-icons">
+              <a href="#" class="social-icon" aria-label="Instagram">
+                <i class="fab fa-instagram"></i>
+              </a>
+              <a href="#" class="social-icon" aria-label="TikTok">
+                <i class="fab fa-tiktok"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <!-- Add legal-link class to these -->
+        <div class="legal-links">
+          <a href="privacy.html" class="legal-link">Privacy Policy</a>
+          <a href="terms-of-use.html" class="legal-link">Terms of Use</a>
+        </div>
+        <p class="copyright">
+          &copy; <span id="current-year">2024</span> Toke Bakes. All rights
+          reserved.
+        </p>
+      </div>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
+</html>

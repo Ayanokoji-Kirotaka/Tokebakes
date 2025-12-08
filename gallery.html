@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gallery | Toke Bakes</title>
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+  </head>
+
+  <body>
+    <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes" /></div>
+
+    <header>
+      <div class="header-inner">
+        <div class="brand">
+          <img src="images/logo.jpg" alt="logo" class="logo-sm" />
+          <h1>Toke Bakes</h1>
+        </div>
+        <nav class="navbar">
+          <!-- Navigation links (visible on desktop) -->
+          <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="menu.html">Menu</a></li>
+            <li><a href="gallery.html">Gallery</a></li>
+          </ul>
+
+          <!-- Cart -->
+          <a href="order.html" class="cart-link">
+            <i class="fas fa-shopping-cart"></i>
+            <span id="cart-count">0</span>
+          </a>
+
+          <!-- Theme toggle -->
+          <button
+            class="theme-toggle"
+            id="themeToggle"
+            aria-label="Toggle theme"
+          >
+            <i class="fas fa-sun icon sun"></i>
+            <i class="fas fa-moon icon moon"></i>
+          </button>
+
+          <!-- Hamburger menu (visible on mobile only) -->
+          <button class="navbar-toggle" id="navbarToggle">
+            <i class="fas fa-bars"></i>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="gallery-section">
+        <h2>Our Creations</h2>
+        <p class="lead">
+          Browse handcrafted cakes, cupcakes and dessert tables. Click an image
+          to view full size.
+        </p>
+
+        <div class="gallery-grid">
+          <img src="images/gallery1.jpg" alt="Cake 1" />
+          <img src="images/gallery2.jpg" alt="Cupcakes" />
+          <img src="images/gallery3.jpg" alt="Pastries" />
+          <img src="images/gallery4.jpg" alt="Cookies" />
+          <img src="images/gallery5.jpg" alt="Wedding Cake" />
+          <img src="images/gallery6.jpg" alt="Dessert table" />
+        </div>
+      </section>
+    </main>
+
+    <footer class="bakes-footer">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <h3>Toke Bakes</h3>
+          <p class="tagline">Taking Love, One Slice at a Time</p>
+        </div>
+
+        <div class="footer-info">
+          <!-- Phone should be a clickable link, not just text -->
+          <a href="tel:07063466822" class="phone-link">
+            <i class="fas fa-phone"></i>
+            <span>07063466822</span>
+          </a>
+
+          <div class="social-links">
+            <span class="follow-text">Follow Us</span>
+            <div class="social-icons">
+              <a href="#" class="social-icon" aria-label="Instagram">
+                <i class="fab fa-instagram"></i>
+              </a>
+              <a href="#" class="social-icon" aria-label="TikTok">
+                <i class="fab fa-tiktok"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <!-- Add legal-link class to these -->
+        <div class="legal-links">
+          <a href="privacy.html" class="legal-link">Privacy Policy</a>
+          <a href="terms-of-use.html" class="legal-link">Terms of Use</a>
+        </div>
+        <p class="copyright">
+          &copy; <span id="current-year">2024</span> Toke Bakes. All rights
+          reserved.
+        </p>
+      </div>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
+</html>

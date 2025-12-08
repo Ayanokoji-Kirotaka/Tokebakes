@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Toke Bakes — Home</title>
+    <link rel="icon" href="images/logo.jpg" type="image/png" />
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+  </head>
+  <body>
+    <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes" /></div>
+
+    <header>
+      <div class="header-inner">
+        <div class="brand">
+          <img src="images/logo.jpg" alt="Toke Bakes logo" class="logo-sm" />
+          <h1>Toke Bakes</h1>
+        </div>
+        <nav class="navbar">
+          <!-- Navigation links (visible on desktop) -->
+          <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="menu.html">Menu</a></li>
+            <li><a href="gallery.html">Gallery</a></li>
+          </ul>
+
+          <!-- Cart -->
+          <a href="order.html" class="cart-link">
+            <i class="fas fa-shopping-cart"></i>
+            <span id="cart-count">0</span>
+          </a>
+
+          <!-- Theme toggle -->
+          <button
+            class="theme-toggle"
+            id="themeToggle"
+            aria-label="Toggle theme"
+          >
+            <i class="fas fa-sun icon sun"></i>
+            <i class="fas fa-moon icon moon"></i>
+          </button>
+
+          <!-- Hamburger menu (visible on mobile only) -->
+          <button class="navbar-toggle" id="navbarToggle">
+            <i class="fas fa-bars"></i>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <img src="images/logo.jpg" alt="Toke Bakes logo" class="hero-logo" />
+        <h2>Baking Love, One Slice at a Time</h2>
+        <p class="lead">
+          Artisan cakes, cupcakes & pastries baked with passion and precision.
+          Small-batch, handcrafted, unforgettable.
+        </p>
+        <a class="btn" href="menu.html">Explore Our Menu</a>
+      </section>
+
+      <section class="about-preview">
+        <h3>Our Story</h3>
+        <p>
+          Founded in 2020, Toke Bakes blends traditional techniques with modern
+          flavors. From custom wedding cakes to everyday treats, our goal is to
+          make every moment sweeter.
+        </p>
+        <div class="about-features">
+          <div class="feature">
+            <h4>Handcrafted</h4>
+            <p>Every item is made by hand with attention to detail.</p>
+          </div>
+          <div class="feature">
+            <h4>Premium Ingredients</h4>
+            <p>
+              We only use the best ingredients: real butter, quality chocolate,
+              and fresh fruit.
+            </p>
+          </div>
+          <div class="feature">
+            <p>
+              Tell us your vision — we bring it to life with flavor and style.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="featured">
+        <h3>Featured Creations</h3>
+        <div class="featured-grid">
+          <article class="featured-item">
+            <img src="images/cake1.jpg" alt="Chocolate Fudge Cake" />
+            <h4>Chocolate Fudge Cake</h4>
+            <p>
+              Rich layers of dark chocolate and silky ganache — a crowd
+              favorite.
+            </p>
+          </article>
+
+          <article class="featured-item">
+            <img src="images/cupcakes.jpg" alt="Cupcake Assortment" />
+            <h4>Vanilla Dream Cupcakes</h4>
+            <p>
+              Light, fluffy cupcakes topped with creamy frosting and edible
+              pearls.
+            </p>
+          </article>
+
+          <article class="featured-item">
+            <img src="images/pastry.jpg" alt="Fruit Pastries" />
+            <h4>Seasonal Fruit Pastries</h4>
+            <p>
+              Buttery, flaky pastry filled with fresh fruit and a vanilla cream.
+            </p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="bakes-footer">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <h3>Toke Bakes</h3>
+          <p class="tagline">Taking Love, One Slice at a Time</p>
+        </div>
+
+        <div class="footer-info">
+          <!-- Phone should be a clickable link, not just text -->
+          <a href="tel:07063466822" class="phone-link">
+            <i class="fas fa-phone"></i>
+            <span>07063466822</span>
+          </a>
+
+          <div class="social-links">
+            <span class="follow-text">Follow Us</span>
+            <div class="social-icons">
+              <a href="#" class="social-icon" aria-label="Instagram">
+                <i class="fab fa-instagram"></i>
+              </a>
+              <a href="#" class="social-icon" aria-label="TikTok">
+                <i class="fab fa-tiktok"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <!-- Add legal-link class to these -->
+        <div class="legal-links">
+          <a href="privacy.html" class="legal-link">Privacy Policy</a>
+          <a href="terms-of-use.html" class="legal-link">Terms of Use</a>
+        </div>
+        <p class="copyright">
+          &copy; <span id="current-year">2024</span> Toke Bakes. All rights
+          reserved.
+        </p>
+      </div>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
+</html>
