@@ -1,185 +1,223 @@
-/* ================== script.js - TOKE BAKES (WITH ADMIN INTEGRATION) ================== */
+/* ================== script.js - TOKE BAKES WEBSITE ================== */
+/* SUPABASE-ONLY VERSION - FIXED */
 
-// ================== DYNAMIC CONTENT LOADING ==================
-// Storage keys for Toke Bakes dynamic content
-const TB_STORAGE_KEYS = {
-  FEATURED: "tokebakes_featured",
-  MENU: "tokebakes_menu",
-  GALLERY: "tokebakes_gallery",
-};
+// ================== DATA SOURCE CONFIGURATION ==================
 
-// Load data from localStorage for dynamic content
-function tbLoadData(key) {
+const useSupabase = true; // Always use Supabase
+
+// ================== DATA LOADING FUNCTIONS ==================
+
+// Load from Supabase
+async function loadFromSupabase(endpoint) {
   try {
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : null;
+    // Check if Supabase config is available
+    if (
+      !window.SUPABASE_CONFIG ||
+      !window.SUPABASE_CONFIG.URL ||
+      !window.SUPABASE_CONFIG.ANON_KEY
+    ) {
+      console.error("Supabase configuration not found in script.js");
+      return [];
+    }
+
+    const response = await fetch(
+      `${SUPABASE_CONFIG.URL}${endpoint}?select=*&order=created_at.desc`,
+      {
+        headers: {
+          apikey: SUPABASE_CONFIG.ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-cache",
+      }
+    );
+
+    if (!response.ok) {
+      console.warn(`Failed to load from ${endpoint}:`, response.status);
+      return [];
+    }
+
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
   } catch (error) {
-    console.error(`Error loading ${key}:`, error);
-    return null;
+    console.error(`Error loading from Supabase ${endpoint}:`, error);
+    return [];
   }
 }
 
-// Load featured items on homepage
-function loadFeaturedItems() {
+// Load featured items
+async function loadFeaturedItems() {
   const container = document.getElementById("featured-container");
   if (!container) return;
 
-  const items = tbLoadData(TB_STORAGE_KEYS.FEATURED);
+  try {
+    const items = await loadFromSupabase(API_ENDPOINTS.FEATURED);
 
-  // If no data exists, show default items
-  if (!items || items.length === 0) {
-    container.innerHTML = `
-            <article class="featured-item">
-                <img src="images/cake1.jpg" alt="Chocolate Fudge Cake">
-                <h4>Chocolate Fudge Cake</h4>
-                <p>Rich layers of dark chocolate and silky ganache — a crowd favorite.</p>
-            </article>
-            <article class="featured-item">
-                <img src="images/cupcakes.jpg" alt="Cupcake Assortment">
-                <h4>Vanilla Dream Cupcakes</h4>
-                <p>Light, fluffy cupcakes topped with creamy frosting and edible pearls.</p>
-            </article>
-            <article class="featured-item">
-                <img src="images/pastry.jpg" alt="Fruit Pastries">
-                <h4>Seasonal Fruit Pastries</h4>
-                <p>Buttery, flaky pastry filled with fresh fruit and a vanilla cream.</p>
-            </article>
-        `;
-    return;
-  }
+    if (!items || items.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-star"></i>
+          <p>Featured items coming soon! Check back later.</p>
+        </div>
+      `;
+      return;
+    }
 
-  // Generate HTML from stored data
-  container.innerHTML = items
-    .map(
-      (item) => `
-        <article class="featured-item">
-            <img src="${item.image}" alt="${item.title}">
+    // Generate HTML from data
+    container.innerHTML = items
+      .map(
+        (item) => `
+          <article class="featured-item">
+            <img src="${item.image}" alt="${
+          item.title
+        }" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkZlYXR1cmVkPC90ZXh0Pjwvc3ZnPg=='">
             <h4>${escapeHtml(item.title)}</h4>
             <p>${escapeHtml(item.description)}</p>
-        </article>
-    `
-    )
-    .join("");
+          </article>
+        `
+      )
+      .join("");
+  } catch (error) {
+    console.error("Error loading featured items:", error);
+    container.innerHTML = `
+      <div class="empty-state error">
+        <i class="fas fa-exclamation-triangle"></i>
+        <p>Unable to load featured items. Please try again later.</p>
+      </div>
+    `;
+  }
 }
 
-// Load menu items on menu page
-function loadMenuItems() {
+// Load menu items
+async function loadMenuItems() {
   const container = document.getElementById("menu-container");
   if (!container) return;
 
-  const items = tbLoadData(TB_STORAGE_KEYS.MENU);
+  try {
+    const items = await loadFromSupabase(API_ENDPOINTS.MENU);
 
-  // If no data exists, show default items
-  if (!items || items.length === 0) {
-    container.innerHTML = `
-            <div class="menu-item" data-item="Chocolate Fudge Cake" data-price="1200">
-                <img src="images/cake1.jpg" alt="Chocolate Fudge Cake">
-                <h3>Chocolate Fudge Cake</h3>
-                <p>Decadent, moist layers finished with rich ganache. Serves 8–10.</p>
-                <div class="popup">
-                    <button class="add-cart">Add to Cart</button>
-                    <a class="order-now" href="#">Order Now</a>
-                </div>
-            </div>
-            <div class="menu-item" data-item="Red Velvet Cake" data-price="1100">
-                <img src="images/cake2.jpg" alt="Red Velvet Cake">
-                <h3>Red Velvet Cake</h3>
-                <p>Velvety red sponge with cream cheese frosting. Elegant & classic.</p>
-                <div class="popup">
-                    <button class="add-cart">Add to Cart</button>
-                    <a class="order-now" href="#">Order Now</a>
-                </div>
-            </div>
-            <div class="menu-item" data-item="Vanilla Dream Cupcakes" data-price="350">
-                <img src="images/cupcakes.jpg" alt="Cupcakes">
-                <h3>Vanilla Dream Cupcakes (6 pcs)</h3>
-                <p>Light vanilla sponge with velvety buttercream and sprinkles.</p>
-                <div class="popup">
-                    <button class="add-cart">Add to Cart</button>
-                    <a class="order-now" href="#">Order Now</a>
-                </div>
-            </div>
-            <div class="menu-item" data-item="Fruit Pastries (box of 4)" data-price="600">
-                <img src="images/pastry.jpg" alt="Fruit Pastries">
-                <h3>Fruit Pastries</h3>
-                <p>Flaky pastry filled with seasonal fruits and vanilla cream.</p>
-                <div class="popup">
-                    <button class="add-cart">Add to Cart</button>
-                    <a class="order-now" href="#">Order Now</a>
-                </div>
-            </div>
-        `;
-    return;
-  }
+    if (!items || items.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-utensils"></i>
+          <p>Our menu is being updated. Please check back soon!</p>
+        </div>
+      `;
+      return;
+    }
 
-  // Generate HTML from stored data
-  container.innerHTML = items
-    .map(
-      (item) => `
-        <div class="menu-item" data-item="${escapeHtml(
+    // Generate HTML from data
+    container.innerHTML = items
+      .map(
+        (item) => `
+          <div class="menu-item" data-item="${escapeHtml(
+            item.title
+          )}" data-price="${item.price}">
+            <img src="${item.image}" alt="${
           item.title
-        )}" data-price="${item.price}">
-            <img src="${item.image}" alt="${item.title}">
+        }" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4='">
             <h3>${escapeHtml(item.title)}</h3>
             <p>${escapeHtml(item.description)}</p>
+            <div class="price">₦${formatPrice(item.price)}</div>
             <div class="popup">
-                <button class="add-cart">Add to Cart</button>
-                <a class="order-now" href="#">Order Now</a>
+              <button class="add-cart">Add to Cart</button>
+              <a class="order-now" href="#">Order Now</a>
             </div>
-        </div>
-    `
-    )
-    .join("");
+          </div>
+        `
+      )
+      .join("");
+  } catch (error) {
+    console.error("Error loading menu items:", error);
+    container.innerHTML = `
+      <div class="empty-state error">
+        <i class="fas fa-exclamation-triangle"></i>
+        <p>Unable to load menu items. Please try again later.</p>
+      </div>
+    `;
+  }
 }
 
-// Load gallery images on gallery page
-function loadGalleryImages() {
+// Load gallery images
+async function loadGalleryImages() {
   const container = document.getElementById("gallery-container");
   if (!container) return;
 
-  const items = tbLoadData(TB_STORAGE_KEYS.GALLERY);
+  try {
+    const items = await loadFromSupabase(API_ENDPOINTS.GALLERY);
 
-  // If no data exists, show default images
-  if (!items || items.length === 0) {
+    if (!items || items.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-images"></i>
+          <p>Gallery coming soon! Check back later.</p>
+        </div>
+      `;
+      return;
+    }
+
+    // Generate HTML from data
+    container.innerHTML = items
+      .map(
+        (item) => `
+          <img src="${item.image}" alt="${item.alt}" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+='">
+        `
+      )
+      .join("");
+  } catch (error) {
+    console.error("Error loading gallery images:", error);
     container.innerHTML = `
-            <img src="images/gallery1.jpg" alt="Cake 1">
-            <img src="images/gallery2.jpg" alt="Cupcakes">
-            <img src="images/gallery3.jpg" alt="Pastries">
-            <img src="images/gallery4.jpg" alt="Cookies">
-            <img src="images/gallery5.jpg" alt="Wedding Cake">
-            <img src="images/gallery6.jpg" alt="Dessert table">
-        `;
+      <div class="empty-state error">
+        <i class="fas fa-exclamation-triangle"></i>
+        <p>Unable to load gallery. Please try again later.</p>
+      </div>
+    `;
+  }
+}
+
+// Load dynamic content based on page
+async function loadDynamicContent() {
+  const currentPage = window.location.pathname.split("/").pop() || "index.html";
+
+  console.log("Loading content for page:", currentPage);
+
+  // Check if Supabase config exists
+  if (!window.SUPABASE_CONFIG || !window.API_ENDPOINTS) {
+    console.error("Supabase configuration not loaded");
+    showConfigError();
     return;
   }
 
-  // Generate HTML from stored data
-  container.innerHTML = items
-    .map(
-      (item) => `
-        <img src="${item.image}" alt="${item.alt}">
-    `
-    )
-    .join("");
-}
-
-// Determine which page we're on and load appropriate content
-function loadDynamicContent() {
-  const currentPage = window.location.pathname.split("/").pop();
-
   if (
-    currentPage === "index.html" ||
+    currentPage.includes("index") ||
     currentPage === "" ||
-    currentPage.includes("index")
+    currentPage === "/"
   ) {
-    loadFeaturedItems();
-  } else if (currentPage === "menu.html") {
-    loadMenuItems();
-  } else if (currentPage === "gallery.html") {
-    loadGalleryImages();
+    await loadFeaturedItems();
+  } else if (currentPage.includes("menu")) {
+    await loadMenuItems();
+  } else if (currentPage.includes("gallery")) {
+    await loadGalleryImages();
   }
 }
 
-// ================== ORIGINAL TOKE BAKES CODE (WITH YOUR EXACT FUNCTIONS) ==================
+function showConfigError() {
+  const containers = document.querySelectorAll(
+    "#featured-container, #menu-container, #gallery-container"
+  );
+  containers.forEach((container) => {
+    if (container) {
+      container.innerHTML = `
+        <div class="empty-state error">
+          <i class="fas fa-exclamation-triangle"></i>
+          <p>Website configuration error. Please check config.js file.</p>
+        </div>
+      `;
+    }
+  });
+}
+
+// ================== ORIGINAL TOKE BAKES CODE ==================
 
 const currentPage = (() => {
   const p = window.location.pathname.split("/").pop();
@@ -214,17 +252,9 @@ function formatPrice(num) {
 }
 
 function escapeHtml(text) {
-  return (text + "").replace(
-    /[&<>"']/g,
-    (m) =>
-      ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;",
-      }[m])
-  );
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 /* ================== LOADER ================== */
@@ -245,8 +275,10 @@ window.addEventListener("load", () => {
     const href = a.getAttribute("href");
     if (!href) return;
     if (
-      (href === "index.html" && currentPage === "index.html") ||
-      href === currentPage
+      (href === "index.html" &&
+        (currentPage === "index.html" || currentPage === "")) ||
+      href === currentPage ||
+      (href.includes("index") && currentPage.includes("index"))
     ) {
       a.classList.add("active");
     }
@@ -354,9 +386,9 @@ function initFooterTheme() {
     .addListener(applyFooterTheme);
 }
 
-/* ================== FIXED MENU INTERACTIONS (USING EVENT DELEGATION) ================== */
+/* ================== FIXED MENU INTERACTIONS ================== */
 function initMenuInteractions() {
-  // Close popups when clicking outside - USING EVENT DELEGATION
+  // Close popups when clicking outside
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".menu-item")) {
       document.querySelectorAll(".menu-item.show-popup").forEach((el) => {
@@ -365,12 +397,11 @@ function initMenuInteractions() {
     }
   });
 
-  // Menu item click handling - USING EVENT DELEGATION
+  // Menu item click handling
   document.addEventListener("click", (e) => {
     const menuItem = e.target.closest(".menu-item");
     if (!menuItem) return;
 
-    // Don't trigger if clicking on add-cart or order-now buttons
     if (e.target.closest(".add-cart") || e.target.closest(".order-now")) return;
 
     const isShown = menuItem.classList.contains("show-popup");
@@ -380,7 +411,7 @@ function initMenuInteractions() {
     if (!isShown) menuItem.classList.add("show-popup");
   });
 
-  // Add to cart functionality - USING EVENT DELEGATION
+  // Add to cart functionality
   document.addEventListener("click", (e) => {
     const addBtn = e.target.closest(".add-cart");
     if (!addBtn) return;
@@ -412,7 +443,7 @@ function initMenuInteractions() {
 
 /* ================== ORDER FUNCTIONALITY ================== */
 function initOrderFunctionality() {
-  // Order now buttons - USING EVENT DELEGATION
+  // Order now buttons
   document.addEventListener("click", (e) => {
     const orderNow = e.target.closest(".order-now");
     if (!orderNow) return;
@@ -434,13 +465,12 @@ function initOrderFunctionality() {
     showOrderOptions(orderData);
   });
 
-  // Proceed to order button - NO ALERTS
+  // Proceed to order button
   document.addEventListener("click", (e) => {
     if (!e.target || e.target.id !== "proceed-order") return;
 
     const cart = readCart();
     if (!cart || cart.length === 0) {
-      // Show empty cart message in UI instead of alert
       const cartContainer = document.getElementById("cart-container");
       if (cartContainer) {
         const existingMessage = cartContainer.querySelector(
@@ -483,43 +513,37 @@ function showOrderOptions(orderData) {
     const list = document.createElement("div");
 
     orderData.items.forEach((it) => {
-      // Show item with quantity × unit price
       const row = document.createElement("div");
       row.className = "summary-row";
 
-      // FIXED: Show quantity × unit price, not quantity × total
       if (it.qty > 1) {
         row.innerHTML = `
-                    <div class="s-left">${escapeHtml(it.name)}</div>
-                    <div class="s-right">${it.qty}× NGN ${formatPrice(
-          it.price
-        )}</div>
-                `;
+          <div class="s-left">${escapeHtml(it.name)}</div>
+          <div class="s-right">${it.qty}× NGN ${formatPrice(it.price)}</div>
+        `;
       } else {
         row.innerHTML = `
-                    <div class="s-left">${escapeHtml(it.name)}</div>
-                    <div class="s-right">NGN ${formatPrice(it.price)}</div>
-                `;
+          <div class="s-left">${escapeHtml(it.name)}</div>
+          <div class="s-right">NGN ${formatPrice(it.price)}</div>
+        `;
       }
       list.appendChild(row);
 
-      // Show subtotal for items with quantity > 1
       if (it.qty > 1) {
         const subtotalRow = document.createElement("div");
         subtotalRow.className = "summary-subtotal";
         subtotalRow.innerHTML = `
-                    <div class="s-left"><em>Subtotal</em></div>
-                    <div class="s-right"><em>NGN ${formatPrice(
-                      it.price * it.qty
-                    )}</em></div>
-                `;
+          <div class="s-left"><em>Subtotal</em></div>
+          <div class="s-right"><em>NGN ${formatPrice(
+            it.price * it.qty
+          )}</em></div>
+        `;
         list.appendChild(subtotalRow);
       }
     });
 
     summaryEl.appendChild(list);
 
-    // Calculate and show total
     const total = orderData.items.reduce(
       (s, it) => s + (it.price || 0) * (it.qty || 1),
       0
@@ -527,11 +551,9 @@ function showOrderOptions(orderData) {
     const totalRow = document.createElement("div");
     totalRow.className = "summary-total";
     totalRow.innerHTML = `
-            <div class="s-left"><strong>Order total:</strong></div>
-            <div class="s-right"><strong>NGN ${formatPrice(
-              total
-            )}</strong></div>
-        `;
+      <div class="s-left"><strong>Order total:</strong></div>
+      <div class="s-right"><strong>NGN ${formatPrice(total)}</strong></div>
+    `;
     summaryEl.appendChild(totalRow);
   }
 
@@ -545,19 +567,19 @@ function initBottomSheet() {
 
   const html = `
     <div id="order-bottom-sheet" class="order-bottom-sheet" aria-hidden="true">
-        <div class="sheet-backdrop"></div>
-        <div class="sheet-panel" role="dialog" aria-modal="true" aria-label="Choose order method">
-            <button class="sheet-close" aria-label="Close">✕</button>
-            <h3>Place your order</h3>
-            <div class="order-summary" aria-live="polite"></div>
-            <div class="sheet-actions">
-                <button id="order-via-gmail" class="order-option-btn">Order via Gmail</button>
-                <button id="order-via-whatsapp" class="order-option-btn">Order via WhatsApp</button>
-            </div>
-            <small class="sheet-note">We will open your chosen app with the order pre-filled. Please complete your contact details before sending.</small>
+      <div class="sheet-backdrop"></div>
+      <div class="sheet-panel" role="dialog" aria-modal="true" aria-label="Choose order method">
+        <button class="sheet-close" aria-label="Close">✕</button>
+        <h3>Place your order</h3>
+        <div class="order-summary" aria-live="polite"></div>
+        <div class="sheet-actions">
+          <button id="order-via-gmail" class="order-option-btn">Order via Gmail</button>
+          <button id="order-via-whatsapp" class="order-option-btn">Order via WhatsApp</button>
         </div>
+        <small class="sheet-note">We will open your chosen app with the order pre-filled. Please complete your contact details before sending.</small>
+      </div>
     </div>
-    `;
+  `;
   document.body.insertAdjacentHTML("beforeend", html);
 
   // Sheet event listeners
@@ -582,7 +604,6 @@ function initBottomSheet() {
       if (!orderData) return;
 
       if (gmailBtn) {
-        // Gmail order logic
         const lines = [
           "Hello Toke Bakes,",
           "",
@@ -622,7 +643,6 @@ function initBottomSheet() {
       }
 
       if (waBtn) {
-        // WhatsApp order logic
         const lines = [
           "Hello Toke Bakes,",
           "",
@@ -683,24 +703,25 @@ function renderCartOnOrderPage() {
     const row = document.createElement("div");
     row.className = "cart-row";
     row.innerHTML = `
-            <img src="${it.image || "images/logo.png"}" alt="${escapeHtml(
-      it.name
-    )}" />
-            <div class="item-info">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <strong>${escapeHtml(it.name)}</strong>
-                    <button class="remove-item" data-index="${idx}">Remove</button>
-                </div>
-                <div class="qty-controls" data-index="${idx}">
-                    <button class="qty-decrease" data-index="${idx}">-</button>
-                    <span class="qty" data-index="${idx}">${it.quantity}</span>
-                    <button class="qty-increase" data-index="${idx}">+</button>
-                    <div style="margin-left:auto;font-weight:700;">NGN ${formatPrice(
-                      (it.price || 0) * (it.quantity || 1)
-                    )}</div>
-                </div>
-            </div>
-        `;
+      <img src="${
+        it.image ||
+        "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iI2ZmZTVjYyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiMzMzMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5DYXJ0PC90ZXh0Pjwvc3ZnPg=="
+      }" alt="${escapeHtml(it.name)}" loading="lazy" />
+      <div class="item-info">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <strong>${escapeHtml(it.name)}</strong>
+          <button class="remove-item" data-index="${idx}">Remove</button>
+        </div>
+        <div class="qty-controls" data-index="${idx}">
+          <button class="qty-decrease" data-index="${idx}">-</button>
+          <span class="qty" data-index="${idx}">${it.quantity}</span>
+          <button class="qty-increase" data-index="${idx}">+</button>
+          <div style="margin-left:auto;font-weight:700;">NGN ${formatPrice(
+            (it.price || 0) * (it.quantity || 1)
+          )}</div>
+        </div>
+      </div>
+    `;
     cartContainer.appendChild(row);
   });
 
@@ -769,11 +790,11 @@ function initRipple(selector) {
 }
 
 /* ================== INITIALIZE EVERYTHING ================== */
-document.addEventListener("DOMContentLoaded", () => {
-  console.log("Initializing Toke Bakes...");
+document.addEventListener("DOMContentLoaded", async () => {
+  console.log("Initializing Toke Bakes with Supabase...");
 
-  // Load dynamic content based on page
-  loadDynamicContent();
+  // Load dynamic content from Supabase
+  await loadDynamicContent();
 
   // Your existing initialization code
   refreshCartCount();
@@ -787,7 +808,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ".btn, .add-cart, .order-now, .qty-controls button, .order-option-btn, .remove-item"
   );
 
-  if (currentPage === "order.html") {
+  if (currentPage.includes("order")) {
     renderCartOnOrderPage();
   }
 
@@ -797,3 +818,6 @@ document.addEventListener("DOMContentLoaded", () => {
     yearElement.textContent = new Date().getFullYear();
   }
 });
+
+// Make sure config.js is loaded before script.js
+// Add this to your HTML: <script src="config.js"></script> BEFORE <script src="script.js"></script>

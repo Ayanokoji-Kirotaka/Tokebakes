@@ -1,365 +1,507 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Panel | Toke Bakes</title>
-    <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="icon" href="images/logo.jpg" type="image/png">
-</head>
-<body>
-    <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes"></div>
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+    <link rel="icon" href="images/logo.jpg" type="image/png" />
+  </head>
+  <body>
+    <!-- <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes" /></div> -->
 
     <!-- Login Screen -->
     <div id="login-screen" class="admin-login-container">
-        <div class="admin-login-box">
-            <div class="admin-brand">
-                <img src="images/logo.jpg" alt="Toke Bakes" class="admin-logo">
-                <h2>Toke Bakes Admin</h2>
-                <p class="admin-subtitle">Content Management System</p>
-            </div>
-
-            <form id="login-form" class="admin-login-form">
-                <div class="form-group">
-                    <label for="admin-username"><i class="fas fa-user"></i> Username</label>
-                    <input type="text" id="admin-username" placeholder="Enter username" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="admin-password"><i class="fas fa-lock"></i> Password</label>
-                    <input type="password" id="admin-password" placeholder="Enter password" required>
-                </div>
-
-                <div class="form-group">
-                    <button type="submit" class="btn btn-admin">
-                        <i class="fas fa-sign-in-alt"></i> Login
-                    </button>
-                </div>
-
-                <div class="login-note">
-                    <p><i class="fas fa-info-circle"></i> Default credentials: admin / password123</p>
-                    <p>You can change these after first login.</p>
-                </div>
-            </form>
+      <div class="admin-login-box">
+        <div class="admin-brand">
+          <img src="images/logo.jpg" alt="Toke Bakes" class="admin-logo" />
+          <h2>Toke Bakes Admin</h2>
+          <p class="admin-subtitle">Content Management System</p>
         </div>
+
+        <form id="login-form" class="admin-login-form">
+          <div class="form-group">
+            <label for="admin-username"
+              ><i class="fas fa-user"></i> Username</label
+            >
+            <input
+              type="text"
+              id="admin-username"
+              placeholder="Enter username"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="admin-password"
+              ><i class="fas fa-lock"></i> Password</label
+            >
+            <input
+              type="password"
+              id="admin-password"
+              placeholder="Enter password"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <button type="submit" class="btn btn-admin">
+              <i class="fas fa-sign-in-alt"></i> Login
+            </button>
+          </div>
+
+          <div class="login-note">
+            <p>
+              <i class="fas fa-info-circle"></i> Default credentials: admin /
+              password123
+            </p>
+            <p>You can change these after first login.</p>
+          </div>
+        </form>
+      </div>
     </div>
 
     <!-- Admin Dashboard (Hidden until login) -->
-    <div id="admin-dashboard" class="admin-dashboard" style="display: none;">
-        <header class="admin-header">
-            <div class="header-inner">
-                <div class="brand">
-                    <img src="images/logo.jpg" alt="Toke Bakes logo" class="logo-sm">
-                    <h1>Toke Bakes Admin</h1>
-                </div>
-                <nav class="navbar">
-                    <ul>
-                        <li><a href="index.html" target="_blank"><i class="fas fa-external-link-alt"></i> View Site</a></li>
-                        <li><a href="#" id="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
-                    </ul>
-                </nav>
+    <div id="admin-dashboard" class="admin-dashboard" style="display: none">
+      <header class="admin-header">
+        <div class="header-inner">
+          <div class="brand">
+            <img src="images/logo.jpg" alt="Toke Bakes logo" class="logo-sm" />
+            <h1>Toke Bakes Admin</h1>
+          </div>
+          <nav class="navbar">
+            <ul>
+              <li>
+                <a href="index.html" target="_blank"
+                  ><i class="fas fa-external-link-alt"></i> View Site</a
+                >
+              </li>
+              <li>
+                <a href="#" id="logout-btn"
+                  ><i class="fas fa-sign-out-alt"></i> Logout</a
+                >
+              </li>
+            </ul>
+          </nav>
+        </div>
+      </header>
+
+      <main class="admin-main">
+        <!-- Dashboard Tabs -->
+        <div class="admin-tabs">
+          <button class="admin-tab active" data-tab="featured">
+            <i class="fas fa-star"></i> Featured Items
+          </button>
+          <button class="admin-tab" data-tab="menu">
+            <i class="fas fa-utensils"></i> Menu Items
+          </button>
+          <button class="admin-tab" data-tab="gallery">
+            <i class="fas fa-images"></i> Gallery
+          </button>
+          <button class="admin-tab" data-tab="settings">
+            <i class="fas fa-cog"></i> Settings
+          </button>
+        </div>
+
+        <!-- Storage Status -->
+        <div class="storage-status">
+          <div class="storage-info">
+            <i class="fas fa-database"></i>
+            <span>Storage: <span id="storage-used">0</span>MB / 500MB</span>
+          </div>
+          <div class="storage-bar">
+            <div class="storage-fill" id="storage-fill"></div>
+          </div>
+        </div>
+
+        <!-- Tab Content Containers -->
+        <div class="admin-tab-content">
+          <!-- Featured Items Tab -->
+          <div id="featured-tab" class="tab-pane active">
+            <div class="admin-section-header">
+              <h2><i class="fas fa-star"></i> Manage Featured Items</h2>
+              <p>These appear on the homepage under "Featured Creations"</p>
+              <button class="btn btn-admin" id="add-featured-btn">
+                <i class="fas fa-plus"></i> Add New Featured Item
+              </button>
             </div>
-        </header>
 
-        <main class="admin-main">
-            <!-- Dashboard Tabs -->
-            <div class="admin-tabs">
-                <button class="admin-tab active" data-tab="featured">
-                    <i class="fas fa-star"></i> Featured Items
-                </button>
-                <button class="admin-tab" data-tab="menu">
-                    <i class="fas fa-utensils"></i> Menu Items
-                </button>
-                <button class="admin-tab" data-tab="gallery">
-                    <i class="fas fa-images"></i> Gallery
-                </button>
-                <button class="admin-tab" data-tab="settings">
-                    <i class="fas fa-cog"></i> Settings
-                </button>
+            <div
+              class="admin-form-container"
+              id="featured-form-container"
+              style="display: none"
+            >
+              <form id="featured-form" class="admin-form">
+                <input type="hidden" id="featured-id" value="" />
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="featured-title"
+                      ><i class="fas fa-heading"></i> Title</label
+                    >
+                    <input
+                      type="text"
+                      id="featured-title"
+                      placeholder="e.g., Chocolate Fudge Cake"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="featured-description"
+                      ><i class="fas fa-align-left"></i> Description</label
+                    >
+                    <textarea
+                      id="featured-description"
+                      rows="3"
+                      placeholder="Describe this item..."
+                      required
+                    ></textarea>
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="featured-image"
+                      ><i class="fas fa-image"></i> Image</label
+                    >
+                    <input type="file" id="featured-image" accept="image/*" />
+                    <small class="form-help"
+                      >Max 500KB. Images are stored locally.</small
+                    >
+                    <div
+                      class="image-preview"
+                      id="featured-image-preview"
+                    ></div>
+                  </div>
+                </div>
+
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-admin">
+                    <i class="fas fa-save"></i> Save Item
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    id="cancel-featured"
+                  >
+                    <i class="fas fa-times"></i> Cancel
+                  </button>
+                </div>
+              </form>
             </div>
 
-            <!-- Storage Status -->
-            <div class="storage-status">
-                <div class="storage-info">
-                    <i class="fas fa-database"></i>
-                    <span>Storage: <span id="storage-used">0</span>MB / 20MB</span>
-                </div>
-                <div class="storage-bar">
-                    <div class="storage-fill" id="storage-fill"></div>
-                </div>
+            <div class="items-list" id="featured-items-list">
+              <!-- Featured items will be loaded here -->
+              <div class="empty-state">
+                <i class="fas fa-star"></i>
+                <p>No featured items yet. Add your first item!</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Menu Items Tab -->
+          <div id="menu-tab" class="tab-pane">
+            <div class="admin-section-header">
+              <h2><i class="fas fa-utensils"></i> Manage Menu Items</h2>
+              <p>These appear on the menu page with prices</p>
+              <button class="btn btn-admin" id="add-menu-btn">
+                <i class="fas fa-plus"></i> Add New Menu Item
+              </button>
             </div>
 
-            <!-- Tab Content Containers -->
-            <div class="admin-tab-content">
+            <div
+              class="admin-form-container"
+              id="menu-form-container"
+              style="display: none"
+            >
+              <form id="menu-form" class="admin-form">
+                <input type="hidden" id="menu-id" value="" />
 
-                <!-- Featured Items Tab -->
-                <div id="featured-tab" class="tab-pane active">
-                    <div class="admin-section-header">
-                        <h2><i class="fas fa-star"></i> Manage Featured Items</h2>
-                        <p>These appear on the homepage under "Featured Creations"</p>
-                        <button class="btn btn-admin" id="add-featured-btn">
-                            <i class="fas fa-plus"></i> Add New Featured Item
-                        </button>
-                    </div>
-
-                    <div class="admin-form-container" id="featured-form-container" style="display: none;">
-                        <form id="featured-form" class="admin-form">
-                            <input type="hidden" id="featured-id" value="">
-
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="featured-title"><i class="fas fa-heading"></i> Title</label>
-                                    <input type="text" id="featured-title" placeholder="e.g., Chocolate Fudge Cake" required>
-                                </div>
-                            </div>
-
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="featured-description"><i class="fas fa-align-left"></i> Description</label>
-                                    <textarea id="featured-description" rows="3" placeholder="Describe this item..." required></textarea>
-                                </div>
-                            </div>
-
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="featured-image"><i class="fas fa-image"></i> Image</label>
-                                    <input type="file" id="featured-image" accept="image/*">
-                                    <small class="form-help">Max 500KB. Images are stored locally.</small>
-                                    <div class="image-preview" id="featured-image-preview"></div>
-                                </div>
-                            </div>
-
-                            <div class="form-actions">
-                                <button type="submit" class="btn btn-admin">
-                                    <i class="fas fa-save"></i> Save Item
-                                </button>
-                                <button type="button" class="btn btn-secondary" id="cancel-featured">
-                                    <i class="fas fa-times"></i> Cancel
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-
-                    <div class="items-list" id="featured-items-list">
-                        <!-- Featured items will be loaded here -->
-                        <div class="empty-state">
-                            <i class="fas fa-star"></i>
-                            <p>No featured items yet. Add your first item!</p>
-                        </div>
-                    </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="menu-title"
+                      ><i class="fas fa-heading"></i> Title</label
+                    >
+                    <input
+                      type="text"
+                      id="menu-title"
+                      placeholder="e.g., Chocolate Fudge Cake"
+                      required
+                    />
+                  </div>
                 </div>
 
-                <!-- Menu Items Tab -->
-                <div id="menu-tab" class="tab-pane">
-                    <div class="admin-section-header">
-                        <h2><i class="fas fa-utensils"></i> Manage Menu Items</h2>
-                        <p>These appear on the menu page with prices</p>
-                        <button class="btn btn-admin" id="add-menu-btn">
-                            <i class="fas fa-plus"></i> Add New Menu Item
-                        </button>
-                    </div>
-
-                    <div class="admin-form-container" id="menu-form-container" style="display: none;">
-                        <form id="menu-form" class="admin-form">
-                            <input type="hidden" id="menu-id" value="">
-
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="menu-title"><i class="fas fa-heading"></i> Title</label>
-                                    <input type="text" id="menu-title" placeholder="e.g., Chocolate Fudge Cake" required>
-                                </div>
-                            </div>
-
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="menu-description"><i class="fas fa-align-left"></i> Description</label>
-                                    <textarea id="menu-description" rows="3" placeholder="Describe this menu item..." required></textarea>
-                                </div>
-                            </div>
-
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="menu-price"><i class="fas fa-tag"></i> Price (₦)</label>
-                                    <input type="number" id="menu-price" placeholder="1200" min="0" required>
-                                </div>
-                            </div>
-
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="menu-image"><i class="fas fa-image"></i> Image</label>
-                                    <input type="file" id="menu-image" accept="image/*">
-                                    <small class="form-help">Max 500KB. Images are stored locally.</small>
-                                    <div class="image-preview" id="menu-image-preview"></div>
-                                </div>
-                            </div>
-
-                            <div class="form-actions">
-                                <button type="submit" class="btn btn-admin">
-                                    <i class="fas fa-save"></i> Save Menu Item
-                                </button>
-                                <button type="button" class="btn btn-secondary" id="cancel-menu">
-                                    <i class="fas fa-times"></i> Cancel
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-
-                    <div class="items-list" id="menu-items-list">
-                        <!-- Menu items will be loaded here -->
-                        <div class="empty-state">
-                            <i class="fas fa-utensils"></i>
-                            <p>No menu items yet. Add your first item!</p>
-                        </div>
-                    </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="menu-description"
+                      ><i class="fas fa-align-left"></i> Description</label
+                    >
+                    <textarea
+                      id="menu-description"
+                      rows="3"
+                      placeholder="Describe this menu item..."
+                      required
+                    ></textarea>
+                  </div>
                 </div>
 
-                <!-- Gallery Tab -->
-                <div id="gallery-tab" class="tab-pane">
-                    <div class="admin-section-header">
-                        <h2><i class="fas fa-images"></i> Manage Gallery</h2>
-                        <p>Images that appear on the gallery page</p>
-                        <button class="btn btn-admin" id="add-gallery-btn">
-                            <i class="fas fa-plus"></i> Add Gallery Image
-                        </button>
-                    </div>
-
-                    <div class="admin-form-container" id="gallery-form-container" style="display: none;">
-                        <form id="gallery-form" class="admin-form">
-                            <input type="hidden" id="gallery-id" value="">
-
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="gallery-alt"><i class="fas fa-text-width"></i> Alt Text</label>
-                                    <input type="text" id="gallery-alt" placeholder="Describe the image for accessibility" required>
-                                </div>
-                            </div>
-
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="gallery-image"><i class="fas fa-image"></i> Image</label>
-                                    <input type="file" id="gallery-image" accept="image/*" required>
-                                    <small class="form-help">Max 500KB. Images are stored locally.</small>
-                                    <div class="image-preview" id="gallery-image-preview"></div>
-                                </div>
-                            </div>
-
-                            <div class="form-actions">
-                                <button type="submit" class="btn btn-admin">
-                                    <i class="fas fa-save"></i> Save Image
-                                </button>
-                                <button type="button" class="btn btn-secondary" id="cancel-gallery">
-                                    <i class="fas fa-times"></i> Cancel
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-
-                    <div class="gallery-admin-grid" id="gallery-admin-grid">
-                        <!-- Gallery images will be loaded here -->
-                        <div class="empty-state">
-                            <i class="fas fa-images"></i>
-                            <p>No gallery images yet. Add your first image!</p>
-                        </div>
-                    </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="menu-price"
+                      ><i class="fas fa-tag"></i> Price (₦)</label
+                    >
+                    <input
+                      type="number"
+                      id="menu-price"
+                      placeholder="1200"
+                      min="0"
+                      required
+                    />
+                  </div>
                 </div>
 
-                <!-- Settings Tab -->
-                <div id="settings-tab" class="tab-pane">
-                    <div class="admin-section-header">
-                        <h2><i class="fas fa-cog"></i> Admin Settings</h2>
-                    </div>
-
-                    <div class="settings-grid">
-                        <div class="settings-card">
-                            <h3><i class="fas fa-user-shield"></i> Change Password</h3>
-                            <form id="change-password-form" class="admin-form">
-                                <div class="form-group">
-                                    <label for="current-password">Current Password</label>
-                                    <input type="password" id="current-password" required>
-                                </div>
-                                <div class="form-group">
-                                    <label for="new-password">New Password</label>
-                                    <input type="password" id="new-password" required minlength="6">
-                                </div>
-                                <div class="form-group">
-                                    <label for="confirm-password">Confirm New Password</label>
-                                    <input type="password" id="confirm-password" required>
-                                </div>
-                                <button type="submit" class="btn btn-admin">
-                                    <i class="fas fa-key"></i> Update Password
-                                </button>
-                            </form>
-                        </div>
-
-                        <div class="settings-card">
-                            <h3><i class="fas fa-database"></i> Data Management</h3>
-                            <div class="settings-actions">
-                                <button class="btn btn-secondary" id="export-data">
-                                    <i class="fas fa-download"></i> Export All Data
-                                </button>
-                                <button class="btn btn-secondary" id="import-data">
-                                    <i class="fas fa-upload"></i> Import Data
-                                </button>
-                                <button class="btn btn-danger" id="reset-data">
-                                    <i class="fas fa-trash"></i> Reset to Defaults
-                                </button>
-                            </div>
-                            <small class="form-help">Export saves your data as a JSON file. Import replaces all current data.</small>
-                        </div>
-
-                        <div class="settings-card">
-                            <h3><i class="fas fa-info-circle"></i> System Info</h3>
-                            <div class="system-info">
-                                <p><strong>Version:</strong> 1.0.0</p>
-                                <p><strong>Storage Used:</strong> <span id="storage-info">0 MB</span></p>
-                                <p><strong>Items Count:</strong></p>
-                                <ul>
-                                    <li>Featured: <span id="count-featured">0</span></li>
-                                    <li>Menu: <span id="count-menu">0</span></li>
-                                    <li>Gallery: <span id="count-gallery">0</span></li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="menu-image"
+                      ><i class="fas fa-image"></i> Image</label
+                    >
+                    <input type="file" id="menu-image" accept="image/*" />
+                    <small class="form-help"
+                      >Max 500KB. Images are stored locally.</small
+                    >
+                    <div class="image-preview" id="menu-image-preview"></div>
+                  </div>
                 </div>
+
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-admin">
+                    <i class="fas fa-save"></i> Save Menu Item
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    id="cancel-menu"
+                  >
+                    <i class="fas fa-times"></i> Cancel
+                  </button>
+                </div>
+              </form>
             </div>
-        </main>
 
-        <footer class="bakes-footer">
-            <div class="footer-content">
-                <div class="footer-brand">
-                    <h3>Toke Bakes Admin</h3>
-                    <p class="tagline">Content Management System</p>
-                </div>
-                <div class="footer-info">
-                    <div class="social-links">
-                        <span class="follow-text">Quick Links</span>
-                        <div class="social-icons">
-                            <a href="index.html" target="_blank" class="social-icon" aria-label="View Homepage">
-                                <i class="fas fa-home"></i>
-                            </a>
-                            <a href="menu.html" target="_blank" class="social-icon" aria-label="View Menu">
-                                <i class="fas fa-utensils"></i>
-                            </a>
-                            <a href="gallery.html" target="_blank" class="social-icon" aria-label="View Gallery">
-                                <i class="fas fa-images"></i>
-                            </a>
-                        </div>
-                    </div>
-                </div>
+            <div class="items-list" id="menu-items-list">
+              <!-- Menu items will be loaded here -->
+              <div class="empty-state">
+                <i class="fas fa-utensils"></i>
+                <p>No menu items yet. Add your first item!</p>
+              </div>
             </div>
-            <div class="footer-bottom">
-                <p class="copyright">
-                    &copy; <span id="admin-year">2024</span> Toke Bakes Admin Panel. All rights reserved.
-                </p>
+          </div>
+
+          <!-- Gallery Tab -->
+          <div id="gallery-tab" class="tab-pane">
+            <div class="admin-section-header">
+              <h2><i class="fas fa-images"></i> Manage Gallery</h2>
+              <p>Images that appear on the gallery page</p>
+              <button class="btn btn-admin" id="add-gallery-btn">
+                <i class="fas fa-plus"></i> Add Gallery Image
+              </button>
             </div>
-        </footer>
+
+            <div
+              class="admin-form-container"
+              id="gallery-form-container"
+              style="display: none"
+            >
+              <form id="gallery-form" class="admin-form">
+                <input type="hidden" id="gallery-id" value="" />
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="gallery-alt"
+                      ><i class="fas fa-text-width"></i> Alt Text</label
+                    >
+                    <input
+                      type="text"
+                      id="gallery-alt"
+                      placeholder="Describe the image for accessibility"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="gallery-image"
+                      ><i class="fas fa-image"></i> Image</label
+                    >
+                    <input
+                      type="file"
+                      id="gallery-image"
+                      accept="image/*"
+                      required
+                    />
+                    <small class="form-help"
+                      >Max 500KB. Images are stored locally.</small
+                    >
+                    <div class="image-preview" id="gallery-image-preview"></div>
+                  </div>
+                </div>
+
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-admin">
+                    <i class="fas fa-save"></i> Save Image
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    id="cancel-gallery"
+                  >
+                    <i class="fas fa-times"></i> Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div class="gallery-admin-grid" id="gallery-admin-grid">
+              <!-- Gallery images will be loaded here -->
+              <div class="empty-state">
+                <i class="fas fa-images"></i>
+                <p>No gallery images yet. Add your first image!</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Settings Tab -->
+          <div id="settings-tab" class="tab-pane">
+            <div class="admin-section-header">
+              <h2><i class="fas fa-cog"></i> Admin Settings</h2>
+            </div>
+
+            <div class="settings-grid">
+              <div class="settings-card">
+                <h3><i class="fas fa-user-shield"></i> Change Password</h3>
+                <form id="change-password-form" class="admin-form">
+                  <div class="form-group">
+                    <label for="current-password">Current Password</label>
+                    <input type="password" id="current-password" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="new-password">New Password</label>
+                    <input
+                      type="password"
+                      id="new-password"
+                      required
+                      minlength="6"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="confirm-password">Confirm New Password</label>
+                    <input type="password" id="confirm-password" required />
+                  </div>
+                  <button type="submit" class="btn btn-admin">
+                    <i class="fas fa-key"></i> Update Password
+                  </button>
+                </form>
+              </div>
+
+              <div class="settings-card">
+                <h3><i class="fas fa-database"></i> Data Management</h3>
+                <div class="settings-actions">
+                  <button class="btn btn-secondary" id="export-data">
+                    <i class="fas fa-download"></i> Export All Data
+                  </button>
+                  <button class="btn btn-secondary" id="import-data">
+                    <i class="fas fa-upload"></i> Import Data
+                  </button>
+                  <button class="btn btn-danger" id="reset-data">
+                    <i class="fas fa-trash"></i> Reset to Defaults
+                  </button>
+                </div>
+                <small class="form-help"
+                  >Export saves your data as a JSON file. Import replaces all
+                  current data.</small
+                >
+              </div>
+
+              <div class="settings-card">
+                <h3><i class="fas fa-info-circle"></i> System Info</h3>
+                <div class="system-info">
+                  <p><strong>Version:</strong> 1.0.0</p>
+                  <p>
+                    <strong>Storage Used:</strong>
+                    <span id="storage-info">0 MB</span>
+                  </p>
+                  <p><strong>Items Count:</strong></p>
+                  <ul>
+                    <li>Featured: <span id="count-featured">0</span></li>
+                    <li>Menu: <span id="count-menu">0</span></li>
+                    <li>Gallery: <span id="count-gallery">0</span></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer class="bakes-footer">
+        <div class="footer-content">
+          <div class="footer-brand">
+            <h3>Toke Bakes Admin</h3>
+            <p class="tagline">Content Management System</p>
+          </div>
+          <div class="footer-info">
+            <div class="social-links">
+              <span class="follow-text">Quick Links</span>
+              <div class="social-icons">
+                <a
+                  href="index.html"
+                  target="_blank"
+                  class="social-icon"
+                  aria-label="View Homepage"
+                >
+                  <i class="fas fa-home"></i>
+                </a>
+                <a
+                  href="menu.html"
+                  target="_blank"
+                  class="social-icon"
+                  aria-label="View Menu"
+                >
+                  <i class="fas fa-utensils"></i>
+                </a>
+                <a
+                  href="gallery.html"
+                  target="_blank"
+                  class="social-icon"
+                  aria-label="View Gallery"
+                >
+                  <i class="fas fa-images"></i>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <p class="copyright">
+            &copy; <span id="admin-year">2024</span> Toke Bakes Admin Panel. All
+            rights reserved.
+          </p>
+        </div>
+      </footer>
     </div>
 
     <!-- Hidden file input for import -->
-    <input type="file" id="import-file" accept=".json" style="display: none;">
+    <input type="file" id="import-file" accept=".json" style="display: none" />
 
+    <script src="config.js"></script>
     <script src="admin.js"></script>
-</body>
+  </body>
 </html>
