@@ -234,106 +234,279 @@ async function updatePasswordInDatabase(newHash) {
 
 /* ================== ENHANCED UTILITY FUNCTIONS ================== */
 
-// Image compression with better error handling
+/**
+ * ULTRA-OPTIMIZED IMAGE COMPRESSION WITH POPUP NOTIFICATIONS
+ * Features:
+ * - WebP-first compression (25-35% smaller than JPEG)
+ * - User-friendly popup errors and progress
+ * - Smart quality adjustment for food images
+ * - Performance-optimized processing
+ * - Fallback to JPEG for old browsers
+ */
+
+// ================== IMAGE COMPRESSION ==================
+
 async function compressImage(file, maxSizeKB = 300) {
   return new Promise((resolve, reject) => {
+    // 1. VALIDATION WITH USER-FRIENDLY ERRORS
     if (!file.type.startsWith("image/")) {
+      showNotification(
+        "❌ Please select an image file (JPEG, PNG, WebP, etc.)",
+        "error"
+      );
       reject(new Error("File is not an image"));
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      reject(new Error("Image must be less than 5MB"));
+    // Check for unsupported formats
+    const unsupportedFormats = [
+      "image/heic",
+      "image/heif",
+      "image/raw",
+      "image/tiff",
+    ];
+    if (unsupportedFormats.includes(file.type.toLowerCase())) {
+      showNotification(
+        "❌ Please convert HEIC/TIFF/RAW images to JPEG or PNG first",
+        "error"
+      );
+      reject(new Error("Unsupported image format"));
       return;
     }
+
+    if (file.size > 10 * 1024 * 1024) {
+      // Increased to 10MB for food photography
+      showNotification("❌ Image is too large! Maximum size is 10MB", "error");
+      reject(new Error("Image must be less than 10MB"));
+      return;
+    }
+
+    // Show compression started notification
+    showNotification("🔄 Optimizing your image...", "info");
 
     const reader = new FileReader();
 
     reader.onload = function (event) {
       const img = new Image();
+
       img.onload = function () {
-        try {
-          const canvas = document.createElement("canvas");
-          let width = img.width;
-          let height = img.height;
+        // Use requestAnimationFrame for smoother UI
+        requestAnimationFrame(() => {
+          try {
+            // 2. SMART DIMENSION CALCULATION FOR FOOD IMAGES
+            const canvas = document.createElement("canvas");
+            const maxDimension = 1200; // Higher for food detail
 
-          // Calculate new dimensions while maintaining aspect ratio
-          const maxDimension = 800;
-          if (width > height && width > maxDimension) {
-            height = Math.round((height * maxDimension) / width);
-            width = maxDimension;
-          } else if (height > maxDimension) {
-            width = Math.round((width * maxDimension) / height);
-            height = maxDimension;
+            // Preserve aspect ratio with food-optimized sizing
+            let width = img.width;
+            let height = img.height;
+            const aspectRatio = width / height;
+
+            if (width > height && width > maxDimension) {
+              width = maxDimension;
+              height = Math.round(maxDimension / aspectRatio);
+            } else if (height > maxDimension) {
+              height = maxDimension;
+              width = Math.round(maxDimension * aspectRatio);
+            }
+
+            // Ensure minimum size for food detail
+            if (width < 500) width = 500;
+            if (height < 500) height = 500;
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d", { alpha: false }); // Disable alpha for speed
+
+            // Optimized drawing settings
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "medium"; // Balance of quality and speed
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // 3. WEBP-OPTIMIZED COMPRESSION WITH SMART QUALITY ADJUSTMENT
+            showNotification(
+              "🔧 Adjusting quality for optimal file size...",
+              "info"
+            );
+
+            const compressionResult = optimizeImage(canvas, maxSizeKB);
+
+            // 4. SUCCESS NOTIFICATION WITH DETAILED STATS
+            const originalKB = (file.size / 1024).toFixed(1);
+            const compressedKB = (compressionResult.data.length / 1024).toFixed(
+              1
+            );
+            const savings = (
+              (1 - compressionResult.data.length / file.size) *
+              100
+            ).toFixed(1);
+
+            let successMessage;
+            if (savings > 75) {
+              successMessage = `✅ Amazing compression! ${originalKB}KB → ${compressedKB}KB (${savings}% saved)`;
+            } else if (savings > 50) {
+              successMessage = `✅ Great optimization! ${originalKB}KB → ${compressedKB}KB`;
+            } else if (savings > 20) {
+              successMessage = `✅ Image optimized to ${compressedKB}KB`;
+            } else {
+              successMessage = `✅ Image ready at ${compressedKB}KB (high quality preserved)`;
+            }
+
+            // Add format info
+            successMessage += ` • ${compressionResult.format.toUpperCase()}`;
+
+            showNotification(successMessage, "success");
+
+            // 5. RETURN COMPRESSED DATA
+            const result = {
+              data: compressionResult.data,
+              format: compressionResult.format,
+              size: compressionResult.data.length,
+              dimensions: { width, height },
+              originalSize: file.size,
+              qualityUsed: compressionResult.quality,
+            };
+
+            console.log(
+              `🍰 Food Image Compressed: ${originalKB}KB → ${compressedKB}KB (${savings}% saved) ` +
+                `as ${compressionResult.format.toUpperCase()} at ${(
+                  compressionResult.quality * 100
+                ).toFixed(0)}% quality`
+            );
+
+            resolve(result);
+          } catch (error) {
+            // 6. PROCESSING ERROR WITH HELPFUL GUIDANCE
+            showNotification(
+              "❌ Failed to process image. Try a different format or smaller size.",
+              "error"
+            );
+            console.error("Image processing failed:", error);
+            reject(new Error(`Image processing failed: ${error.message}`));
           }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = "high";
-          ctx.drawImage(img, 0, 0, width, height);
-
-          // Convert to base64 with quality adjustment
-          let quality = 0.75;
-          let base64 = canvas.toDataURL("image/jpeg", quality);
-
-          // Check size and reduce quality if needed
-          while (base64.length > maxSizeKB * 1024 * 0.75 && quality > 0.4) {
-            quality -= 0.05;
-            base64 = canvas.toDataURL("image/jpeg", quality);
-          }
-
-          const result = {
-            data: base64,
-            format: "jpeg",
-            size: base64.length,
-            dimensions: { width, height },
-            originalSize: file.size,
-          };
-
-          // Show compression info
-          const originalKB = (file.size / 1024).toFixed(1);
-          const compressedKB = (base64.length / 1024).toFixed(1);
-          const savings = ((1 - base64.length / file.size) * 100).toFixed(1);
-
-          console.log(
-            `Image compressed: ${originalKB}KB → ${compressedKB}KB (${savings}% saved)`
-          );
-
-          resolve(result);
-        } catch (error) {
-          reject(new Error(`Image processing failed: ${error.message}`));
-        }
+        });
       };
 
-      img.onerror = () => reject(new Error("Failed to load image"));
+      img.onerror = () => {
+        showNotification(
+          "❌ Could not load image. The file may be corrupted.",
+          "error"
+        );
+        reject(new Error("Failed to load image"));
+      };
+
       img.src = event.target.result;
     };
 
-    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.onerror = () => {
+      showNotification(
+        "❌ Error reading file. Please try selecting the image again.",
+        "error"
+      );
+      reject(new Error("Failed to read file"));
+    };
+
     reader.readAsDataURL(file);
   });
 }
 
-// Enhanced notification system
+/**
+ * Optimize image to target size with WebP priority
+ */
+function optimizeImage(canvas, maxSizeKB) {
+  const TARGET_SIZE = maxSizeKB * 1024;
+  let quality = 0.85; // Start high for food quality
+  let base64;
+  let format = "webp";
+
+  try {
+    // Primary: Try WebP (95% of users)
+    base64 = canvas.toDataURL("image/webp", quality);
+
+    // Smart size optimization (fewer iterations = faster)
+    if (base64.length > TARGET_SIZE) {
+      // Calculate needed reduction
+      const oversizeRatio = base64.length / TARGET_SIZE;
+
+      if (oversizeRatio > 2) {
+        // Very oversized - bigger quality drop
+        quality = 0.7;
+        base64 = canvas.toDataURL("image/webp", quality);
+      } else if (oversizeRatio > 1.3) {
+        // Moderately oversized
+        quality = 0.78;
+        base64 = canvas.toDataURL("image/webp", quality);
+      }
+
+      // One final check
+      if (base64.length > TARGET_SIZE * 1.1 && quality > 0.65) {
+        quality = 0.65;
+        base64 = canvas.toDataURL("image/webp", quality);
+      }
+    }
+
+    // If still too large after optimization
+    if (base64.length > TARGET_SIZE * 1.2) {
+      console.warn("Food image remains large - prioritizing quality over size");
+    }
+  } catch (error) {
+    // Secondary: WebP failed, use JPEG fallback (5% of users)
+    showNotification(
+      "ℹ️ Using standard format for maximum compatibility",
+      "info"
+    );
+    quality = 0.82;
+    base64 = canvas.toDataURL("image/jpeg", quality);
+    format = "jpeg";
+
+    // JPEG size adjustment
+    if (base64.length > TARGET_SIZE && quality > 0.7) {
+      quality = 0.75;
+      base64 = canvas.toDataURL("image/jpeg", quality);
+    }
+  }
+
+  return { data: base64, format, quality };
+}
+
+// ================== ENHANCED NOTIFICATION SYSTEM ==================
+
 const notificationQueue = [];
 let isShowingNotification = false;
+let notificationTimeout = null;
 
+/**
+ * Advanced notification system with queuing, theming, and animations
+ */
 function showNotification(message, type = "success") {
   const notification = {
-    id: Date.now(),
+    id: Date.now() + Math.random(),
     message,
     type,
     timestamp: new Date(),
+    priority: getNotificationPriority(type),
   };
 
+  // Add to queue (sorted by priority)
   notificationQueue.push(notification);
+  notificationQueue.sort((a, b) => b.priority - a.priority);
 
   if (!isShowingNotification) {
     processNextNotification();
   }
+}
+
+/**
+ * Priority system: error > warning > info > success
+ */
+function getNotificationPriority(type) {
+  const priorities = {
+    error: 40,
+    warning: 30,
+    info: 20,
+    success: 10,
+  };
+  return priorities[type] || 10;
 }
 
 function processNextNotification() {
@@ -347,54 +520,248 @@ function processNextNotification() {
 
   // Remove existing notification
   const existing = document.getElementById("admin-notification");
-  if (existing) existing.remove();
+  if (existing) {
+    existing.style.animation = "slideOutRight 0.3s ease-out forwards";
+    setTimeout(() => existing.remove(), 300);
 
+    // Small delay before showing next
+    setTimeout(() => createNotification(notification), 350);
+  } else {
+    createNotification(notification);
+  }
+}
+
+function createNotification(notification) {
+  // Notification styling themes
+  const themes = {
+    success: {
+      background: "linear-gradient(135deg, #4caf50, #2e7d32)",
+      icon: "✅",
+      border: "2px solid #2e7d32",
+      iconBg: "rgba(76, 175, 80, 0.2)",
+    },
+    error: {
+      background: "linear-gradient(135deg, #e64a4a, #c62828)",
+      icon: "❌",
+      border: "2px solid #c62828",
+      iconBg: "rgba(230, 74, 74, 0.2)",
+    },
+    warning: {
+      background: "linear-gradient(135deg, #ff9800, #ef6c00)",
+      icon: "⚠️",
+      border: "2px solid #ef6c00",
+      iconBg: "rgba(255, 152, 0, 0.2)",
+    },
+    info: {
+      background: "linear-gradient(135deg, #2196f3, #1565c0)",
+      icon: "ℹ️",
+      border: "2px solid #1565c0",
+      iconBg: "rgba(33, 150, 243, 0.2)",
+    },
+  };
+
+  const theme = themes[notification.type] || themes.success;
+
+  // Create notification element
   const notificationEl = document.createElement("div");
   notificationEl.id = "admin-notification";
   notificationEl.className = `admin-notification admin-notification-${notification.type}`;
-  notificationEl.textContent = notification.message;
-  notificationEl.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    background: ${
-      notification.type === "success"
-        ? "#4caf50"
-        : notification.type === "info"
-        ? "#2196f3"
-        : notification.type === "warning"
-        ? "#ff9800"
-        : "#e64a4a"
-    };
-    color: white;
-    padding: 1rem 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    z-index: 9999;
-    animation: slideInRight 0.3s ease-out;
-    max-width: 300px;
-    cursor: pointer;
+
+  // Icon container
+  const iconEl = document.createElement("div");
+  iconEl.className = "notification-icon";
+  iconEl.textContent = theme.icon;
+  iconEl.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: ${theme.iconBg};
+    font-size: 1.2rem;
+    flex-shrink: 0;
   `;
 
-  notificationEl.addEventListener("click", () => {
-    notificationEl.style.animation = "slideOutRight 0.3s ease-out forwards";
-    setTimeout(() => {
-      notificationEl.remove();
-      processNextNotification();
-    }, 300);
+  // Message container
+  const messageEl = document.createElement("div");
+  messageEl.className = "notification-message";
+  messageEl.textContent = notification.message;
+  messageEl.style.cssText = `
+    flex: 1;
+    font-family: 'Poppins', sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.4;
+  `;
+
+  // Close button
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "notification-close";
+  closeBtn.innerHTML = "&times;";
+  closeBtn.setAttribute("aria-label", "Close notification");
+  closeBtn.style.cssText = `
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    color: white;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+    font-size: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    margin-left: 10px;
+  `;
+
+  // Container
+  const container = document.createElement("div");
+  container.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  `;
+
+  container.appendChild(iconEl);
+  container.appendChild(messageEl);
+  container.appendChild(closeBtn);
+  notificationEl.appendChild(container);
+
+  // Main notification styles
+  notificationEl.style.cssText = `
+    position: fixed;
+    top: 25px;
+    right: 25px;
+    background: ${theme.background};
+    color: white;
+    padding: 1.2rem 1.5rem;
+    border-radius: 14px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+    z-index: 10000;
+    animation: notificationSlideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    max-width: 380px;
+    min-width: 300px;
+    cursor: pointer;
+    font-family: 'Poppins', sans-serif;
+    border: ${theme.border};
+    backdrop-filter: blur(20px);
+    transition: all 0.3s ease;
+  `;
+
+  // Add hover effect
+  notificationEl.addEventListener("mouseenter", () => {
+    notificationEl.style.transform = "translateY(-3px)";
+    notificationEl.style.boxShadow = "0 12px 40px rgba(0, 0, 0, 0.25)";
+    closeBtn.style.background = "rgba(255, 255, 255, 0.25)";
+  });
+
+  notificationEl.addEventListener("mouseleave", () => {
+    notificationEl.style.transform = "translateY(0)";
+    notificationEl.style.boxShadow = "0 8px 30px rgba(0, 0, 0, 0.2)";
+    closeBtn.style.background = "rgba(255, 255, 255, 0.15)";
+  });
+
+  // Close button hover
+  closeBtn.addEventListener("mouseenter", () => {
+    closeBtn.style.transform = "scale(1.1)";
+    closeBtn.style.background = "rgba(255, 255, 255, 0.3)";
+  });
+
+  closeBtn.addEventListener("mouseleave", () => {
+    closeBtn.style.transform = "scale(1)";
+    closeBtn.style.background = "rgba(255, 255, 255, 0.15)";
+  });
+
+  // Close button click
+  closeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dismissNotification(notificationEl);
+  });
+
+  // Click anywhere to dismiss
+  notificationEl.addEventListener("click", (e) => {
+    if (!e.target.closest(".notification-close")) {
+      dismissNotification(notificationEl);
+    }
   });
 
   document.body.appendChild(notificationEl);
 
+  // Auto-dismiss based on type
+  const dismissTimes = {
+    error: 6000, // Longer for errors (users need to read)
+    warning: 5000, // Medium for warnings
+    info: 4000, // Shorter for info
+    success: 3000, // Shortest for success
+  };
+
+  notificationTimeout = setTimeout(() => {
+    if (document.body.contains(notificationEl)) {
+      dismissNotification(notificationEl);
+    }
+  }, dismissTimes[notification.type] || 3000);
+}
+
+function dismissNotification(notificationEl) {
+  if (notificationTimeout) {
+    clearTimeout(notificationTimeout);
+    notificationTimeout = null;
+  }
+
+  notificationEl.style.animation =
+    "notificationSlideOut 0.3s ease-out forwards";
+
   setTimeout(() => {
     if (document.body.contains(notificationEl)) {
-      notificationEl.style.animation = "slideOutRight 0.3s ease-out forwards";
-      setTimeout(() => {
-        notificationEl.remove();
-        processNextNotification();
-      }, 300);
+      notificationEl.remove();
     }
-  }, 3000);
+    isShowingNotification = false;
+    processNextNotification();
+  }, 300);
+}
+
+// Add notification animations to the page
+if (!document.querySelector("#notification-animations")) {
+  const style = document.createElement("style");
+  style.id = "notification-animations";
+  style.textContent = `
+    @keyframes notificationSlideIn {
+      from {
+        opacity: 0;
+        transform: translateX(100%) translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0) translateY(0);
+      }
+    }
+
+    @keyframes notificationSlideOut {
+      from {
+        opacity: 1;
+        transform: translateX(0) translateY(0);
+      }
+      to {
+        opacity: 0;
+        transform: translateX(100%) translateY(-20px);
+      }
+    }
+
+    /* Mobile responsiveness */
+    @media (max-width: 768px) {
+      #admin-notification {
+        top: 15px !important;
+        right: 15px !important;
+        left: 15px !important;
+        max-width: none !important;
+        min-width: auto !important;
+      }
+    }
+  `;
+  document.head.appendChild(style);
 }
 
 /* ================== FIXED SECURE API FUNCTIONS ================== */
