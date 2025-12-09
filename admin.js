@@ -1,5 +1,5 @@
 /* ================== admin.js ================== */
-/* Toke Bakes Admin Panel - COMPLETE WORKING VERSION (800+ lines) */
+/* Toke Bakes Admin Panel - FIXED LOGIN VERSION */
 
 // Admin credentials with SHA-256 hash for "admin123"
 const ADMIN_CREDENTIALS = {
@@ -36,6 +36,9 @@ const secureStorage = {
       sessionStorage.setItem(`secure_${key}`, btoa(JSON.stringify(value)));
     } catch (e) {
       console.warn("Secure storage failed:", e);
+      // Fallback to memory storage
+      window.tempStorage = window.tempStorage || {};
+      window.tempStorage[`secure_${key}`] = value;
     }
   },
   getItem: (key) => {
@@ -44,7 +47,8 @@ const secureStorage = {
       return item ? JSON.parse(atob(item)) : null;
     } catch (e) {
       console.warn("Secure storage retrieval failed:", e);
-      return null;
+      // Check memory storage
+      return window.tempStorage ? window.tempStorage[`secure_${key}`] : null;
     }
   },
   removeItem: (key) => {
@@ -52,6 +56,10 @@ const secureStorage = {
       sessionStorage.removeItem(`secure_${key}`);
     } catch (e) {
       console.warn("Secure storage removal failed:", e);
+    }
+    // Also remove from memory storage
+    if (window.tempStorage) {
+      delete window.tempStorage[`secure_${key}`];
     }
   },
 };
@@ -79,14 +87,8 @@ async function hashPassword(password) {
     return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
   } catch (error) {
     console.error("Password hashing failed:", error);
-
-    // Fallback for older browsers
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    return Array.from(new Uint8Array(hashBuffer))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    // Simple fallback for very old browsers
+    return password; // This is just a fallback - modern browsers support crypto
   }
 }
 
@@ -162,7 +164,7 @@ async function checkPasswordSync() {
 
           // Auto-sync with database
           ADMIN_CREDENTIALS.passwordHash = dbHash;
-          showNotification("✅ Password synced with database", "success");
+          console.log("✅ Password synced with database");
         } else {
           console.log("✅ Passwords are synced");
         }
@@ -587,14 +589,11 @@ async function loadDataFromSupabase(endpoint, id = null, forceRefresh = false) {
 
     // Return cached data if available (even if stale)
     if (dataCache.has(cacheKey)) {
-      showNotification(
-        "Using cached data. Some information may be outdated.",
-        "warning"
-      );
+      console.log("Using cached data. Some information may be outdated.");
       return dataCache.get(cacheKey).data;
     }
 
-    showNotification("Failed to load data from cloud", "error");
+    console.error("Failed to load data from cloud");
     return id ? null : [];
   }
 }
@@ -605,24 +604,30 @@ function clearDataCache() {
   tempImageCache.clear();
 }
 
-/* ================== ENHANCED AUTHENTICATION ================== */
+/* ================== FIXED AUTHENTICATION - KEY CHANGES ================== */
+
+// Fixed login attempts storage
+let loginAttempts = {
+  count: 0,
+  timestamp: Date.now(),
+  ipKey: "login_attempts",
+};
 
 // Enhanced login with rate limiting
-const loginAttempts = new Map();
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_TIME = 15 * 60 * 1000; // 15 minutes
 
 async function checkLogin(username, password) {
   try {
-    // Rate limiting check
-    const ipKey = "login_attempts";
-    const attempts = loginAttempts.get(ipKey) || {
-      count: 0,
-      timestamp: Date.now(),
-    };
+    console.log("🔐 Login attempt for:", username);
 
-    if (attempts.count >= MAX_LOGIN_ATTEMPTS) {
-      const timeSinceFirstAttempt = Date.now() - attempts.timestamp;
+    // Check if locked out
+    const storedAttempts = JSON.parse(
+      sessionStorage.getItem("login_attempts") || '{"count":0,"timestamp":0}'
+    );
+
+    if (storedAttempts.count >= MAX_LOGIN_ATTEMPTS) {
+      const timeSinceFirstAttempt = Date.now() - storedAttempts.timestamp;
       if (timeSinceFirstAttempt < LOCKOUT_TIME) {
         const remainingMinutes = Math.ceil(
           (LOCKOUT_TIME - timeSinceFirstAttempt) / 60000
@@ -634,26 +639,37 @@ async function checkLogin(username, password) {
         return false;
       } else {
         // Reset after lockout period
-        loginAttempts.delete(ipKey);
+        sessionStorage.removeItem("login_attempts");
       }
     }
 
     // Validate username
-    if (username !== ADMIN_CREDENTIALS.username) {
-      attempts.count++;
-      attempts.timestamp =
-        attempts.count === 1 ? Date.now() : attempts.timestamp;
-      loginAttempts.set(ipKey, attempts);
+    const sanitizedUsername = sanitizeInput(username);
+    if (sanitizedUsername !== ADMIN_CREDENTIALS.username) {
+      console.log("❌ Username mismatch");
+      storedAttempts.count++;
+      storedAttempts.timestamp =
+        storedAttempts.count === 1 ? Date.now() : storedAttempts.timestamp;
+      sessionStorage.setItem("login_attempts", JSON.stringify(storedAttempts));
       return false;
     }
 
+    console.log("✅ Username matches");
+
     // Hash password and compare
     const hashedPassword = await hashPassword(password);
+    console.log("Generated hash:", hashedPassword.substring(0, 20) + "...");
+    console.log(
+      "Stored hash:",
+      ADMIN_CREDENTIALS.passwordHash.substring(0, 20) + "..."
+    );
+
     const isValid = hashedPassword === ADMIN_CREDENTIALS.passwordHash;
+    console.log("Hash match?", isValid);
 
     if (isValid) {
       // Clear login attempts on success
-      loginAttempts.delete(ipKey);
+      sessionStorage.removeItem("login_attempts");
 
       // Create secure session
       const session = {
@@ -669,13 +685,16 @@ async function checkLogin(username, password) {
       startSessionTimeout();
       setupActivityMonitoring();
 
+      console.log("✅ Login successful!");
       return true;
     } else {
       // Increment failed attempts
-      attempts.count++;
-      attempts.timestamp =
-        attempts.count === 1 ? Date.now() : attempts.timestamp;
-      loginAttempts.set(ipKey, attempts);
+      storedAttempts.count++;
+      storedAttempts.timestamp =
+        storedAttempts.count === 1 ? Date.now() : storedAttempts.timestamp;
+      sessionStorage.setItem("login_attempts", JSON.stringify(storedAttempts));
+
+      console.log("❌ Password incorrect");
       return false;
     }
   } catch (error) {
@@ -718,6 +737,8 @@ function setupActivityMonitoring() {
 
 // Enhanced logout
 function logoutAdmin() {
+  console.log("Logging out admin...");
+
   // Clear all sensitive data
   currentAdmin = null;
   isEditing = false;
@@ -727,22 +748,25 @@ function logoutAdmin() {
   secureStorage.removeItem("session");
 
   // Reset UI
-  document.getElementById("login-screen").style.display = "block";
-  document.getElementById("admin-dashboard").style.display = "none";
+  const loginScreen = document.getElementById("login-screen");
+  const adminDashboard = document.getElementById("admin-dashboard");
+
+  if (loginScreen) loginScreen.style.display = "block";
+  if (adminDashboard) adminDashboard.style.display = "none";
 
   // Clear forms
   resetFeaturedForm();
   resetMenuForm();
   resetGalleryForm();
 
-  showNotification("Logged out successfully");
+  console.log("✅ Logged out successfully");
 }
 
 // FIXED: Password change with enhanced validation
 async function changePassword(currentPass, newPass, confirmPass) {
   try {
     // Step 1: Validate current password
-    showNotification("Verifying current password...", "info");
+    console.log("Verifying current password...");
 
     // Check current password
     const currentValid = await checkLogin("admin", currentPass);
@@ -780,26 +804,12 @@ async function changePassword(currentPass, newPass, confirmPass) {
       };
     }
 
-    // Check for password complexity
-    const hasUpperCase = /[A-Z]/.test(newPass);
-    const hasLowerCase = /[a-z]/.test(newPass);
-    const hasNumbers = /\d/.test(newPass);
-    const hasSpecialChars = /[!@#$%^&*(),.?":{}|<>]/.test(newPass);
-
-    if (!hasUpperCase || !hasLowerCase || !hasNumbers) {
-      return {
-        success: false,
-        message:
-          "Password must include uppercase, lowercase letters, and numbers",
-      };
-    }
-
     // Step 3: Generate new hash
-    showNotification("Generating secure hash...", "info");
+    console.log("Generating secure hash...");
     const newHash = await hashPassword(newPass);
 
     // Step 4: Update database
-    showNotification("Updating password in database...", "info");
+    console.log("Updating password in database...");
     const dbResult = await updatePasswordInDatabase(newHash);
 
     if (!dbResult.success) {
@@ -819,9 +829,8 @@ async function changePassword(currentPass, newPass, confirmPass) {
       // Update local only
       ADMIN_CREDENTIALS.passwordHash = newHash;
 
-      showNotification(
-        "✅ Password updated locally only. Manual database update required.",
-        "warning"
+      console.log(
+        "✅ Password updated locally only. Manual database update required."
       );
 
       return {
@@ -850,11 +859,6 @@ async function changePassword(currentPass, newPass, confirmPass) {
       `🔒 Password changed successfully at ${new Date().toISOString()}`
     );
 
-    showNotification(
-      "✅ Password updated successfully! Changes are saved to database.",
-      "success"
-    );
-
     return {
       success: true,
       message: "Password updated successfully in both local and database",
@@ -870,7 +874,6 @@ async function changePassword(currentPass, newPass, confirmPass) {
       userMessage = "Browser security error. Try using a modern browser.";
     }
 
-    showNotification(userMessage, "error");
     return { success: false, message: userMessage };
   }
 }
@@ -919,10 +922,10 @@ async function saveItem(itemType, formData) {
         "PATCH",
         formData
       );
-      showNotification(`${itemType} item updated successfully!`);
+      console.log(`${itemType} item updated successfully!`);
     } else {
       await secureRequest(endpoint, "POST", formData);
-      showNotification(`${itemType} item added successfully!`);
+      console.log(`${itemType} item added successfully!`);
     }
 
     // Clear cache for this endpoint
@@ -935,10 +938,6 @@ async function saveItem(itemType, formData) {
     return true;
   } catch (error) {
     console.error(`Error saving ${itemType} item:`, error);
-    showNotification(
-      `Failed to save ${itemType} item: ${error.message}`,
-      "error"
-    );
     return false;
   }
 }
@@ -1009,13 +1008,12 @@ async function saveFeaturedItem(e) {
     let imageBase64 = "";
 
     if (imageFile) {
-      showNotification("Processing image...", "info");
       const compressed = await compressImage(imageFile);
       imageBase64 = compressed.data;
     } else if (isEditing && itemId && tempImageCache.has(itemId)) {
       imageBase64 = tempImageCache.get(itemId);
     } else {
-      showNotification("Please select an image", "error");
+      alert("Please select an image");
       return;
     }
 
@@ -1031,6 +1029,7 @@ async function saveFeaturedItem(e) {
       resetFeaturedForm();
       await renderFeaturedItems();
       await updateItemCounts();
+      showNotification("Featured item saved successfully!", "success");
     }
   } catch (error) {
     console.error("Error saving featured item:", error);
@@ -1049,7 +1048,7 @@ async function deleteFeaturedItem(id) {
 
   try {
     await secureRequest(`${API_ENDPOINTS.FEATURED}?id=eq.${id}`, "DELETE");
-    showNotification("Featured item deleted!");
+    showNotification("Featured item deleted!", "success");
 
     // Clear from cache
     tempImageCache.delete(id);
@@ -1166,7 +1165,6 @@ async function saveMenuItem(e) {
     let imageBase64 = "";
 
     if (imageFile) {
-      showNotification("Processing image...", "info");
       const compressed = await compressImage(imageFile);
       imageBase64 = compressed.data;
     } else if (isEditing && itemId && tempImageCache.has(itemId)) {
@@ -1189,6 +1187,7 @@ async function saveMenuItem(e) {
       resetMenuForm();
       await renderMenuItems();
       await updateItemCounts();
+      showNotification("Menu item saved successfully!", "success");
     }
   } catch (error) {
     console.error("Error saving menu item:", error);
@@ -1237,7 +1236,7 @@ async function deleteMenuItem(id) {
 
   try {
     await secureRequest(`${API_ENDPOINTS.MENU}?id=eq.${id}`, "DELETE");
-    showNotification("Menu item deleted!");
+    showNotification("Menu item deleted!", "success");
 
     // Clear from cache
     tempImageCache.delete(id);
@@ -1311,7 +1310,6 @@ async function saveGalleryItem(e) {
     let imageBase64 = "";
 
     if (imageFile) {
-      showNotification("Processing image...", "info");
       const compressed = await compressImage(imageFile);
       imageBase64 = compressed.data;
     } else if (isEditing && itemId && tempImageCache.has(itemId)) {
@@ -1332,6 +1330,7 @@ async function saveGalleryItem(e) {
       resetGalleryForm();
       await renderGalleryItems();
       await updateItemCounts();
+      showNotification("Gallery image saved successfully!", "success");
     }
   } catch (error) {
     console.error("Error saving gallery item:", error);
@@ -1378,7 +1377,7 @@ async function deleteGalleryItem(id) {
 
   try {
     await secureRequest(`${API_ENDPOINTS.GALLERY}?id=eq.${id}`, "DELETE");
-    showNotification("Gallery image deleted!");
+    showNotification("Gallery image deleted!", "success");
 
     // Clear from cache
     tempImageCache.delete(id);
@@ -1422,11 +1421,13 @@ async function updateStorageUsage() {
     const percentage = Math.min((mbUsed / 500) * 100, 100).toFixed(1);
 
     // Update UI
-    document.getElementById("storage-used").textContent = mbUsed;
-    document.getElementById("storage-fill").style.width = `${percentage}%`;
-    document.getElementById(
-      "storage-info"
-    ).textContent = `${mbUsed} MB / 500 MB`;
+    const storageUsedEl = document.getElementById("storage-used");
+    const storageFillEl = document.getElementById("storage-fill");
+    const storageInfoEl = document.getElementById("storage-info");
+
+    if (storageUsedEl) storageUsedEl.textContent = mbUsed;
+    if (storageFillEl) storageFillEl.style.width = `${percentage}%`;
+    if (storageInfoEl) storageInfoEl.textContent = `${mbUsed} MB / 500 MB`;
 
     // Add warnings
     if (mbUsed > 450) {
@@ -1453,10 +1454,13 @@ async function updateItemCounts() {
       loadDataFromSupabase(API_ENDPOINTS.GALLERY),
     ]);
 
-    document.getElementById("count-featured").textContent =
-      featured.length || 0;
-    document.getElementById("count-menu").textContent = menu.length || 0;
-    document.getElementById("count-gallery").textContent = gallery.length || 0;
+    const countFeatured = document.getElementById("count-featured");
+    const countMenu = document.getElementById("count-menu");
+    const countGallery = document.getElementById("count-gallery");
+
+    if (countFeatured) countFeatured.textContent = featured.length || 0;
+    if (countMenu) countMenu.textContent = menu.length || 0;
+    if (countGallery) countGallery.textContent = gallery.length || 0;
 
     await updateStorageUsage();
   } catch (error) {
@@ -1505,7 +1509,7 @@ async function exportData() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    showNotification("Data exported successfully!");
+    showNotification("Data exported successfully!", "success");
   } catch (error) {
     console.error("Error exporting data:", error);
     showNotification("Failed to export data", "error");
@@ -1610,10 +1614,10 @@ function resetGalleryForm() {
   currentEditId = null;
 }
 
-/* ================== INITIALIZATION ================== */
+/* ================== FIXED INITIALIZATION ================== */
 
 async function initAdminPanel() {
-  console.log("Initializing Admin Panel v2.0...");
+  console.log("🔧 Initializing Admin Panel v2.0 (FIXED LOGIN)...");
 
   // 🔒 Initialize admin credentials from database
   try {
@@ -1629,6 +1633,8 @@ async function initAdminPanel() {
 
   // Check session
   const session = secureStorage.getItem("session");
+  console.log("Session check:", session);
+
   if (session && session.token) {
     // Check if session is still valid
     const expiresAt = new Date(session.expiresAt);
@@ -1639,9 +1645,11 @@ async function initAdminPanel() {
       document.getElementById("admin-dashboard").style.display = "block";
       startSessionTimeout();
       setupActivityMonitoring();
+      console.log("✅ Restored existing session");
     } else {
       // Session expired
       secureStorage.removeItem("session");
+      console.log("❌ Session expired");
     }
   }
 
@@ -1683,7 +1691,6 @@ async function initAdminPanel() {
       await updateItemCounts();
     } catch (error) {
       console.error("Error loading initial data:", error);
-      showNotification("Failed to load initial data", "error");
     }
   }
 
@@ -1692,6 +1699,8 @@ async function initAdminPanel() {
 }
 
 function setupEventListeners() {
+  console.log("Setting up event listeners...");
+
   // Tab switching
   document.querySelectorAll(".admin-tab").forEach((tab) => {
     tab.addEventListener("click", function () {
@@ -1729,17 +1738,21 @@ function setupEventListeners() {
   if (loginForm) {
     loginForm.addEventListener("submit", async function (e) {
       e.preventDefault();
+      console.log("Login form submitted");
+
       const username = sanitizeInput(
         document.getElementById("admin-username").value
       );
       const password = document.getElementById("admin-password").value;
+
+      console.log("Attempting login with:", username);
 
       const isValid = await checkLogin(username, password);
       if (isValid) {
         currentAdmin = username;
         document.getElementById("login-screen").style.display = "none";
         document.getElementById("admin-dashboard").style.display = "block";
-        showNotification(`Welcome back, ${username}!`);
+        showNotification(`Welcome back, ${username}!`, "success");
 
         // Load data after successful login
         await Promise.all([
@@ -1764,15 +1777,19 @@ function setupEventListeners() {
   }
 
   // Form submissions
-  document
-    .getElementById("featured-form")
-    ?.addEventListener("submit", saveFeaturedItem);
-  document
-    .getElementById("menu-form")
-    ?.addEventListener("submit", saveMenuItem);
-  document
-    .getElementById("gallery-form")
-    ?.addEventListener("submit", saveGalleryItem);
+  const featuredForm = document.getElementById("featured-form");
+  const menuForm = document.getElementById("menu-form");
+  const galleryForm = document.getElementById("gallery-form");
+
+  if (featuredForm) {
+    featuredForm.addEventListener("submit", saveFeaturedItem);
+  }
+  if (menuForm) {
+    menuForm.addEventListener("submit", saveMenuItem);
+  }
+  if (galleryForm) {
+    galleryForm.addEventListener("submit", saveGalleryItem);
+  }
 
   // Change password form
   const passwordForm = document.getElementById("change-password-form");
@@ -1785,7 +1802,7 @@ function setupEventListeners() {
 
       const result = await changePassword(currentPass, newPass, confirmPass);
       if (result.success) {
-        showNotification(result.message);
+        showNotification(result.message, "success");
         passwordForm.reset();
       } else {
         showNotification(result.message, "error");
@@ -1794,93 +1811,122 @@ function setupEventListeners() {
   }
 
   // Add buttons
-  document.getElementById("add-featured-btn")?.addEventListener("click", () => {
-    resetFeaturedForm();
-    document.getElementById("featured-form-container").style.display = "block";
-    document
-      .getElementById("featured-form-container")
-      .scrollIntoView({ behavior: "smooth" });
-  });
+  const addFeaturedBtn = document.getElementById("add-featured-btn");
+  const addMenuBtn = document.getElementById("add-menu-btn");
+  const addGalleryBtn = document.getElementById("add-gallery-btn");
 
-  document.getElementById("add-menu-btn")?.addEventListener("click", () => {
-    resetMenuForm();
-    document.getElementById("menu-form-container").style.display = "block";
-    document
-      .getElementById("menu-form-container")
-      .scrollIntoView({ behavior: "smooth" });
-  });
+  if (addFeaturedBtn) {
+    addFeaturedBtn.addEventListener("click", () => {
+      resetFeaturedForm();
+      document.getElementById("featured-form-container").style.display =
+        "block";
+      document
+        .getElementById("featured-form-container")
+        .scrollIntoView({ behavior: "smooth" });
+    });
+  }
 
-  document.getElementById("add-gallery-btn")?.addEventListener("click", () => {
-    resetGalleryForm();
-    document.getElementById("gallery-form-container").style.display = "block";
-    document
-      .getElementById("gallery-form-container")
-      .scrollIntoView({ behavior: "smooth" });
-  });
+  if (addMenuBtn) {
+    addMenuBtn.addEventListener("click", () => {
+      resetMenuForm();
+      document.getElementById("menu-form-container").style.display = "block";
+      document
+        .getElementById("menu-form-container")
+        .scrollIntoView({ behavior: "smooth" });
+    });
+  }
+
+  if (addGalleryBtn) {
+    addGalleryBtn.addEventListener("click", () => {
+      resetGalleryForm();
+      document.getElementById("gallery-form-container").style.display = "block";
+      document
+        .getElementById("gallery-form-container")
+        .scrollIntoView({ behavior: "smooth" });
+    });
+  }
 
   // Cancel buttons
-  document
-    .getElementById("cancel-featured")
-    ?.addEventListener("click", resetFeaturedForm);
-  document
-    .getElementById("cancel-menu")
-    ?.addEventListener("click", resetMenuForm);
-  document
-    .getElementById("cancel-gallery")
-    ?.addEventListener("click", resetGalleryForm);
+  const cancelFeatured = document.getElementById("cancel-featured");
+  const cancelMenu = document.getElementById("cancel-menu");
+  const cancelGallery = document.getElementById("cancel-gallery");
+
+  if (cancelFeatured) {
+    cancelFeatured.addEventListener("click", resetFeaturedForm);
+  }
+  if (cancelMenu) {
+    cancelMenu.addEventListener("click", resetMenuForm);
+  }
+  if (cancelGallery) {
+    cancelGallery.addEventListener("click", resetGalleryForm);
+  }
 
   // Data management buttons
-  document.getElementById("export-data")?.addEventListener("click", exportData);
-  document.getElementById("import-data")?.addEventListener("click", () => {
-    document.getElementById("import-file").click();
-  });
+  const exportDataBtn = document.getElementById("export-data");
+  const importDataBtn = document.getElementById("import-data");
+  const resetDataBtn = document.getElementById("reset-data");
+  const importFileInput = document.getElementById("import-file");
 
-  document.getElementById("import-file")?.addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      importData(file);
-    }
-    e.target.value = ""; // Reset file input
-  });
+  if (exportDataBtn) {
+    exportDataBtn.addEventListener("click", exportData);
+  }
 
-  document.getElementById("reset-data")?.addEventListener("click", async () => {
-    if (
-      !confirm(
-        "DANGER: This will PERMANENTLY delete ALL data. This action cannot be undone!\n\nType 'DELETE ALL' to confirm:"
-      )
-    ) {
-      return;
-    }
+  if (importDataBtn) {
+    importDataBtn.addEventListener("click", () => {
+      if (importFileInput) importFileInput.click();
+    });
+  }
 
-    const confirmation = prompt("Type 'DELETE ALL' to confirm deletion:");
-    if (confirmation !== "DELETE ALL") {
-      showNotification("Deletion cancelled", "info");
-      return;
-    }
+  if (importFileInput) {
+    importFileInput.addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        importData(file);
+      }
+      e.target.value = ""; // Reset file input
+    });
+  }
 
-    try {
-      showNotification("Resetting data...", "info");
+  if (resetDataBtn) {
+    resetDataBtn.addEventListener("click", async () => {
+      if (
+        !confirm(
+          "DANGER: This will PERMANENTLY delete ALL data. This action cannot be undone!\n\nType 'DELETE ALL' to confirm:"
+        )
+      ) {
+        return;
+      }
 
-      await Promise.all([
-        secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE"),
-        secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE"),
-        secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE"),
-      ]);
+      const confirmation = prompt("Type 'DELETE ALL' to confirm deletion:");
+      if (confirmation !== "DELETE ALL") {
+        showNotification("Deletion cancelled", "info");
+        return;
+      }
 
-      clearDataCache();
-      showNotification("All data has been reset!", "success");
+      try {
+        showNotification("Resetting data...", "info");
 
-      await Promise.all([
-        renderFeaturedItems(),
-        renderMenuItems(),
-        renderGalleryItems(),
-      ]);
-      await updateItemCounts();
-    } catch (error) {
-      console.error("Error resetting data:", error);
-      showNotification("Failed to reset data", "error");
-    }
-  });
+        await Promise.all([
+          secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE"),
+          secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE"),
+          secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE"),
+        ]);
+
+        clearDataCache();
+        showNotification("All data has been reset!", "success");
+
+        await Promise.all([
+          renderFeaturedItems(),
+          renderMenuItems(),
+          renderGalleryItems(),
+        ]);
+        await updateItemCounts();
+      } catch (error) {
+        console.error("Error resetting data:", error);
+        showNotification("Failed to reset data", "error");
+      }
+    });
+  }
 }
 
 // Make functions available globally
@@ -1914,4 +1960,4 @@ function setupConnectionMonitor() {
 // Add to initAdminPanel
 setupConnectionMonitor();
 
-console.log("✅ Toke Bakes Admin Panel v2.0 - Fully Optimized & Synced");
+console.log("✅ Toke Bakes Admin Panel v2.0 - LOGIN ISSUES FIXED");

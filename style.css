@@ -2484,3 +2484,54 @@ html {
     width: 100%;
   }
 }
+
+/* Add these to your existing style.css */
+
+/* Better form spacing */
+.admin-form .form-group {
+  margin-bottom: 1.25rem;
+}
+
+/* Improve file input styling */
+.admin-form input[type="file"] {
+  padding: 0.75rem;
+  border: 2px dashed var(--border);
+  border-radius: 8px;
+  width: 100%;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.admin-form input[type="file"]:hover {
+  border-color: var(--primary);
+}
+
+/* Better table/card spacing */
+.item-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Improve settings cards */
+.settings-card {
+  transition: transform 0.2s ease;
+}
+
+.settings-card:hover {
+  transform: translateY(-2px);
+}
+
+/* Better notification positioning */
+.admin-notification {
+  font-family: "Poppins", sans-serif;
+  font-weight: 500;
+}
+
+/* Improve scrollbar for admin panels */
+.admin-main::-webkit-scrollbar {
+  width: 8px;
+}
+
+.admin-main::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 4px;
+}
