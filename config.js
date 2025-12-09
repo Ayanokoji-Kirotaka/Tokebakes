@@ -11,8 +11,5 @@ const API_ENDPOINTS = {
   MENU: "/rest/v1/menu_items",
 };
 
-// DO NOT expose service role key in client-side code!
-// window.SUPABASE_SERVICE_KEY = "your-service-key-here"; // NEVER DO THIS
-
 window.SUPABASE_CONFIG = SUPABASE_CONFIG;
 window.API_ENDPOINTS = API_ENDPOINTS;

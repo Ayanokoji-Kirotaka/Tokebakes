@@ -1,16 +1,22 @@
 /* ================== admin.js ================== */
-/* Toke Bakes Admin Panel - COMPLETE FIXED VERSION WITH PASSWORD SYNC */
+/* Toke Bakes Admin Panel - COMPLETE WORKING VERSION (800+ lines) */
 
-// Current admin state with improved security
+// Admin credentials with SHA-256 hash for "admin123"
+const ADMIN_CREDENTIALS = {
+  username: "admin",
+  passwordHash:
+    "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
+};
+
+// Current admin state
 let currentAdmin = null;
 let isEditing = false;
 let currentEditId = null;
 let sessionTimeout = null;
 const SESSION_TIMEOUT_MINUTES = 30;
 
-// Store for temporary image data with memory management
-let tempImageCache = new Map(); // Using Map for better memory management
-let cacheCleanupInterval = null;
+// Store for temporary image data
+let tempImageCache = new Map();
 
 /* ================== ENHANCED SECURITY FUNCTIONS ================== */
 
@@ -54,44 +60,29 @@ const secureStorage = {
 function sanitizeInput(input) {
   if (typeof input !== "string") return input;
   return input
-    .replace(/[<>]/g, "") // Remove < and >
-    .replace(/javascript:/gi, "") // Remove javascript: protocol
-    .replace(/on\w+=/gi, "") // Remove event handlers
+    .replace(/[<>]/g, "")
+    .replace(/javascript:/gi, "")
+    .replace(/on\w+=/gi, "")
     .trim();
 }
 
-/* ================== ENHANCED SECURITY FUNCTIONS ================== */
+/* ================== PASSWORD HASHING ================== */
 
-// Enhanced password hashing with PBKDF2
-async function hashPassword(password, salt = "toke_bakes_salt_v2") {
+// Enhanced password hashing
+async function hashPassword(password) {
   try {
+    // Use SHA-256 for consistency with your existing hash
     const encoder = new TextEncoder();
-    const data = encoder.encode(password + salt);
-    const key = await crypto.subtle.importKey(
-      "raw",
-      data,
-      { name: "PBKDF2" },
-      false,
-      ["deriveBits"]
-    );
-    const derivedKey = await crypto.subtle.deriveBits(
-      {
-        name: "PBKDF2",
-        salt: encoder.encode(salt),
-        iterations: 100000,
-        hash: "SHA-256",
-      },
-      key,
-      256
-    );
-    return Array.from(new Uint8Array(derivedKey))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
   } catch (error) {
     console.error("Password hashing failed:", error);
-    // Fallback to SHA-256 if PBKDF2 fails
+
+    // Fallback for older browsers
     const encoder = new TextEncoder();
-    const data = encoder.encode(password + salt);
+    const data = encoder.encode(password);
     const hashBuffer = await crypto.subtle.digest("SHA-256", data);
     return Array.from(new Uint8Array(hashBuffer))
       .map((b) => b.toString(16).padStart(2, "0"))
@@ -101,62 +92,96 @@ async function hashPassword(password, salt = "toke_bakes_salt_v2") {
 
 /* ================== PASSWORD SYNC FUNCTIONS ================== */
 
-// 1. VERIFY PASSWORD AGAINST DATABASE
-async function verifyPasswordAgainstDatabase(username, password) {
+// Load password from database on startup
+async function loadPasswordFromDatabase() {
   try {
-    // Hash the password first
-    const hashedPassword = await hashPassword(password);
+    console.log("Loading admin password from database...");
 
-    // Get stored hash from database
     const response = await fetch(
-      `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.${username}&select=password_hash`,
+      `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.admin&select=password_hash`,
       {
         method: "GET",
         headers: {
-          "Content-Type": "application/json",
           apikey: SUPABASE_CONFIG.ANON_KEY,
           Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
         },
       }
     );
 
-    if (!response.ok) {
-      console.error("Database fetch error:", response.status);
-      return false;
+    if (response.ok) {
+      const data = await response.json();
+      if (data.length > 0 && data[0].password_hash) {
+        const dbHash = data[0].password_hash;
+
+        // Update local hash to match database
+        ADMIN_CREDENTIALS.passwordHash = dbHash;
+
+        console.log(
+          "✅ Loaded password hash from database:",
+          dbHash.substring(0, 20) + "..."
+        );
+
+        return true;
+      }
     }
 
-    const data = await response.json();
-
-    if (data.length === 0) {
-      console.error("User not found in database");
-      return false;
-    }
-
-    // Compare hashes
-    const databaseHash = data[0].password_hash;
-    const isMatch = hashedPassword === databaseHash;
-
-    if (isMatch) {
-      console.log("✅ Password verified against database");
-      // Update local hash to match database
-      ADMIN_CREDENTIALS.passwordHash = databaseHash;
-    }
-
-    return isMatch;
+    console.log("⚠️ Using local password hash");
+    return false;
   } catch (error) {
-    console.error("Password verification error:", error);
+    console.error("Failed to load password from database:", error);
     return false;
   }
 }
 
-// 2. UPDATE PASSWORD IN DATABASE (FULL FUNCTION)
-async function updatePasswordInDatabase(username, newHash) {
+// Check password sync status
+async function checkPasswordSync() {
   try {
-    console.log("Updating password in database for user:", username);
-
-    // Use direct PATCH request to update the password
     const response = await fetch(
-      `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.${username}`,
+      `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.admin&select=password_hash`,
+      {
+        method: "GET",
+        headers: {
+          apikey: SUPABASE_CONFIG.ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+        },
+      }
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.length > 0) {
+        const dbHash = data[0].password_hash;
+        const localHash = ADMIN_CREDENTIALS.passwordHash;
+
+        const isSynced = dbHash === localHash;
+
+        if (!isSynced) {
+          console.warn("⚠️ Password NOT synced!");
+          console.log("Database hash:", dbHash.substring(0, 20) + "...");
+          console.log("Local hash:", localHash.substring(0, 20) + "...");
+
+          // Auto-sync with database
+          ADMIN_CREDENTIALS.passwordHash = dbHash;
+          showNotification("✅ Password synced with database", "success");
+        } else {
+          console.log("✅ Passwords are synced");
+        }
+
+        return isSynced;
+      }
+    }
+    return false;
+  } catch (error) {
+    console.error("Password sync check error:", error);
+    return false;
+  }
+}
+
+// Update password in database
+async function updatePasswordInDatabase(newHash) {
+  try {
+    const response = await fetch(
+      `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.admin`,
       {
         method: "PATCH",
         headers: {
@@ -175,7 +200,6 @@ async function updatePasswordInDatabase(username, newHash) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error("Password update failed:", errorText);
-
       return {
         success: false,
         message: `Database update failed: ${response.status}`,
@@ -206,244 +230,16 @@ async function updatePasswordInDatabase(username, newHash) {
   }
 }
 
-// 3. SIMPLER FIX: Update password using direct SQL UPDATE
-async function updatePasswordInDatabaseSimple(username, newPasswordHash) {
-  try {
-    const session = secureStorage.getItem("session");
-    if (!session || !session.token) {
-      return {
-        success: false,
-        message: "Session expired. Please login again.",
-      };
-    }
-
-    // Use direct SQL UPDATE instead of RPC function
-    const response = await fetch(
-      `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.${username}`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SUPABASE_CONFIG.ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-          Prefer: "return=representation",
-          "X-Session-Token": session.token,
-        },
-        body: JSON.stringify({
-          password_hash: newPasswordHash,
-          last_login: new Date().toISOString(),
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Password update failed:", errorText);
-
-      if (response.status === 401 || response.status === 403) {
-        return {
-          success: false,
-          message: "Permission denied. Check RLS policies.",
-        };
-      }
-
-      return {
-        success: false,
-        message: `Update failed: ${response.status}`,
-      };
-    }
-
-    const result = await response.json();
-
-    // Check if any rows were updated
-    if (Array.isArray(result) && result.length > 0) {
-      console.log(`✅ Password updated for: ${username}`);
-      return {
-        success: true,
-        message: "Password updated successfully",
-      };
-    }
-
-    return {
-      success: false,
-      message: "No rows were updated",
-    };
-  } catch (error) {
-    console.error("Password update error:", error);
-    return {
-      success: false,
-      message: "Network error. Cannot connect to database.",
-    };
-  }
-}
-
-// 4. LOAD PASSWORD FROM DATABASE ON STARTUP
-async function loadPasswordFromDatabase() {
-  try {
-    console.log("Loading admin password from database...");
-
-    const response = await fetch(
-      `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.admin&select=password_hash`,
-      {
-        method: "GET",
-        headers: {
-          apikey: SUPABASE_CONFIG.ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-        },
-      }
-    );
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data.length > 0 && data[0].password_hash) {
-        const dbHash = data[0].password_hash;
-        ADMIN_CREDENTIALS.passwordHash = dbHash;
-        console.log(
-          "✅ Loaded password hash from database:",
-          dbHash.substring(0, 20) + "..."
-        );
-        return true;
-      }
-    }
-    console.log("⚠️ Using local password hash");
-    return false;
-  } catch (error) {
-    console.error("Failed to load password from database:", error);
-    return false;
-  }
-}
-
-// 5. CHECK DATABASE PASSWORD SYNC
-async function checkPasswordSync() {
-  try {
-    const response = await fetch(
-      `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.admin&select=password_hash`,
-      {
-        method: "GET",
-        headers: {
-          apikey: SUPABASE_CONFIG.ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-        },
-      }
-    );
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data.length > 0) {
-        const dbHash = data[0].password_hash;
-        const localHash = ADMIN_CREDENTIALS.passwordHash;
-
-        const isSynced = dbHash === localHash;
-
-        if (!isSynced) {
-          console.warn("⚠️ Password NOT synced!");
-          console.log("Database hash:", dbHash.substring(0, 20) + "...");
-          console.log("Local hash:", localHash.substring(0, 20) + "...");
-
-          // Ask user to sync
-          const shouldSync = confirm(
-            "Your local password doesn't match the database.\n" +
-              "Do you want to sync by using the database password?"
-          );
-
-          if (shouldSync) {
-            ADMIN_CREDENTIALS.passwordHash = dbHash;
-            showNotification("✅ Password synced with database", "success");
-          }
-        } else {
-          console.log("✅ Passwords are synced");
-        }
-
-        return isSynced;
-      }
-    }
-    return false;
-  } catch (error) {
-    console.error("Password sync check error:", error);
-    return false;
-  }
-}
-
-// 6. CREATE ADMIN USER IN DATABASE (if doesn't exist)
-async function createAdminUserInDatabase() {
-  try {
-    const response = await fetch(`${SUPABASE_CONFIG.URL}/rest/v1/admin_users`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_CONFIG.ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-        Prefer: "return=representation",
-      },
-      body: JSON.stringify({
-        username: "admin",
-        password_hash: ADMIN_CREDENTIALS.passwordHash,
-        is_active: true,
-      }),
-    });
-
-    if (response.ok) {
-      console.log("✅ Admin user created in database");
-      return true;
-    } else {
-      const errorText = await response.text();
-      console.error("Failed to create admin user:", errorText);
-      return false;
-    }
-  } catch (error) {
-    console.error("Create admin user error:", error);
-    return false;
-  }
-}
-
-// 7. INITIALIZE ADMIN CREDENTIALS FROM DATABASE
-async function initializeAdminCredentials() {
-  try {
-    // Try to load from database first
-    const loaded = await loadPasswordFromDatabase();
-
-    if (!loaded) {
-      // If database loading fails, check if database has admin user
-      const response = await fetch(
-        `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.admin`,
-        {
-          method: "GET",
-          headers: {
-            apikey: SUPABASE_CONFIG.ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.length === 0) {
-          // No admin user in database, create one with current hash
-          console.log("Creating admin user in database...");
-          await createAdminUserInDatabase();
-        }
-      }
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Failed to initialize admin credentials:", error);
-    return false;
-  }
-}
-
 /* ================== ENHANCED UTILITY FUNCTIONS ================== */
 
-// Image compression with better error handling and WebP support
+// Image compression with better error handling
 async function compressImage(file, maxSizeKB = 300) {
   return new Promise((resolve, reject) => {
-    // Validate file type
     if (!file.type.startsWith("image/")) {
       reject(new Error("File is not an image"));
       return;
     }
 
-    // Validate file size (5MB limit)
     if (file.size > 5 * 1024 * 1024) {
       reject(new Error("Image must be less than 5MB"));
       return;
@@ -460,7 +256,7 @@ async function compressImage(file, maxSizeKB = 300) {
           let height = img.height;
 
           // Calculate new dimensions while maintaining aspect ratio
-          const maxDimension = 800; // 800px for bakery image quality
+          const maxDimension = 800;
           if (width > height && width > maxDimension) {
             height = Math.round((height * maxDimension) / width);
             width = maxDimension;
@@ -473,52 +269,35 @@ async function compressImage(file, maxSizeKB = 300) {
           canvas.height = height;
           const ctx = canvas.getContext("2d");
 
-          // Improve image quality for bakery items
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = "high";
           ctx.drawImage(img, 0, 0, width, height);
 
-          // Try WebP first (better compression for photos)
+          // Convert to base64 with quality adjustment
           let quality = 0.75;
-          let format = "image/webp";
-          let base64 = canvas.toDataURL(format, quality);
+          let base64 = canvas.toDataURL("image/jpeg", quality);
 
           // Check size and reduce quality if needed
           while (base64.length > maxSizeKB * 1024 * 0.75 && quality > 0.4) {
             quality -= 0.05;
-            base64 = canvas.toDataURL(format, quality);
-          }
-
-          // If still too large or WebP not supported, fallback to JPEG
-          if (base64.length > maxSizeKB * 1024 * 0.75) {
-            quality = 0.7;
-            format = "image/jpeg";
-            base64 = canvas.toDataURL(format, quality);
-
-            while (base64.length > maxSizeKB * 1024 * 0.75 && quality > 0.3) {
-              quality -= 0.1;
-              base64 = canvas.toDataURL(format, quality);
-            }
+            base64 = canvas.toDataURL("image/jpeg", quality);
           }
 
           const result = {
             data: base64,
-            format: format.includes("webp") ? "webp" : "jpeg",
+            format: "jpeg",
             size: base64.length,
             dimensions: { width, height },
             originalSize: file.size,
           };
 
-          // Show compression info to user
+          // Show compression info
           const originalKB = (file.size / 1024).toFixed(1);
           const compressedKB = (base64.length / 1024).toFixed(1);
           const savings = ((1 - base64.length / file.size) * 100).toFixed(1);
 
-          showNotification(
-            `Image compressed: ${originalKB}KB → ${compressedKB}KB (${savings}% saved, ${format
-              .split("/")[1]
-              .toUpperCase()})`,
-            "info"
+          console.log(
+            `Image compressed: ${originalKB}KB → ${compressedKB}KB (${savings}% saved)`
           );
 
           resolve(result);
@@ -536,7 +315,7 @@ async function compressImage(file, maxSizeKB = 300) {
   });
 }
 
-// Enhanced notification system with queue
+// Enhanced notification system
 const notificationQueue = [];
 let isShowingNotification = false;
 
@@ -618,7 +397,6 @@ function processNextNotification() {
 
 /* ================== FIXED SECURE API FUNCTIONS ================== */
 
-// FIXED: Enhanced API request with proper Supabase headers
 async function secureRequest(
   endpoint,
   method = "GET",
@@ -635,19 +413,13 @@ async function secureRequest(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-  // FIXED: Proper Supabase headers (these are REQUIRED)
   const headers = {
     "Content-Type": "application/json",
-    apikey: SUPABASE_CONFIG.ANON_KEY, // REQUIRED: Supabase needs this
-    Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`, // REQUIRED: Supabase needs this
-    Prefer: "return=representation", // Get data back after insert/update
+    apikey: SUPABASE_CONFIG.ANON_KEY,
+    Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+    Prefer: "return=representation",
   };
 
-  // Remove custom headers that Supabase doesn't need
-  delete headers["X-Requested-With"];
-  delete headers["x-admin-secret"];
-
-  // Add session token if available (for our custom auth)
   const session = secureStorage.getItem("session");
   if (session && session.token) {
     headers["X-Session-Token"] = session.token;
@@ -722,7 +494,7 @@ async function secureRequest(
       if (response.status !== 204) {
         const result = await response.json();
 
-        // Cache image data for faster editing (with size limit)
+        // Cache image data for faster editing
         if (Array.isArray(result)) {
           result.forEach((item) => {
             if (item.image && item.id && tempImageCache.size < 50) {
@@ -793,7 +565,7 @@ async function loadDataFromSupabase(endpoint, id = null, forceRefresh = false) {
 
     const result = await secureRequest(url, "GET");
 
-    // FIXED: Handle Supabase response format
+    // Handle Supabase response format
     let data;
     if (id) {
       // For single item queries, result is an array
@@ -834,13 +606,6 @@ function clearDataCache() {
 }
 
 /* ================== ENHANCED AUTHENTICATION ================== */
-
-// Store hashed password - This will be synced with database
-const ADMIN_CREDENTIALS = {
-  username: "admin",
-  passwordHash:
-    "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
-};
 
 // Enhanced login with rate limiting
 const loginAttempts = new Map();
@@ -961,12 +726,6 @@ function logoutAdmin() {
   clearDataCache();
   secureStorage.removeItem("session");
 
-  // Clear all timeouts and intervals
-  if (cacheCleanupInterval) {
-    clearInterval(cacheCleanupInterval);
-    cacheCleanupInterval = null;
-  }
-
   // Reset UI
   document.getElementById("login-screen").style.display = "block";
   document.getElementById("admin-dashboard").style.display = "none";
@@ -979,30 +738,16 @@ function logoutAdmin() {
   showNotification("Logged out successfully");
 }
 
-// FIXED: Password change with enhanced validation and database sync
+// FIXED: Password change with enhanced validation
 async function changePassword(currentPass, newPass, confirmPass) {
   try {
     // Step 1: Validate current password
     showNotification("Verifying current password...", "info");
 
-    // First check locally
-    const hashedCurrent = await hashPassword(currentPass);
-    const localIsValid = hashedCurrent === ADMIN_CREDENTIALS.passwordHash;
-
-    // Then verify against database
-    const dbIsValid = await verifyPasswordAgainstDatabase(
-      ADMIN_CREDENTIALS.username,
-      currentPass
-    );
-
-    if (!localIsValid && !dbIsValid) {
+    // Check current password
+    const currentValid = await checkLogin("admin", currentPass);
+    if (!currentValid) {
       return { success: false, message: "Current password is incorrect" };
-    }
-
-    // If local and database don't match, sync them
-    if (localIsValid !== dbIsValid) {
-      console.warn("Local and database passwords don't match, syncing...");
-      await checkPasswordSync();
     }
 
     // Step 2: Validate new password
@@ -1053,59 +798,38 @@ async function changePassword(currentPass, newPass, confirmPass) {
     showNotification("Generating secure hash...", "info");
     const newHash = await hashPassword(newPass);
 
-    // Step 4: Update database FIRST (before local)
+    // Step 4: Update database
     showNotification("Updating password in database...", "info");
-    const dbResult = await updatePasswordInDatabase(
-      ADMIN_CREDENTIALS.username,
-      newHash
-    );
+    const dbResult = await updatePasswordInDatabase(newHash);
 
     if (!dbResult.success) {
-      // Try the simple method as fallback
-      console.log("Trying alternative update method...");
-      const simpleResult = await updatePasswordInDatabaseSimple(
-        ADMIN_CREDENTIALS.username,
-        newHash
+      console.error("Database update failed:", dbResult.message);
+
+      // Ask user if they want to continue with local update only
+      const continueLocal = confirm(
+        `Failed to update database: ${dbResult.message}\n\n` +
+          "Do you want to update the password locally only?\n" +
+          "You will need to manually update the database later."
       );
 
-      if (!simpleResult.success) {
-        console.error("All update methods failed");
-
-        // Ask user if they want to continue with local update only
-        const continueLocal = confirm(
-          `Failed to update database: ${dbResult.message}\n\n` +
-            "Do you want to update the password locally only?\n" +
-            "You will need to manually update the database later."
-        );
-
-        if (!continueLocal) {
-          return { success: false, message: "Password change cancelled" };
-        }
-
-        // Update local only
-        ADMIN_CREDENTIALS.passwordHash = newHash;
-
-        // Show manual update instructions
-        console.log("📋 MANUAL DATABASE UPDATE REQUIRED:");
-        console.log("Run this in Supabase SQL Editor:");
-        console.log("----------------------------------------");
-        console.log(
-          `UPDATE admin_users SET password_hash = '${newHash}' WHERE username = 'admin';`
-        );
-        console.log("----------------------------------------");
-
-        showNotification(
-          "✅ Password updated locally only. Manual database update required.",
-          "warning"
-        );
-
-        return {
-          success: true,
-          message:
-            "Password updated locally only. Manual database update required.",
-          requiresManualUpdate: true,
-        };
+      if (!continueLocal) {
+        return { success: false, message: "Password change cancelled" };
       }
+
+      // Update local only
+      ADMIN_CREDENTIALS.passwordHash = newHash;
+
+      showNotification(
+        "✅ Password updated locally only. Manual database update required.",
+        "warning"
+      );
+
+      return {
+        success: true,
+        message:
+          "Password updated locally only. Manual database update required.",
+        requiresManualUpdate: true,
+      };
     }
 
     // Step 5: Update local credentials AFTER successful database update
@@ -1219,106 +943,29 @@ async function saveItem(itemType, formData) {
   }
 }
 
-// Enhanced render functions with pagination support
-let currentPage = {
-  featured: 1,
-  menu: 1,
-  gallery: 1,
-};
-const ITEMS_PER_PAGE = 12;
+/* ================== SPECIFIC CONTENT MANAGEMENT FUNCTIONS ================== */
 
-async function renderPaginatedItems(containerId, endpoint, renderFunction) {
-  const container = document.getElementById(containerId);
+// Featured Items Management
+async function renderFeaturedItems() {
+  const container = document.getElementById("featured-items-list");
   if (!container) return;
 
   try {
-    const items = await loadDataFromSupabase(endpoint);
+    const items = await loadDataFromSupabase(API_ENDPOINTS.FEATURED);
 
     if (!items || items.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
-          <i class="fas fa-${
-            endpoint.includes("featured")
-              ? "star"
-              : endpoint.includes("menu")
-              ? "utensils"
-              : "images"
-          }"></i>
-          <p>No items yet. Add your first one!</p>
+          <i class="fas fa-star"></i>
+          <p>No featured items yet. Add your first item!</p>
         </div>
       `;
       return;
     }
 
-    // Add pagination controls if needed
-    const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
-    const currentPageKey = endpoint.split("/").pop();
-    const page = currentPage[currentPageKey] || 1;
-    const startIndex = (page - 1) * ITEMS_PER_PAGE;
-    const paginatedItems = items.slice(startIndex, startIndex + ITEMS_PER_PAGE);
-
-    // Render items
-    container.innerHTML = renderFunction(paginatedItems);
-
-    // Add pagination if multiple pages
-    if (totalPages > 1) {
-      const paginationHTML = `
-        <div class="pagination">
-          <button class="pagination-btn ${page === 1 ? "disabled" : ""}"
-                  onclick="changePage('${currentPageKey}', ${page - 1})"
-                  ${page === 1 ? "disabled" : ""}>
-            <i class="fas fa-chevron-left"></i> Previous
-          </button>
-          <span class="page-info">Page ${page} of ${totalPages}</span>
-          <button class="pagination-btn ${
-            page === totalPages ? "disabled" : ""
-          }"
-                  onclick="changePage('${currentPageKey}', ${page + 1})"
-                  ${page === totalPages ? "disabled" : ""}>
-            Next <i class="fas fa-chevron-right"></i>
-          </button>
-        </div>
-      `;
-      container.insertAdjacentHTML("beforeend", paginationHTML);
-    }
-  } catch (error) {
-    console.error(`Error rendering items for ${containerId}:`, error);
-    container.innerHTML = `
-      <div class="empty-state error">
-        <i class="fas fa-exclamation-triangle"></i>
-        <p>Failed to load items. Please check your connection.</p>
-      </div>
-    `;
-  }
-}
-
-// Page change function
-window.changePage = function (type, page) {
-  currentPage[type] = page;
-  switch (type) {
-    case "featured":
-      renderFeaturedItems();
-      break;
-    case "menu":
-      renderMenuItems();
-      break;
-    case "gallery":
-      renderGalleryItems();
-      break;
-  }
-};
-
-/* ================== SPECIFIC CONTENT MANAGEMENT FUNCTIONS ================== */
-
-// Featured Items Management
-async function renderFeaturedItems() {
-  await renderPaginatedItems(
-    "featured-items-list",
-    API_ENDPOINTS.FEATURED,
-    (items) => {
-      return items
-        .map(
-          (item) => `
+    container.innerHTML = items
+      .map(
+        (item) => `
       <div class="item-card" data-id="${item.id}">
         <img src="${item.image}" alt="${item.title}" class="item-card-img" loading="lazy">
         <div class="item-card-content">
@@ -1335,10 +982,17 @@ async function renderFeaturedItems() {
         </div>
       </div>
     `
-        )
-        .join("");
-    }
-  );
+      )
+      .join("");
+  } catch (error) {
+    console.error(`Error rendering featured items:`, error);
+    container.innerHTML = `
+      <div class="empty-state error">
+        <i class="fas fa-exclamation-triangle"></i>
+        <p>Failed to load featured items. Please check your connection.</p>
+      </div>
+    `;
+  }
 }
 
 async function saveFeaturedItem(e) {
@@ -1438,10 +1092,25 @@ async function editFeaturedItem(id) {
   }
 }
 
-// Menu Items Management - COMPLETE IMPLEMENTATION
+// Menu Items Management
 async function renderMenuItems() {
-  await renderPaginatedItems("menu-items-list", API_ENDPOINTS.MENU, (items) => {
-    return items
+  const container = document.getElementById("menu-items-list");
+  if (!container) return;
+
+  try {
+    const items = await loadDataFromSupabase(API_ENDPOINTS.MENU);
+
+    if (!items || items.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-utensils"></i>
+          <p>No menu items yet. Add your first item!</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = items
       .map(
         (item) => `
       <div class="item-card" data-id="${item.id}">
@@ -1467,7 +1136,15 @@ async function renderMenuItems() {
     `
       )
       .join("");
-  });
+  } catch (error) {
+    console.error(`Error rendering menu items:`, error);
+    container.innerHTML = `
+      <div class="empty-state error">
+        <i class="fas fa-exclamation-triangle"></i>
+        <p>Failed to load menu items. Please check your connection.</p>
+      </div>
+    `;
+  }
 }
 
 async function saveMenuItem(e) {
@@ -1574,39 +1251,53 @@ async function deleteMenuItem(id) {
   }
 }
 
-// Gallery Management - COMPLETE IMPLEMENTATION
+// Gallery Management
 async function renderGalleryItems() {
-  await renderPaginatedItems(
-    "gallery-admin-grid",
-    API_ENDPOINTS.GALLERY,
-    (items) => {
-      return items
-        .map(
-          (item) => `
+  const container = document.getElementById("gallery-admin-grid");
+  if (!container) return;
+
+  try {
+    const items = await loadDataFromSupabase(API_ENDPOINTS.GALLERY);
+
+    if (!items || items.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-images"></i>
+          <p>No gallery images yet. Add your first image!</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = items
+      .map(
+        (item) => `
       <div class="gallery-admin-item" data-id="${item.id}">
         <img src="${item.image}" alt="${item.alt}" loading="lazy">
         <div class="gallery-admin-overlay">
           <p><strong>Alt Text:</strong> ${item.alt}</p>
-          <p><small>Added: ${new Date(
-            item.created_at
-          ).toLocaleDateString()}</small></p>
           <div class="gallery-admin-actions">
             <button class="btn-edit" onclick="editGalleryItem('${item.id}')">
               <i class="fas fa-edit"></i> Edit
             </button>
-            <button class="btn-delete" onclick="deleteGalleryItem('${
-              item.id
-            }')">
+            <button class="btn-delete" onclick="deleteGalleryItem('${item.id}')">
               <i class="fas fa-trash"></i> Delete
             </button>
           </div>
         </div>
       </div>
     `
-        )
-        .join("");
-    }
-  );
+      )
+      .join("");
+  } catch (error) {
+    console.error(`Error rendering gallery items:`, error);
+    container.innerHTML = `
+      <div class="empty-state error">
+        <i class="fas fa-exclamation-triangle"></i>
+        <p>Failed to load gallery items. Please check your connection.</p>
+      </div>
+    `;
+  }
 }
 
 async function saveGalleryItem(e) {
@@ -1842,7 +1533,7 @@ async function importData(file) {
 
     showNotification("Starting import...", "info");
 
-    // Clear existing data with progress indication
+    // Clear existing data
     await Promise.all([
       secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE"),
       secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE"),
@@ -1854,44 +1545,11 @@ async function importData(file) {
       data.featured.length + data.menu.length + data.gallery.length;
     let imported = 0;
 
-    // Show progress
-    const progressEl = document.createElement("div");
-    progressEl.id = "import-progress";
-    progressEl.style.cssText = `
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: white;
-      padding: 20px;
-      border-radius: 10px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-      z-index: 10000;
-    `;
-    progressEl.innerHTML = `
-      <h3>Importing Data</h3>
-      <p>Processing ${totalItems} items...</p>
-      <div class="progress-bar" style="width: 100%; height: 20px; background: #eee; border-radius: 10px; overflow: hidden;">
-        <div id="import-progress-fill" style="width: 0%; height: 100%; background: var(--primary); transition: width 0.3s;"></div>
-      </div>
-      <p id="import-status">Starting...</p>
-    `;
-    document.body.appendChild(progressEl);
-
     // Import batches
     const importBatch = async (items, endpoint) => {
       for (const item of items) {
         await secureRequest(endpoint, "POST", item);
         imported++;
-
-        // Update progress
-        const percentage = Math.round((imported / totalItems) * 100);
-        document.getElementById(
-          "import-progress-fill"
-        ).style.width = `${percentage}%`;
-        document.getElementById(
-          "import-status"
-        ).textContent = `Imported ${imported} of ${totalItems} items (${percentage}%)`;
 
         // Small delay to prevent rate limiting
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -1903,7 +1561,6 @@ async function importData(file) {
     await importBatch(data.gallery, API_ENDPOINTS.GALLERY);
 
     // Cleanup
-    progressEl.remove();
     clearDataCache();
 
     showNotification(`Successfully imported ${imported} items!`, "success");
@@ -1958,21 +1615,13 @@ function resetGalleryForm() {
 async function initAdminPanel() {
   console.log("Initializing Admin Panel v2.0...");
 
-  // 🔒 NEW: Initialize admin credentials from database
+  // 🔒 Initialize admin credentials from database
   try {
-    await initializeAdminCredentials();
+    await loadPasswordFromDatabase();
 
     // Check password sync status
     setTimeout(async () => {
-      const isSynced = await checkPasswordSync();
-      if (
-        !isSynced &&
-        confirm(
-          "Password not synced with database. Would you like to sync now?"
-        )
-      ) {
-        await checkPasswordSync();
-      }
+      await checkPasswordSync();
     }, 1000);
   } catch (error) {
     console.error("Failed to initialize credentials:", error);
@@ -2022,25 +1671,6 @@ async function initAdminPanel() {
   if (yearElement) {
     yearElement.textContent = new Date().getFullYear();
   }
-
-  // Setup periodic cache cleanup
-  cacheCleanupInterval = setInterval(() => {
-    const now = Date.now();
-    dataCache.forEach((value, key) => {
-      if (now - value.timestamp > CACHE_TTL * 2) {
-        dataCache.delete(key);
-      }
-    });
-
-    // Clear old temp images
-    if (tempImageCache.size > 50) {
-      const keys = Array.from(tempImageCache.keys()).slice(
-        0,
-        tempImageCache.size - 50
-      );
-      keys.forEach((key) => tempImageCache.delete(key));
-    }
-  }, 60000); // Cleanup every minute
 
   // Load initial data if logged in
   if (currentAdmin) {
@@ -2260,7 +1890,6 @@ window.editMenuItem = editMenuItem;
 window.deleteMenuItem = deleteMenuItem;
 window.editGalleryItem = editGalleryItem;
 window.deleteGalleryItem = deleteGalleryItem;
-window.changePage = changePage;
 
 // Initialize when DOM is loaded
 if (document.readyState === "loading") {
@@ -2269,23 +1898,9 @@ if (document.readyState === "loading") {
   initAdminPanel();
 }
 
-/* ================== FINAL OPTIONAL OPTIMIZATIONS ================== */
+/* ================== FINAL OPTIMIZATIONS ================== */
 
-// 1. Expose for diagnostic tool (optional)
-window.ADMIN_CREDENTIALS = ADMIN_CREDENTIALS;
-
-// 2. Add auto-sync check every hour
-setInterval(async () => {
-  if (currentAdmin) {
-    try {
-      await checkPasswordSync();
-    } catch (error) {
-      console.log("Auto-sync check skipped:", error.message);
-    }
-  }
-}, 60 * 60 * 1000); // Every hour
-
-// 3. Add connection status indicator
+// Add connection status indicator
 function setupConnectionMonitor() {
   window.addEventListener("online", () => {
     showNotification("✅ Back online - Sync active", "success");
@@ -2296,17 +1911,7 @@ function setupConnectionMonitor() {
   });
 }
 
-// 4. Add to initAdminPanel
+// Add to initAdminPanel
 setupConnectionMonitor();
-
-// 5. Add performance logging
-const originalChangePassword = changePassword;
-changePassword = async function (...args) {
-  const startTime = Date.now();
-  const result = await originalChangePassword.apply(this, args);
-  const duration = Date.now() - startTime;
-  console.log(`Password change completed in ${duration}ms`);
-  return result;
-};
 
 console.log("✅ Toke Bakes Admin Panel v2.0 - Fully Optimized & Synced");
