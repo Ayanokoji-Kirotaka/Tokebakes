@@ -839,7 +839,7 @@ function clearDataCache() {
 const ADMIN_CREDENTIALS = {
   username: "admin",
   passwordHash:
-    "62b616a835024308e7aa515ad2acf3589b29f45f94229316fe00f40f9c3c064a",
+    "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
 };
 
 // Enhanced login with rate limiting
