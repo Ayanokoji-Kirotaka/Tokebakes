@@ -1,5 +1,5 @@
 /* ================== admin.js ================== */
-/* Toke Bakes Admin Panel - FIXED LOGIN VERSION */
+/* Toke Bakes Admin Panel - MODERN CONFIRMATION DIALOG VERSION */
 
 // Admin credentials with SHA-256 hash for "admin123"
 const ADMIN_CREDENTIALS = {
@@ -17,6 +17,267 @@ const SESSION_TIMEOUT_MINUTES = 30;
 
 // Store for temporary image data
 let tempImageCache = new Map();
+
+/* ================== MODERN CONFIRMATION DIALOG SYSTEM ================== */
+
+class ModernConfirmationDialog {
+  constructor() {
+    this.dialogId = "modern-confirmation-dialog";
+    this.init();
+  }
+
+  init() {
+    if (!document.getElementById(this.dialogId)) {
+      this.createDialog();
+    }
+  }
+
+  createDialog() {
+    const dialogHTML = `
+      <div id="${this.dialogId}" class="confirmation-dialog" aria-hidden="true">
+        <div class="confirmation-content" role="dialog" aria-modal="true" aria-labelledby="confirmation-title">
+          <div class="confirmation-header">
+            <i class="fas fa-exclamation-triangle"></i>
+            <h3 id="confirmation-title">Confirm Deletion</h3>
+            <p>Are you sure you want to delete this item?</p>
+          </div>
+          <div class="confirmation-body">
+            <div id="confirmation-details"></div>
+          </div>
+          <div class="confirmation-actions">
+            <button id="confirm-cancel" class="btn-confirm-cancel">
+              <i class="fas fa-times"></i> Cancel
+            </button>
+            <button id="confirm-delete" class="btn-confirm-delete">
+              <i class="fas fa-trash"></i> Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.insertAdjacentHTML("beforeend", dialogHTML);
+  }
+
+  show(itemDetails) {
+    return new Promise((resolve) => {
+      const dialog = document.getElementById(this.dialogId);
+      const detailsEl = document.getElementById("confirmation-details");
+      const cancelBtn = document.getElementById("confirm-cancel");
+      const deleteBtn = document.getElementById("confirm-delete");
+      const titleEl = document.getElementById("confirmation-title");
+
+      // Set dialog content based on item type
+      let itemType = "Item";
+      if (itemDetails.type === "featured") itemType = "Featured Item";
+      if (itemDetails.type === "menu") itemType = "Menu Item";
+      if (itemDetails.type === "gallery") itemType = "Gallery Image";
+
+      titleEl.textContent = `Delete ${itemType}`;
+
+      const detailsHTML = `
+        <p>This action cannot be undone. The following ${itemType.toLowerCase()} will be permanently deleted:</p>
+        <div class="confirmation-item">
+          <h4>${escapeHtml(itemDetails.title)}</h4>
+          ${
+            itemDetails.description
+              ? `<p>${escapeHtml(itemDetails.description)}</p>`
+              : ""
+          }
+          ${
+            itemDetails.price
+              ? `<p><strong>Price:</strong> ₦${formatPrice(
+                  itemDetails.price
+                )}</p>`
+              : ""
+          }
+          ${
+            itemDetails.created
+              ? `<p><small>Created: ${new Date(
+                  itemDetails.created
+                ).toLocaleDateString()}</small></p>`
+              : ""
+          }
+        </div>
+        <p><strong>Warning:</strong> This will permanently remove this item from your database.</p>
+      `;
+
+      detailsEl.innerHTML = detailsHTML;
+
+      // Show dialog
+      dialog.classList.add("active");
+      dialog.setAttribute("aria-hidden", "false");
+      deleteBtn.focus();
+
+      // Handle escape key
+      const handleEscape = (e) => {
+        if (e.key === "Escape") {
+          dialog.classList.remove("active");
+          dialog.setAttribute("aria-hidden", "true");
+          resolve(false);
+          document.removeEventListener("keydown", handleEscape);
+        }
+      };
+
+      document.addEventListener("keydown", handleEscape);
+
+      // Button event handlers
+      const handleCancel = () => {
+        dialog.classList.remove("active");
+        dialog.setAttribute("aria-hidden", "true");
+        resolve(false);
+        cleanup();
+      };
+
+      const handleDelete = () => {
+        dialog.classList.remove("active");
+        dialog.setAttribute("aria-hidden", "true");
+        resolve(true);
+        cleanup();
+      };
+
+      const cleanup = () => {
+        cancelBtn.removeEventListener("click", handleCancel);
+        deleteBtn.removeEventListener("click", handleDelete);
+        document.removeEventListener("keydown", handleEscape);
+      };
+
+      cancelBtn.addEventListener("click", handleCancel, { once: true });
+      deleteBtn.addEventListener("click", handleDelete, { once: true });
+    });
+  }
+}
+
+// Initialize the modern confirmation dialog system
+const confirmationDialog = new ModernConfirmationDialog();
+
+// Helper function to get item details
+async function getItemDetails(itemId, itemType) {
+  try {
+    const endpoints = {
+      featured: API_ENDPOINTS.FEATURED,
+      menu: API_ENDPOINTS.MENU,
+      gallery: API_ENDPOINTS.GALLERY,
+    };
+
+    const endpoint = endpoints[itemType] || API_ENDPOINTS.FEATURED;
+    const response = await fetch(
+      `${SUPABASE_CONFIG.URL}${endpoint}/${itemId}`,
+      {
+        headers: {
+          apikey: SUPABASE_CONFIG.ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (response.ok) {
+      const item = await response.json();
+      return {
+        id: item.id,
+        title: item.title || item.name || "Untitled Item",
+        description: item.description || "",
+        price: item.price || null,
+        created: item.created_at || null,
+        type: itemType,
+      };
+    }
+  } catch (error) {
+    console.error("Error fetching item details:", error);
+  }
+
+  return {
+    id: itemId,
+    title: "Unknown Item",
+    description: "",
+    type: itemType,
+  };
+}
+
+// Price formatting function
+function formatPrice(num) {
+  return Number(num).toLocaleString("en-NG");
+}
+
+// Modified delete functions with modern confirmation dialog
+async function deleteFeaturedItem(id) {
+  try {
+    const itemDetails = await getItemDetails(id, "featured");
+
+    const confirmed = await confirmationDialog.show(itemDetails);
+
+    if (!confirmed) {
+      showNotification("Deletion cancelled", "info");
+      return;
+    }
+
+    await secureRequest(`${API_ENDPOINTS.FEATURED}?id=eq.${id}`, "DELETE");
+    showNotification("Featured item deleted!", "success");
+
+    // Clear from cache
+    tempImageCache.delete(id);
+    clearDataCache();
+
+    await renderFeaturedItems();
+    await updateItemCounts();
+  } catch (error) {
+    console.error("Error deleting featured item:", error);
+    showNotification("Failed to delete item", "error");
+  }
+}
+
+async function deleteMenuItem(id) {
+  try {
+    const itemDetails = await getItemDetails(id, "menu");
+
+    const confirmed = await confirmationDialog.show(itemDetails);
+
+    if (!confirmed) {
+      showNotification("Deletion cancelled", "info");
+      return;
+    }
+
+    await secureRequest(`${API_ENDPOINTS.MENU}?id=eq.${id}`, "DELETE");
+    showNotification("Menu item deleted!", "success");
+
+    // Clear from cache
+    tempImageCache.delete(id);
+    clearDataCache();
+
+    await renderMenuItems();
+    await updateItemCounts();
+  } catch (error) {
+    console.error("Error deleting menu item:", error);
+    showNotification("Failed to delete menu item", "error");
+  }
+}
+
+async function deleteGalleryItem(id) {
+  try {
+    const itemDetails = await getItemDetails(id, "gallery");
+
+    const confirmed = await confirmationDialog.show(itemDetails);
+
+    if (!confirmed) {
+      showNotification("Deletion cancelled", "info");
+      return;
+    }
+
+    await secureRequest(`${API_ENDPOINTS.GALLERY}?id=eq.${id}`, "DELETE");
+    showNotification("Gallery image deleted!", "success");
+
+    // Clear from cache
+    tempImageCache.delete(id);
+    clearDataCache();
+
+    await renderGalleryItems();
+    await updateItemCounts();
+  } catch (error) {
+    console.error("Error deleting gallery item:", error);
+    showNotification("Failed to delete gallery item", "error");
+  }
+}
 
 /* ================== ENHANCED SECURITY FUNCTIONS ================== */
 
@@ -72,6 +333,13 @@ function sanitizeInput(input) {
     .replace(/javascript:/gi, "")
     .replace(/on\w+=/gi, "")
     .trim();
+}
+
+// Escape HTML for safety
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 /* ================== CUSTOM POPUP SYSTEM ================== */
@@ -1637,37 +1905,6 @@ async function saveFeaturedItem(e) {
   }
 }
 
-async function deleteFeaturedItem(id) {
-  const confirmed = await showPopup({
-    title: "Delete Featured Item",
-    message:
-      "Are you sure you want to delete this featured item?\nThis action cannot be undone.",
-    type: "warning",
-    showCancel: true,
-    cancelText: "Cancel",
-    confirmText: "Delete",
-  });
-
-  if (!confirmed) {
-    return;
-  }
-
-  try {
-    await secureRequest(`${API_ENDPOINTS.FEATURED}?id=eq.${id}`, "DELETE");
-    showNotification("Featured item deleted!", "success");
-
-    // Clear from cache
-    tempImageCache.delete(id);
-    clearDataCache();
-
-    await renderFeaturedItems();
-    await updateItemCounts();
-  } catch (error) {
-    console.error("Error deleting featured item:", error);
-    showNotification("Failed to delete item", "error");
-  }
-}
-
 async function editFeaturedItem(id) {
   try {
     const item = await loadDataFromSupabase(API_ENDPOINTS.FEATURED, id);
@@ -1697,7 +1934,7 @@ async function editFeaturedItem(id) {
   }
 }
 
-// Menu Items Management
+// Menu Items Management - FIXED: Price removed from visible display
 async function renderMenuItems() {
   const container = document.getElementById("menu-items-list");
   if (!container) return;
@@ -1718,16 +1955,16 @@ async function renderMenuItems() {
     container.innerHTML = items
       .map(
         (item) => `
-      <div class="item-card" data-id="${item.id}">
+      <div class="item-card" data-id="${item.id}" data-item="${escapeHtml(
+          item.title
+        )}" data-price="${item.price}">
         <img src="${item.image}" alt="${
           item.title
         }" class="item-card-img" loading="lazy">
         <div class="item-card-content">
           <h3 class="item-card-title">${item.title}</h3>
           <p class="item-card-desc">${item.description}</p>
-          <div class="item-card-price">₦${Number(
-            item.price
-          ).toLocaleString()}</div>
+          <!-- Price is NOT displayed here, only stored in data attributes -->
           <div class="item-card-actions">
             <button class="btn-edit" onclick="editMenuItem('${item.id}')">
               <i class="fas fa-edit"></i> Edit
@@ -1828,37 +2065,6 @@ async function editMenuItem(id) {
   } catch (error) {
     console.error("Error loading menu item for edit:", error);
     showNotification("Failed to load menu item for editing", "error");
-  }
-}
-
-async function deleteMenuItem(id) {
-  const confirmed = await showPopup({
-    title: "Delete Menu Item",
-    message:
-      "Are you sure you want to delete this menu item?\nThis action cannot be undone.",
-    type: "warning",
-    showCancel: true,
-    cancelText: "Cancel",
-    confirmText: "Delete",
-  });
-
-  if (!confirmed) {
-    return;
-  }
-
-  try {
-    await secureRequest(`${API_ENDPOINTS.MENU}?id=eq.${id}`, "DELETE");
-    showNotification("Menu item deleted!", "success");
-
-    // Clear from cache
-    tempImageCache.delete(id);
-    clearDataCache();
-
-    await renderMenuItems();
-    await updateItemCounts();
-  } catch (error) {
-    console.error("Error deleting menu item:", error);
-    showNotification("Failed to delete menu item", "error");
   }
 }
 
@@ -1975,37 +2181,6 @@ async function editGalleryItem(id) {
   } catch (error) {
     console.error("Error loading gallery item for edit:", error);
     showNotification("Failed to load gallery item for editing", "error");
-  }
-}
-
-async function deleteGalleryItem(id) {
-  const confirmed = await showPopup({
-    title: "Delete Gallery Image",
-    message:
-      "Are you sure you want to delete this gallery image?\nThis action cannot be undone.",
-    type: "warning",
-    showCancel: true,
-    cancelText: "Cancel",
-    confirmText: "Delete",
-  });
-
-  if (!confirmed) {
-    return;
-  }
-
-  try {
-    await secureRequest(`${API_ENDPOINTS.GALLERY}?id=eq.${id}`, "DELETE");
-    showNotification("Gallery image deleted!", "success");
-
-    // Clear from cache
-    tempImageCache.delete(id);
-    clearDataCache();
-
-    await renderGalleryItems();
-    await updateItemCounts();
-  } catch (error) {
-    console.error("Error deleting gallery item:", error);
-    showNotification("Failed to delete gallery item", "error");
   }
 }
 
@@ -2241,7 +2416,7 @@ function resetGalleryForm() {
 /* ================== FIXED INITIALIZATION ================== */
 
 async function initAdminPanel() {
-  console.log("🔧 Initializing Admin Panel v2.0 (FIXED LOGIN)...");
+  console.log("🔧 Initializing Admin Panel v2.0 (MODERN CONFIRMATION)...");
 
   // 🔒 Initialize admin credentials from database
   try {
@@ -2600,4 +2775,4 @@ function setupConnectionMonitor() {
 // Add to initAdminPanel
 setupConnectionMonitor();
 
-console.log("✅ Toke Bakes Admin Panel v2.0 - LOGIN ISSUES FIXED");
+console.log("✅ Toke Bakes Admin Panel v2.0 - MODERN CONFIRMATION SYSTEM");

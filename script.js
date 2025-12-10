@@ -1,5 +1,5 @@
 /* ================== script.js - TOKE BAKES WEBSITE ================== */
-/* SUPABASE-ONLY VERSION - FIXED */
+/* SUPABASE-ONLY VERSION - FIXED WITH CART VALIDATION */
 
 // ================== DATA SOURCE CONFIGURATION ==================
 
@@ -88,7 +88,7 @@ async function loadFeaturedItems() {
   }
 }
 
-// Load menu items
+// Load menu items - FIXED: Price removed from visible display
 async function loadMenuItems() {
   const container = document.getElementById("menu-container");
   if (!container) return;
@@ -106,19 +106,19 @@ async function loadMenuItems() {
       return;
     }
 
-    // Generate HTML from data
+    // Generate HTML from data - Price is NOT displayed directly
     container.innerHTML = items
       .map(
         (item) => `
           <div class="menu-item" data-item="${escapeHtml(
             item.title
-          )}" data-price="${item.price}">
+          )}" data-price="${item.price}" data-id="${item.id || ""}">
             <img src="${item.image}" alt="${
           item.title
         }" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4='">
             <h3>${escapeHtml(item.title)}</h3>
             <p>${escapeHtml(item.description)}</p>
-            <div class="price">₦${formatPrice(item.price)}</div>
+            <!-- Price is NOT displayed here - only in data attributes and popup -->
             <div class="popup">
               <button class="add-cart">Add to Cart</button>
               <a class="order-now" href="#">Order Now</a>
@@ -160,7 +160,7 @@ async function loadGalleryImages() {
     container.innerHTML = items
       .map(
         (item) => `
-          <img src="${item.image}" alt="${item.alt}" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+='">
+          <img src="${item.image}" alt="${item.alt}" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcrialCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+='">
         `
       )
       .join("");
@@ -251,10 +251,118 @@ function formatPrice(num) {
   return Number(num).toLocaleString("en-NG");
 }
 
+// Escape HTML for security (already defined in admin.js, but defined here too)
 function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+
+/* ================== CART VALIDATION FUNCTIONS ================== */
+
+// NEW: Validate cart items against current menu
+async function validateCartItems() {
+  try {
+    const cart = readCart();
+    if (cart.length === 0) return { valid: true, items: [] };
+
+    // Load current menu items
+    const currentMenu = await loadFromSupabase(API_ENDPOINTS.MENU);
+
+    const validationResults = [];
+    let hasChanges = false;
+    let hasRemovals = false;
+
+    // Check each item in cart
+    cart.forEach((cartItem, index) => {
+      const currentItem = currentMenu.find(
+        (item) => item.title === cartItem.name || item.id === cartItem.id
+      );
+
+      if (!currentItem) {
+        // Item no longer exists in menu
+        validationResults.push({
+          index,
+          name: cartItem.name,
+          status: "removed",
+          message: "This item is no longer available",
+          oldPrice: cartItem.price,
+          newPrice: null,
+        });
+        hasRemovals = true;
+        hasChanges = true;
+      } else if (currentItem.price !== cartItem.price) {
+        // Price has changed
+        validationResults.push({
+          index,
+          name: cartItem.name,
+          status: "price_changed",
+          message: `Price updated from ₦${formatPrice(
+            cartItem.price
+          )} to ₦${formatPrice(currentItem.price)}`,
+          oldPrice: cartItem.price,
+          newPrice: currentItem.price,
+        });
+        hasChanges = true;
+      } else if (currentItem.image !== cartItem.image) {
+        // Image has changed (optional check)
+        validationResults.push({
+          index,
+          name: cartItem.name,
+          status: "updated",
+          message: "This item has been updated",
+          oldPrice: cartItem.price,
+          newPrice: currentItem.price,
+        });
+        hasChanges = true;
+      } else {
+        // Item is still valid
+        validationResults.push({
+          index,
+          name: cartItem.name,
+          status: "valid",
+          message: null,
+          oldPrice: cartItem.price,
+          newPrice: currentItem.price,
+        });
+      }
+    });
+
+    return {
+      valid: !hasRemovals,
+      hasChanges,
+      hasRemovals,
+      results: validationResults,
+    };
+  } catch (error) {
+    console.error("Error validating cart:", error);
+    return { valid: false, hasChanges: false, hasRemovals: false, results: [] };
+  }
+}
+
+// NEW: Update cart with validated prices
+function updateCartWithValidation(validationResults) {
+  const cart = readCart();
+  let updatedCart = [...cart];
+  let changesMade = false;
+
+  validationResults.forEach((result) => {
+    if (result.status === "price_changed" && result.newPrice !== null) {
+      // Update price in cart
+      updatedCart[result.index].price = result.newPrice;
+      changesMade = true;
+    } else if (result.status === "removed") {
+      // Mark item as unavailable (we'll handle display separately)
+      updatedCart[result.index].unavailable = true;
+      changesMade = true;
+    }
+  });
+
+  if (changesMade) {
+    saveCart(updatedCart);
+  }
+
+  return updatedCart;
 }
 
 /* ================== LOADER ================== */
@@ -411,7 +519,7 @@ function initMenuInteractions() {
     if (!isShown) menuItem.classList.add("show-popup");
   });
 
-  // Add to cart functionality
+  // Add to cart functionality - NOW WITH ITEM ID
   document.addEventListener("click", (e) => {
     const addBtn = e.target.closest(".add-cart");
     if (!addBtn) return;
@@ -423,6 +531,7 @@ function initMenuInteractions() {
       menuItem.querySelector("h3")?.textContent?.trim();
     const price = Number(menuItem.dataset.price || 0);
     const image = menuItem.querySelector("img")?.getAttribute("src") || "";
+    const id = menuItem.dataset.id || null;
 
     if (!name) return;
 
@@ -430,8 +539,9 @@ function initMenuInteractions() {
     const existing = cart.find((it) => it.name === name);
     if (existing) {
       existing.quantity = (existing.quantity || 1) + 1;
+      existing.id = id; // Update ID if it exists
     } else {
-      cart.push({ name, price, quantity: 1, image });
+      cart.push({ name, price, quantity: 1, image, id });
     }
     saveCart(cart);
 
@@ -465,8 +575,8 @@ function initOrderFunctionality() {
     showOrderOptions(orderData);
   });
 
-  // Proceed to order button
-  document.addEventListener("click", (e) => {
+  // Proceed to order button - NOW WITH CART VALIDATION
+  document.addEventListener("click", async (e) => {
     if (!e.target || e.target.id !== "proceed-order") return;
 
     const cart = readCart();
@@ -488,6 +598,20 @@ function initOrderFunctionality() {
         }
       }
       return;
+    }
+
+    // Validate cart before proceeding
+    const validation = await validateCartItems();
+    if (validation.hasChanges) {
+      // Show warning about changes
+      const continueOrder = confirm(
+        "Some items in your cart have changed. Please review your cart before proceeding.\n\nClick OK to review changes, or Cancel to continue anyway."
+      );
+
+      if (continueOrder) {
+        // User wants to review changes, don't proceed to order
+        return;
+      }
     }
 
     const orderData = {
@@ -685,12 +809,15 @@ function initBottomSheet() {
   });
 }
 
-/* ================== CART PAGE ================== */
-function renderCartOnOrderPage() {
+/* ================== CART PAGE WITH VALIDATION ================== */
+async function renderCartOnOrderPage() {
   const cartContainer = document.getElementById("cart-container");
   if (!cartContainer) return;
 
-  let cart = readCart();
+  // First, validate cart items
+  const validation = await validateCartItems();
+  const cart = updateCartWithValidation(validation.results);
+
   cartContainer.innerHTML = "";
 
   if (cart.length === 0) {
@@ -699,9 +826,70 @@ function renderCartOnOrderPage() {
     return;
   }
 
+  // Show validation message if there are changes
+  if (validation.hasChanges) {
+    const warningDiv = document.createElement("div");
+    warningDiv.className = "cart-validation-warning";
+    warningDiv.style.cssText = `
+      background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+      color: #856404;
+      padding: 1rem;
+      border-radius: 10px;
+      margin-bottom: 1.5rem;
+      border-left: 4px solid #ffc107;
+      box-shadow: 0 4px 12px rgba(255, 193, 7, 0.15);
+      animation: slideInDown 0.4s ease-out;
+    `;
+
+    let warningMessage = "⚠️ Some items in your cart have changed:";
+
+    validation.results.forEach((result) => {
+      if (result.status === "removed") {
+        warningMessage += `<br>• <strong>${escapeHtml(result.name)}</strong>: ${
+          result.message
+        }`;
+      } else if (result.status === "price_changed") {
+        warningMessage += `<br>• <strong>${escapeHtml(result.name)}</strong>: ${
+          result.message
+        }`;
+      }
+    });
+
+    warningMessage +=
+      "<br><br><em>Please review your cart before proceeding.</em>";
+
+    warningDiv.innerHTML = warningMessage;
+    cartContainer.appendChild(warningDiv);
+  }
+
+  // Render cart items with validation highlights
   cart.forEach((it, idx) => {
     const row = document.createElement("div");
     row.className = "cart-row";
+
+    // Check validation status for this item
+    const validationResult = validation.results.find((r) => r.index === idx);
+    const isUnavailable =
+      it.unavailable ||
+      (validationResult && validationResult.status === "removed");
+    const isPriceChanged =
+      validationResult && validationResult.status === "price_changed";
+
+    // Apply styles based on validation
+    if (isUnavailable) {
+      row.style.cssText = `
+        opacity: 0.6;
+        background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+        border-left: 4px solid #dc3545;
+        position: relative;
+      `;
+    } else if (isPriceChanged) {
+      row.style.cssText = `
+        background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+        border-left: 4px solid #ffc107;
+      `;
+    }
+
     row.innerHTML = `
       <img src="${
         it.image ||
@@ -710,12 +898,39 @@ function renderCartOnOrderPage() {
       <div class="item-info">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <strong>${escapeHtml(it.name)}</strong>
+          ${
+            isUnavailable
+              ? '<span style="color:#dc3545;font-weight:bold;font-size:0.9rem;">UNAVAILABLE</span>'
+              : ""
+          }
           <button class="remove-item" data-index="${idx}">Remove</button>
         </div>
+        ${
+          isUnavailable
+            ? `
+          <div style="color:#dc3545;font-size:0.9rem;margin-top:4px;margin-bottom:8px;">
+            <i class="fas fa-exclamation-circle"></i> This item is no longer available
+          </div>
+        `
+            : ""
+        }
+        ${
+          isPriceChanged
+            ? `
+          <div style="color:#856404;font-size:0.9rem;margin-top:4px;margin-bottom:8px;">
+            <i class="fas fa-info-circle"></i> Price updated
+          </div>
+        `
+            : ""
+        }
         <div class="qty-controls" data-index="${idx}">
-          <button class="qty-decrease" data-index="${idx}">-</button>
+          <button class="qty-decrease" data-index="${idx}" ${
+      isUnavailable ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ""
+    }>-</button>
           <span class="qty" data-index="${idx}">${it.quantity}</span>
-          <button class="qty-increase" data-index="${idx}">+</button>
+          <button class="qty-increase" data-index="${idx}" ${
+      isUnavailable ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ""
+    }>+</button>
           <div style="margin-left:auto;font-weight:700;">NGN ${formatPrice(
             (it.price || 0) * (it.quantity || 1)
           )}</div>
@@ -724,6 +939,51 @@ function renderCartOnOrderPage() {
     `;
     cartContainer.appendChild(row);
   });
+
+  // Add "Remove Unavailable Items" button if needed
+  if (validation.hasRemovals) {
+    const cleanupDiv = document.createElement("div");
+    cleanupDiv.style.cssText = `
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      text-align: center;
+    `;
+
+    const cleanupBtn = document.createElement("button");
+    cleanupBtn.textContent = "Remove Unavailable Items";
+    cleanupBtn.style.cssText = `
+      background: linear-gradient(135deg, #dc3545, #c82333);
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.3s ease;
+    `;
+
+    cleanupBtn.addEventListener("mouseenter", () => {
+      cleanupBtn.style.transform = "translateY(-2px)";
+      cleanupBtn.style.boxShadow = "0 4px 12px rgba(220, 53, 69, 0.3)";
+    });
+
+    cleanupBtn.addEventListener("mouseleave", () => {
+      cleanupBtn.style.transform = "translateY(0)";
+      cleanupBtn.style.boxShadow = "none";
+    });
+
+    cleanupBtn.addEventListener("click", () => {
+      const cart = readCart();
+      const updatedCart = cart.filter((item) => !item.unavailable);
+      saveCart(updatedCart);
+      renderCartOnOrderPage();
+      showNotification("Unavailable items removed from cart", "success");
+    });
+
+    cleanupDiv.appendChild(cleanupBtn);
+    cartContainer.appendChild(cleanupDiv);
+  }
 
   // Cart event listeners
   cartContainer.querySelectorAll(".remove-item").forEach((btn) => {
@@ -809,7 +1069,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   );
 
   if (currentPage.includes("order")) {
-    renderCartOnOrderPage();
+    await renderCartOnOrderPage();
   }
 
   // Update copyright year
