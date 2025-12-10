@@ -41,7 +41,7 @@ body {
   background: var(--background);
   overflow-x: hidden;
   transition: background-color 0.3s ease, color 0.3s ease;
-  line-height: 1.6; /* Improved line spacing for readability */
+  line-height: 1.6;
 }
 
 a {
@@ -113,7 +113,7 @@ header {
 .header-inner {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 1rem 1.25rem; /* Improved spacing */
+  padding: 1rem 1.25rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -122,7 +122,7 @@ header {
 .brand {
   display: flex;
   align-items: center;
-  gap: 0.75rem; /* Better spacing */
+  gap: 0.75rem;
   animation: brandSlideIn 0.6s ease-out 0.2s both;
 }
 
@@ -154,17 +154,17 @@ header {
   transform: scale(1.1) rotate(5deg);
 }
 
-/* ================== FIXED NAVBAR SPACING ================== */
+/* ================== NAVBAR ================== */
 .navbar {
   display: flex;
   align-items: center;
-  gap: 1.25rem; /* Better spacing between nav elements */
+  gap: 1.25rem;
 }
 
 .navbar ul {
   display: flex;
   list-style: none;
-  gap: 1.75rem; /* Improved spacing between nav links */
+  gap: 1.75rem;
   margin: 0;
   padding: 0;
   align-items: center;
@@ -172,10 +172,10 @@ header {
 
 .navbar a {
   font-weight: 500;
-  padding: 0.5rem 0.75rem; /* Better touch target size */
+  padding: 0.5rem 0.75rem;
   transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   position: relative;
-  border-radius: 4px; /* Added for better hover area */
+  border-radius: 4px;
 }
 
 .navbar a::before {
@@ -201,7 +201,7 @@ header {
   transform: translateY(-2px);
 }
 
-/* ================== ENHANCED CART LINK ================== */
+/* ================== CART LINK ================== */
 .cart-link {
   position: relative;
   display: flex;
@@ -210,7 +210,7 @@ header {
   padding: 0.5rem;
   color: inherit;
   transition: transform 0.3s ease;
-  border-radius: 4px; /* Added for consistency */
+  border-radius: 4px;
 }
 
 .cart-link:hover {
@@ -249,13 +249,13 @@ header {
   display: none;
 }
 
-/* ================== ENHANCED THEME TOGGLE ================== */
+/* ================== THEME TOGGLE ================== */
 .theme-toggle {
   background: none;
   border: none;
   cursor: pointer;
   padding: 0.5rem;
-  margin-left: 1.25rem; /* Better spacing */
+  margin-left: 1.25rem;
   border-radius: 50%;
   transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   display: flex;
@@ -315,7 +315,7 @@ header {
   transform: scale(1) rotate(0deg);
 }
 
-/* ================== NAVBAR TOGGLE (HAMBURGER) ================== */
+/* ================== NAVBAR TOGGLE ================== */
 .navbar-toggle {
   display: none;
   font-size: 1.3rem;
@@ -329,18 +329,18 @@ header {
   justify-content: center;
   padding: 0;
   transition: transform 0.3s ease;
-  border-radius: 4px; /* Added for consistency */
+  border-radius: 4px;
 }
 
 .navbar-toggle:hover {
   transform: scale(1.1);
 }
 
-/* ================== ENHANCED HERO SECTION ================== */
+/* ================== HERO SECTION ================== */
 .hero {
   text-align: center;
   color: #fff;
-  padding: 7rem 1.25rem 5rem; /* Better spacing */
+  padding: 7rem 1.25rem 5rem;
   background: rgba(0, 0, 0, 0.35);
   animation: heroEntrance 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
@@ -376,7 +376,7 @@ header {
 
 .hero h2 {
   font-size: 2rem;
-  margin-bottom: 0.75rem; /* Better spacing */
+  margin-bottom: 0.75rem;
   animation: textGlow 2s ease-in-out infinite alternate;
 }
 
@@ -393,7 +393,7 @@ header {
 .hero .lead {
   font-size: 1.1rem;
   max-width: 600px;
-  margin: 0 auto 1.5rem; /* Better spacing */
+  margin: 0 auto 1.5rem;
   animation: fadeInUp 0.8s ease-out 0.4s both;
 }
 
@@ -408,11 +408,11 @@ header {
   }
 }
 
-/* ================== ENHANCED BUTTONS ================== */
+/* ================== BUTTONS ================== */
 .btn {
   background: linear-gradient(135deg, var(--primary), #ff8c42);
   color: #fff;
-  padding: 0.75rem 1.75rem; /* Better spacing */
+  padding: 0.75rem 1.75rem;
   border-radius: 25px;
   transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   font-weight: 500;
@@ -422,7 +422,7 @@ header {
   cursor: pointer;
   display: inline-block;
   transform-style: preserve-3d;
-  line-height: 1.5; /* Better text spacing */
+  line-height: 1.5;
 }
 
 .btn::before {
@@ -453,14 +453,14 @@ header {
 .btn-secondary {
   background: linear-gradient(135deg, var(--surface), var(--background));
   color: var(--text);
-  padding: 0.75rem 1.5rem; /* Better spacing */
+  padding: 0.75rem 1.5rem;
   border-radius: 22px;
   border: 1px solid var(--border);
   transition: all 0.3s ease;
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  line-height: 1.5; /* Better text spacing */
+  line-height: 1.5;
 }
 
 .btn-secondary:hover {
@@ -469,11 +469,11 @@ header {
   border-color: var(--primary);
 }
 
-/* ================== ENHANCED ABOUT PREVIEW ================== */
+/* ================== ABOUT PREVIEW ================== */
 .about-preview {
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(4px);
-  padding: 3.75rem 1.25rem; /* Better spacing */
+  padding: 3.75rem 1.25rem;
   text-align: center;
   transition: all 0.3s ease;
   position: relative;
@@ -506,21 +506,21 @@ header {
 
 .about-preview h3 {
   font-size: 1.8rem;
-  margin-bottom: 1.25rem; /* Better spacing */
+  margin-bottom: 1.25rem;
 }
 
 .about-features {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 1.5rem; /* Better spacing */
+  gap: 1.5rem;
   margin-top: 1.25rem;
 }
 
 .feature {
   flex: 1 1 280px;
   background: linear-gradient(135deg, var(--background), var(--surface));
-  padding: 1.5rem; /* Better spacing */
+  padding: 1.5rem;
   border-radius: 12px;
   box-shadow: 0 2px 10px var(--shadow);
   transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
@@ -556,18 +556,22 @@ header {
 /* ================== FEATURED CREATIONS ================== */
 .featured {
   text-align: center;
-  padding: 3.75rem 1.25rem; /* Better spacing */
+  padding: 3.75rem 1.25rem;
   position: relative;
 }
 
+/* CONTAINER - Your HTML uses #featured-container */
+#featured-container,
 .featured-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.5rem; /* Better spacing */
+  gap: 1.5rem;
   margin-top: 1.5rem;
 }
 
-.featured-item {
+/* CMS-GENERATED ITEMS - Based on your admin.js HTML structure */
+.featured-item,
+.item-card {
   background: var(--background);
   border-radius: 12px;
   overflow: hidden;
@@ -575,12 +579,14 @@ header {
   transition: transform 0.3s;
 }
 
-.featured-item:hover {
+.featured-item:hover,
+.item-card:hover {
   transform: translateY(-5px);
 }
 
-/* Image zoom with proper timing */
-.featured-item img {
+/* Image zoom */
+.featured-item img,
+.item-card-img {
   width: 100%;
   height: 200px;
   object-fit: cover;
@@ -589,40 +595,33 @@ header {
   transform-origin: center center;
 }
 
-.featured-item:hover img {
+.featured-item:hover img,
+.item-card:hover .item-card-img {
   transform: scale(1.08);
 }
 
-/* FIXED: Text stays completely stable */
-.featured-item h4 {
+/* Text styling - Both CMS and hardcoded versions */
+.featured-item h3,
+.featured-item h4,
+.item-card-title {
   margin: 1rem 1rem 0.5rem;
   font-size: 1.2rem;
   position: relative;
-  z-index: 2; /* Ensure text stays above image */
-  transform: translateZ(0); /* Hardware acceleration for stability */
+  z-index: 2;
+  transform: translateZ(0);
+  color: var(--text);
 }
 
-.featured-item p {
+.featured-item p,
+.item-card-desc {
   margin: 0 1rem 1rem;
   color: var(--text-light);
   position: relative;
-  z-index: 2; /* Ensure text stays above image */
-  transform: translateZ(0); /* Hardware acceleration for stability */
+  z-index: 2;
+  transform: translateZ(0);
 }
 
-/* Staggered animations */
-/* .featured-grid .featured-item:nth-child(1) {
-  animation-delay: 0.1s;
-}
-.featured-grid .featured-item:nth-child(2) {
-  animation-delay: 0.2s;
-}
-.featured-grid .featured-item:nth-child(3) {
-  animation-delay: 0.3s;
-} */
-
-/* ================== FIXED MENU SECTION ================== */
-
+/* ================== MENU SECTION ================== */
 .menu-section {
   padding: 3.75rem 1.25rem;
   text-align: center;
@@ -650,10 +649,9 @@ header {
   opacity: 1;
 }
 
-/* ================== CONTAINER STYLES ================== */
-/* Targets BOTH .menu-grid AND #menu-container */
-.menu-grid,
-#menu-container {
+/* CONTAINER - Your HTML uses #menu-container */
+#menu-container,
+.menu-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1.5rem;
@@ -661,8 +659,9 @@ header {
   opacity: 1;
 }
 
-/* ================== MENU ITEM ================== */
-.menu-item {
+/* CMS-GENERATED MENU ITEMS */
+.menu-item,
+.cms-menu-item {
   background: linear-gradient(135deg, var(--background), var(--surface));
   padding: 1.25rem;
   border-radius: 12px;
@@ -673,7 +672,8 @@ header {
   overflow: hidden;
 }
 
-.menu-item::before {
+.menu-item::before,
+.cms-menu-item::before {
   content: "";
   position: absolute;
   top: 0;
@@ -689,16 +689,19 @@ header {
   transition: left 0.6s ease;
 }
 
-.menu-item:hover::before {
+.menu-item:hover::before,
+.cms-menu-item:hover::before {
   left: 100%;
 }
 
-.menu-item:hover {
+.menu-item:hover,
+.cms-menu-item:hover {
   transform: translateY(-8px) scale(1.02);
   box-shadow: 0 15px 35px var(--shadow);
 }
 
-.menu-item img {
+.menu-item img,
+.cms-menu-item img {
   width: 100%;
   height: 200px;
   border-radius: 10px;
@@ -707,25 +710,34 @@ header {
   display: block;
 }
 
-.menu-item:hover img {
+.menu-item:hover img,
+.cms-menu-item:hover img {
   transform: scale(1.05);
 }
 
-.menu-item h3 {
+/* Menu item text styling */
+.menu-item h3,
+.cms-menu-item h3 {
   margin: 1rem 0 0.5rem;
   position: relative;
   z-index: 2;
+  color: var(--text);
+  font-size: 1.25rem;
 }
 
-.menu-item p {
+.menu-item p,
+.cms-menu-item p {
   margin: 0 0 1rem;
   color: #666;
   position: relative;
   z-index: 2;
+  font-size: 0.95rem;
 }
 
-/* ================== PRICE STYLING ================== */
-.menu-item .price {
+/* Price styling - CRITICAL: Your admin.js renders price with .item-card-price class */
+.menu-item .price,
+.cms-menu-item .price,
+.item-card-price {
   margin: 1rem 0;
   font-size: 1.5rem;
   font-weight: bold;
@@ -734,8 +746,9 @@ header {
   z-index: 2;
 }
 
-/* ================== POPUP ================== */
-.menu-item .popup {
+/* Popup styling - This is JS-controlled */
+.menu-item .popup,
+.cms-menu-item .popup {
   display: none;
   position: absolute;
   bottom: 10px;
@@ -749,19 +762,23 @@ header {
   z-index: 3;
 }
 
-[data-theme="dark"] .menu-item .popup {
+[data-theme="dark"] .menu-item .popup,
+[data-theme="dark"] .cms-menu-item .popup {
   background: rgba(45, 45, 45, 0.95);
 }
 
-.menu-item.show-popup .popup {
+.menu-item.show-popup .popup,
+.cms-menu-item.show-popup .popup {
   display: flex;
   justify-content: space-between;
   gap: 0.5rem;
 }
 
-/* ================== BUTTONS ================== */
-.add-cart,
-.order-now {
+/* Button styling inside popup */
+.menu-item .add-cart,
+.menu-item .order-now,
+.cms-menu-item .add-cart,
+.cms-menu-item .order-now {
   background: var(--primary);
   border: none;
   color: #fff;
@@ -773,9 +790,11 @@ header {
   overflow: hidden;
   transition: all 0.3s ease;
   line-height: 1.4;
+  min-width: 100px;
 }
 
-.add-cart.added {
+.menu-item .add-cart.added,
+.cms-menu-item .add-cart.added {
   animation: addConfirmation 0.6s ease-out;
 }
 
@@ -794,11 +813,11 @@ header {
   }
 }
 
-.order-now {
+.menu-item .order-now,
+.cms-menu-item .order-now {
   background: var(--secondary);
 }
 
-/* ================== ANIMATIONS ================== */
 @keyframes slideUpFade {
   from {
     opacity: 0;
@@ -810,39 +829,44 @@ header {
   }
 }
 
-/* ================== ENHANCED GALLERY ================== */
+/* ================== GALLERY SECTION ================== */
 .gallery-section {
-  padding: 3.75rem 1.25rem; /* Better spacing */
+  padding: 3.75rem 1.25rem;
   text-align: center;
 }
 
+/* CONTAINER - Your HTML uses #gallery-container */
+#gallery-container,
 .gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1rem; /* Better spacing */
+  gap: 1rem;
   margin-top: 1.5rem;
   opacity: 1;
-  animation: gridFadeIn 0.8s ease-out 0.3s forwards;
 }
 
+#gallery-container img,
 .gallery-grid img {
   width: 100%;
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   position: relative;
-  display: block; /* Ensure proper rendering */
+  display: block;
+  height: 200px;
+  object-fit: cover;
 }
 
+#gallery-container img:hover,
 .gallery-grid img:hover {
   transform: scale(1.08) rotate(1deg);
   box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
   z-index: 10;
 }
 
-/* ================== FIXED ORDER PAGE - NO JERKING ================== */
+/* ================== ORDER PAGE ================== */
 .order-section {
-  padding: 3.75rem 1.25rem 6.25rem; /* Better spacing */
+  padding: 3.75rem 1.25rem 6.25rem;
   text-align: center;
   background: rgba(255, 255, 255, 0.9);
   animation: contentSlideUp 0.8s ease-out;
@@ -866,31 +890,18 @@ header {
 .cart-row {
   display: flex;
   align-items: center;
-  gap: 1rem; /* Better spacing */
+  gap: 1rem;
   margin: 1rem 0;
   background: linear-gradient(180deg, var(--background), var(--surface));
   border-radius: 12px;
   padding: 0.875rem;
   box-shadow: 0 6px 18px var(--shadow);
   border: 1px solid var(--border);
-  transition: box-shadow 0.3s ease, border-color 0.3s ease; /* Only safe properties */
-  animation: slideInRight 0.4s ease-out;
-  min-height: 100px; /* Fixed height to prevent layout shift */
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  min-height: 100px;
   position: relative;
 }
 
-/* @keyframes slideInRight {
-  from {
-    opacity: 0;
-    transform: translateX(30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-} */
-
-/* FIXED: No transform on hover to prevent jerking */
 .cart-row:hover {
   box-shadow: 0 8px 25px var(--shadow);
   border-color: rgba(230, 122, 0, 0.3);
@@ -903,7 +914,7 @@ header {
   object-fit: cover;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
   transition: transform 0.3s ease;
-  flex-shrink: 0; /* Prevent image from affecting layout */
+  flex-shrink: 0;
 }
 
 .cart-row:hover img {
@@ -912,15 +923,15 @@ header {
 
 .item-info {
   flex: 1;
-  min-width: 0; /* Prevent flex item from growing */
+  min-width: 0;
 }
 
 .qty-controls {
   display: flex;
   align-items: center;
-  gap: 0.75rem; /* Better spacing */
+  gap: 0.75rem;
   margin-top: 0.5rem;
-  flex-wrap: nowrap; /* Prevent wrapping */
+  flex-wrap: nowrap;
 }
 
 .qty-controls button {
@@ -936,8 +947,8 @@ header {
   transition: all 0.2s ease;
   position: relative;
   overflow: hidden;
-  line-height: 1; /* Better text alignment */
-  flex-shrink: 0; /* Prevent buttons from shrinking */
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .qty-controls button:hover {
@@ -945,9 +956,8 @@ header {
   box-shadow: 0 4px 12px rgba(230, 122, 0, 0.3);
 }
 
-/* Fix quantity display */
 .qty-controls span {
-  min-width: 30px; /* Fixed width for quantity number */
+  min-width: 30px;
   text-align: center;
   font-weight: 600;
   display: inline-block;
@@ -964,8 +974,8 @@ header {
   transition: background 160ms ease, transform 120ms ease, box-shadow 160ms;
   display: inline-block;
   margin-left: 0.625rem;
-  line-height: 1.4; /* Better text spacing */
-  flex-shrink: 0; /* Prevent remove button from affecting layout */
+  line-height: 1.4;
+  flex-shrink: 0;
 }
 
 .remove-item:hover {
@@ -978,7 +988,7 @@ header {
   margin-top: 1.5rem;
   display: flex;
   justify-content: center;
-  gap: 1rem; /* Better spacing */
+  gap: 1rem;
 }
 
 #cart-message {
@@ -1006,22 +1016,22 @@ header {
 /* ================== CONTENT PAGES ================== */
 .content-wrapper {
   max-width: 900px;
-  margin: 7.5rem auto 5rem; /* Better spacing */
+  margin: 7.5rem auto 5rem;
   background: var(--background);
-  padding: 2.5rem; /* Better spacing */
+  padding: 2.5rem;
   border-radius: 10px;
   box-shadow: 0 2px 10px var(--shadow);
   animation: contentSlideUp 0.8s ease-out;
 }
 
 .content-wrapper h1 {
-  margin-bottom: 1rem; /* Better spacing */
+  margin-bottom: 1rem;
   font-size: 2rem;
   color: var(--primary);
 }
 
 .content-wrapper h2 {
-  margin-top: 1.25rem; /* Better spacing */
+  margin-top: 1.25rem;
   color: var(--secondary);
 }
 
@@ -1082,8 +1092,8 @@ header {
   cursor: pointer;
   color: var(--text);
   transition: transform 0.3s ease;
-  padding: 0.25rem; /* Better touch target */
-  border-radius: 4px; /* Added for hover area */
+  padding: 0.25rem;
+  border-radius: 4px;
 }
 
 .sheet-close:hover {
@@ -1137,7 +1147,7 @@ header {
   transition: transform 0.3s ease;
   position: relative;
   overflow: hidden;
-  line-height: 1.4; /* Better text spacing */
+  line-height: 1.4;
 }
 
 .order-option-btn:hover {
@@ -1163,7 +1173,7 @@ header {
   color: var(--text-light);
 }
 
-/* ================== ENHANCED RIPPLE EFFECT ================== */
+/* ================== RIPPLE EFFECT ================== */
 .ripple-effect {
   position: absolute;
   border-radius: 50%;
@@ -1204,8 +1214,8 @@ header {
 .bakes-footer {
   background: linear-gradient(135deg, #fff8f0 0%, #f5e6d8 100%);
   color: #5a3921;
-  padding: 3.125rem 1.25rem 1.5625rem; /* Better spacing */
-  margin-top: 5rem; /* Better spacing */
+  padding: 3.125rem 1.25rem 1.5625rem;
+  margin-top: 5rem;
   border-top: 2px solid #d4a76a;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   position: relative;
@@ -1256,7 +1266,7 @@ header {
 
 .footer-content {
   max-width: 500px;
-  margin: 0 auto 2.1875rem; /* Better spacing */
+  margin: 0 auto 2.1875rem;
   text-align: center;
   position: relative;
   z-index: 2;
@@ -1265,7 +1275,7 @@ header {
 .footer-brand h3 {
   color: #d4a76a;
   font-size: 2rem;
-  margin-bottom: 0.625rem; /* Better spacing */
+  margin-bottom: 0.625rem;
   font-weight: 700;
   transition: all 0.3s ease;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -1279,7 +1289,7 @@ header {
 .tagline {
   color: inherit;
   font-size: 1.1rem;
-  margin-bottom: 1.875rem; /* Better spacing */
+  margin-bottom: 1.875rem;
   opacity: 0.9;
   font-style: italic;
   transition: all 0.3s ease;
@@ -1295,7 +1305,7 @@ header {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 3.125rem; /* Better spacing */
+  gap: 3.125rem;
   flex-wrap: wrap;
   margin-bottom: 0.625rem;
 }
@@ -1303,12 +1313,12 @@ header {
 .phone-link {
   display: flex;
   align-items: center;
-  gap: 0.75rem; /* Better spacing */
+  gap: 0.75rem;
   text-decoration: none;
   color: inherit;
   font-weight: 600;
   font-size: 1.1rem;
-  padding: 0.75rem 1.5rem; /* Better spacing */
+  padding: 0.75rem 1.5rem;
   border-radius: 30px;
   transition: all 0.4s ease;
   background: rgba(212, 167, 106, 0.1);
@@ -1360,7 +1370,7 @@ header {
 .social-links {
   display: flex;
   align-items: center;
-  gap: 1.25rem; /* Better spacing */
+  gap: 1.25rem;
 }
 
 .follow-text {
@@ -1394,7 +1404,7 @@ header {
 
 .social-icons {
   display: flex;
-  gap: 0.9375rem; /* Better spacing */
+  gap: 0.9375rem;
 }
 
 .social-icon {
@@ -1449,7 +1459,7 @@ header {
 
 .footer-bottom {
   border-top: 1px solid rgba(212, 167, 106, 0.3);
-  padding-top: 1.5625rem; /* Better spacing */
+  padding-top: 1.5625rem;
   text-align: center;
   position: relative;
   z-index: 2;
@@ -1458,7 +1468,7 @@ header {
 .legal-links {
   display: flex;
   justify-content: center;
-  gap: 1.875rem; /* Better spacing */
+  gap: 1.875rem;
   margin-bottom: 0.9375rem;
 }
 
@@ -1468,7 +1478,7 @@ header {
   font-size: 0.9rem;
   opacity: 0.8;
   transition: all 0.3s ease;
-  padding: 0.375rem 0.75rem; /* Better spacing */
+  padding: 0.375rem 0.75rem;
   border-radius: 6px;
   position: relative;
   font-weight: 500;
@@ -1530,7 +1540,7 @@ header {
     min-width: 150px;
     z-index: 1001;
     animation: mobileMenuSlide 0.3s ease-out;
-    gap: 0.75rem; /* Better spacing for mobile */
+    gap: 0.75rem;
   }
 
   @keyframes mobileMenuSlide {
@@ -1586,7 +1596,8 @@ header {
     padding: 1.5625rem;
   }
 
-  .menu-item img {
+  .menu-item img,
+  .cms-menu-item img {
     height: 160px;
   }
 
@@ -1627,7 +1638,8 @@ header {
   }
 
   /* Mobile animation adjustments */
-  .menu-item:hover {
+  .menu-item:hover,
+  .cms-menu-item:hover {
     transform: translateY(-4px) scale(1.01);
   }
 
@@ -1637,6 +1649,20 @@ header {
 
   .btn:hover {
     transform: translateY(-2px) scale(1.02);
+  }
+
+  /* Adjust grid for mobile */
+  #featured-container,
+  .featured-grid,
+  #menu-container,
+  .menu-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  #gallery-container,
+  .gallery-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -1660,12 +1686,12 @@ header {
     font-size: 0.95rem;
   }
 
-  .about-features,
-  .featured-grid {
+  .about-features {
     grid-template-columns: 1fr;
   }
 
-  .menu-item {
+  .menu-item,
+  .cms-menu-item {
     padding: 0.9375rem;
   }
 
@@ -1682,6 +1708,26 @@ header {
   .sheet-actions {
     flex-direction: column;
   }
+
+  /* Single column grids on very small screens */
+  #featured-container,
+  .featured-grid,
+  #menu-container,
+  .menu-grid,
+  #gallery-container,
+  .gallery-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Adjust button sizes for mobile */
+  .menu-item .add-cart,
+  .menu-item .order-now,
+  .cms-menu-item .add-cart,
+  .cms-menu-item .order-now {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.85rem;
+    min-width: 80px;
+  }
 }
 
 /* Reduce motion for accessibility */
@@ -1693,7 +1739,7 @@ header {
   }
 }
 
-/* Enhanced Minimal Scrollbar with CSS-Only Dynamics */
+/* Enhanced Minimal Scrollbar */
 ::-webkit-scrollbar {
   width: 12px;
   transition: width 0.3s ease;
@@ -1723,7 +1769,6 @@ header {
   background: linear-gradient(to bottom, #e65a00, var(--primary));
 }
 
-/* Animate on hover for some "dynamic" feel */
 ::-webkit-scrollbar:hover {
   width: 14px;
 }
@@ -1749,7 +1794,7 @@ html {
   scrollbar-color: var(--primary) var(--bg-secondary);
 }
 
-/* Mobile - thinner and less animation */
+/* Mobile scrollbar */
 @media (max-width: 768px) {
   ::-webkit-scrollbar {
     width: 8px;
@@ -1779,98 +1824,6 @@ html {
     transform: none;
   }
 }
-
-/* ================== SCROLL TO TOP BUTTON ================== */
-/* .scroll-to-top-btn {
-  position: fixed;
-  bottom: 30px;
-  right: 30px;
-  width: 50px;
-  height: 50px;
-  background: linear-gradient(135deg, var(--primary), #ff8c42);
-  color: white;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  font-size: 1.25rem;
-  font-weight: bold;
-  box-shadow: 0 4px 20px rgba(230, 122, 0, 0.3);
-  transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(20px) scale(0.8);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.scroll-to-top-btn::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.3),
-    transparent
-  );
-  transition: left 0.6s ease;
-}
-
-.scroll-to-top-btn:hover::before {
-  left: 100%;
-}
-
-.scroll-to-top-btn.visible {
-  opacity: 1;
-  visibility: visible;
-  transform: translateY(0) scale(1);
-}
-
-.scroll-to-top-btn:hover {
-  transform: scale(1.1);
-  box-shadow: 0 6px 25px rgba(230, 122, 0, 0.4);
-  background: linear-gradient(135deg, #ff8c42, var(--primary));
-}
-
-.scroll-to-top-btn:active {
-  transform: scale(0.95);
-}
-
-/* Dark theme adjustments */
-/* [data-theme="dark"] .scroll-to-top-btn {
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-}
-
-[data-theme="dark"] .scroll-to-top-btn:hover {
-  box-shadow: 0 6px 25px rgba(0, 0, 0, 0.5);
-} */
-
-/* Mobile responsiveness */
-/* @media (max-width: 768px) {
-  .scroll-to-top-btn {
-    bottom: 20px;
-    right: 20px;
-    width: 44px;
-    height: 44px;
-    font-size: 1.1rem;
-  }
-} */
-
-/* @media (max-width: 480px) {
-  .scroll-to-top-btn {
-    bottom: 15px;
-    right: 15px;
-    width: 40px;
-    height: 40px;
-    font-size: 1rem;
-  }
-}  */
 
 /* ================== ADMIN PANEL STYLES ================== */
 
@@ -2207,7 +2160,7 @@ html {
   margin-top: 1rem;
 }
 
-/* Items List */
+/* Items List - YOUR ADMIN HTML USES .items-list class */
 .items-list {
   display: grid;
   gap: 1.5rem;
@@ -2250,8 +2203,9 @@ html {
   line-height: 1.5;
 }
 
+/* CRITICAL: Your admin.js renders price with .item-card-price */
 .item-card-price {
-  color: var(--primary);
+  color: #d35400; /* Orange color for price */
   font-weight: 600;
   font-size: 1.1rem;
   margin-bottom: 1rem;
@@ -2294,7 +2248,7 @@ html {
   background: rgba(230, 74, 74, 0.2);
 }
 
-/* Gallery Admin Grid */
+/* Gallery Admin Grid - YOUR ADMIN HTML USES .gallery-admin-grid */
 .gallery-admin-grid {
   display: grid;
   gap: 1.5rem;
@@ -2432,6 +2386,11 @@ html {
   }
 }
 
+/* Admin Tab Content */
+.admin-tab-content {
+  margin-top: 2rem;
+}
+
 /* Responsive Admin */
 @media (max-width: 768px) {
   .admin-tabs {
@@ -2487,8 +2446,6 @@ html {
   }
 }
 
-/* Add these to your existing style.css */
-
 /* Better form spacing */
 .admin-form .form-group {
   margin-bottom: 1.25rem;
@@ -2536,4 +2493,99 @@ html {
 .admin-main::-webkit-scrollbar-thumb {
   background: var(--primary);
   border-radius: 4px;
+}
+
+/* Admin Footer Adjustments */
+.admin-dashboard .bakes-footer {
+  margin-top: 2rem;
+}
+
+/* Admin Year in Footer */
+#admin-year {
+  font-weight: bold;
+}
+
+/* Your admin.html specific ID selectors */
+#featured-items-list,
+#menu-items-list,
+#gallery-admin-grid {
+  margin-top: 2rem;
+}
+
+#featured-form-container,
+#menu-form-container,
+#gallery-form-container {
+  margin-bottom: 3rem;
+}
+
+#storage-used,
+#storage-info {
+  font-weight: bold;
+  color: var(--primary);
+}
+
+#count-featured,
+#count-menu,
+#count-gallery {
+  font-weight: bold;
+  color: var(--primary);
+}
+
+/* Import file input styling */
+#import-file {
+  display: none;
+}
+
+/* Button hover effects */
+#export-data:hover,
+#import-data:hover {
+  transform: translateY(-2px);
+}
+
+/* Form specific styling */
+#featured-form input[type="file"],
+#menu-form input[type="file"],
+#gallery-form input[type="file"] {
+  border: 2px dashed var(--border);
+  padding: 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+#featured-form input[type="file"]:hover,
+#menu-form input[type="file"]:hover,
+#gallery-form input[type="file"]:hover {
+  border-color: var(--primary);
+  background: rgba(230, 122, 0, 0.05);
+}
+
+/* Price input specific styling */
+#menu-price {
+  font-weight: bold;
+}
+
+/* Dark theme adjustments for admin */
+[data-theme="dark"] .admin-login-box {
+  background: var(--bg-secondary);
+}
+
+[data-theme="dark"] .admin-form-container {
+  background: var(--bg-secondary);
+}
+
+[data-theme="dark"] .settings-card {
+  background: var(--bg-secondary);
+}
+
+[data-theme="dark"] .item-card {
+  background: var(--bg-secondary);
+}
+
+[data-theme="dark"] .storage-status {
+  background: var(--bg-secondary);
+}
+
+[data-theme="dark"] .admin-header {
+  background: var(--bg-secondary);
 }

@@ -74,6 +74,231 @@ function sanitizeInput(input) {
     .trim();
 }
 
+/* ================== CUSTOM POPUP SYSTEM ================== */
+
+// Custom popup system to replace alert/confirm
+function showPopup(options) {
+  return new Promise((resolve) => {
+    // Remove existing popup if any
+    const existingPopup = document.getElementById("custom-popup-overlay");
+    if (existingPopup) {
+      existingPopup.remove();
+    }
+
+    const {
+      title = "Notification",
+      message,
+      type = "info",
+      showCancel = false,
+      cancelText = "Cancel",
+      confirmText = "OK",
+      onConfirm = () => {},
+      onCancel = () => {},
+    } = options;
+
+    // Create overlay
+    const overlay = document.createElement("div");
+    overlay.id = "custom-popup-overlay";
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10001;
+      backdrop-filter: blur(4px);
+      animation: fadeIn 0.3s ease;
+    `;
+
+    // Create popup
+    const popup = document.createElement("div");
+    popup.style.cssText = `
+      background: white;
+      border-radius: 12px;
+      padding: 0;
+      min-width: 320px;
+      max-width: 450px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      animation: slideIn 0.3s ease;
+      overflow: hidden;
+      font-family: 'Poppins', sans-serif;
+    `;
+
+    // Header with type-based color
+    const typeColors = {
+      info: "#2196F3",
+      success: "#4CAF50",
+      warning: "#FF9800",
+      error: "#F44336",
+      question: "#9C27B0",
+    };
+
+    const header = document.createElement("div");
+    header.style.cssText = `
+      background: ${typeColors[type] || typeColors.info};
+      color: white;
+      padding: 1.5rem;
+      text-align: center;
+    `;
+
+    const titleEl = document.createElement("h3");
+    titleEl.textContent = title;
+    titleEl.style.cssText = `
+      margin: 0;
+      font-size: 1.4rem;
+      font-weight: 600;
+    `;
+
+    header.appendChild(titleEl);
+    popup.appendChild(header);
+
+    // Message
+    const messageEl = document.createElement("div");
+    messageEl.style.cssText = `
+      padding: 2rem;
+      color: #333;
+      line-height: 1.6;
+      text-align: center;
+      font-size: 1rem;
+    `;
+    messageEl.textContent = message;
+    popup.appendChild(messageEl);
+
+    // Buttons container
+    const buttonsContainer = document.createElement("div");
+    buttonsContainer.style.cssText = `
+      display: flex;
+      gap: 12px;
+      padding: 0 2rem 2rem;
+      justify-content: ${showCancel ? "space-between" : "center"};
+    `;
+
+    // Cancel button
+    if (showCancel) {
+      const cancelBtn = document.createElement("button");
+      cancelBtn.textContent = cancelText;
+      cancelBtn.style.cssText = `
+        flex: 1;
+        padding: 12px 24px;
+        background: #f5f5f5;
+        color: #666;
+        border: none;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-family: 'Poppins', sans-serif;
+      `;
+
+      cancelBtn.addEventListener("mouseenter", () => {
+        cancelBtn.style.background = "#e0e0e0";
+      });
+
+      cancelBtn.addEventListener("mouseleave", () => {
+        cancelBtn.style.background = "#f5f5f5";
+      });
+
+      cancelBtn.addEventListener("click", () => {
+        overlay.remove();
+        onCancel();
+        resolve(false);
+      });
+
+      buttonsContainer.appendChild(cancelBtn);
+    }
+
+    // Confirm button
+    const confirmBtn = document.createElement("button");
+    confirmBtn.textContent = confirmText;
+    confirmBtn.style.cssText = `
+      flex: 1;
+      padding: 12px 24px;
+      background: ${typeColors[type] || typeColors.info};
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: 'Poppins', sans-serif;
+    `;
+
+    confirmBtn.addEventListener("mouseenter", () => {
+      confirmBtn.style.opacity = "0.9";
+      confirmBtn.style.transform = "translateY(-2px)";
+    });
+
+    confirmBtn.addEventListener("mouseleave", () => {
+      confirmBtn.style.opacity = "1";
+      confirmBtn.style.transform = "translateY(0)";
+    });
+
+    confirmBtn.addEventListener("click", () => {
+      overlay.remove();
+      onConfirm();
+      resolve(true);
+    });
+
+    buttonsContainer.appendChild(confirmBtn);
+    popup.appendChild(buttonsContainer);
+    overlay.appendChild(popup);
+    document.body.appendChild(overlay);
+
+    // Add animations
+    if (!document.querySelector("#popup-animations")) {
+      const style = document.createElement("style");
+      style.id = "popup-animations";
+      style.textContent = `
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        @keyframes slideIn {
+          from {
+            opacity: 0;
+            transform: translateY(-20px) scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        #custom-popup-overlay button:active {
+          transform: scale(0.98);
+        }
+
+        @media (max-width: 480px) {
+          #custom-popup-overlay > div {
+            width: 90%;
+            min-width: auto;
+            margin: 20px;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    // Close on overlay click (outside popup)
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) {
+        if (showCancel) {
+          overlay.remove();
+          onCancel();
+          resolve(false);
+        }
+      }
+    });
+  });
+}
+
 /* ================== PASSWORD HASHING ================== */
 
 // Enhanced password hashing
@@ -1182,12 +1407,15 @@ async function changePassword(currentPass, newPass, confirmPass) {
     if (!dbResult.success) {
       console.error("Database update failed:", dbResult.message);
 
-      // Ask user if they want to continue with local update only
-      const continueLocal = confirm(
-        `Failed to update database: ${dbResult.message}\n\n` +
-          "Do you want to update the password locally only?\n" +
-          "You will need to manually update the database later."
-      );
+      // Use custom popup instead of confirm
+      const continueLocal = await showPopup({
+        title: "Database Update Failed",
+        message: `Failed to update database: ${dbResult.message}\n\nDo you want to update the password locally only?\nYou will need to manually update the database later.`,
+        type: "warning",
+        showCancel: true,
+        cancelText: "Cancel",
+        confirmText: "Update Locally",
+      });
 
       if (!continueLocal) {
         return { success: false, message: "Password change cancelled" };
@@ -1380,7 +1608,12 @@ async function saveFeaturedItem(e) {
     } else if (isEditing && itemId && tempImageCache.has(itemId)) {
       imageBase64 = tempImageCache.get(itemId);
     } else {
-      alert("Please select an image");
+      showPopup({
+        title: "Image Required",
+        message: "Please select an image",
+        type: "error",
+        confirmText: "OK",
+      });
       return;
     }
 
@@ -1405,11 +1638,17 @@ async function saveFeaturedItem(e) {
 }
 
 async function deleteFeaturedItem(id) {
-  if (
-    !confirm(
-      "Are you sure you want to delete this featured item?\nThis action cannot be undone."
-    )
-  ) {
+  const confirmed = await showPopup({
+    title: "Delete Featured Item",
+    message:
+      "Are you sure you want to delete this featured item?\nThis action cannot be undone.",
+    type: "warning",
+    showCancel: true,
+    cancelText: "Cancel",
+    confirmText: "Delete",
+  });
+
+  if (!confirmed) {
     return;
   }
 
@@ -1593,11 +1832,17 @@ async function editMenuItem(id) {
 }
 
 async function deleteMenuItem(id) {
-  if (
-    !confirm(
-      "Are you sure you want to delete this menu item?\nThis action cannot be undone."
-    )
-  ) {
+  const confirmed = await showPopup({
+    title: "Delete Menu Item",
+    message:
+      "Are you sure you want to delete this menu item?\nThis action cannot be undone.",
+    type: "warning",
+    showCancel: true,
+    cancelText: "Cancel",
+    confirmText: "Delete",
+  });
+
+  if (!confirmed) {
     return;
   }
 
@@ -1734,11 +1979,17 @@ async function editGalleryItem(id) {
 }
 
 async function deleteGalleryItem(id) {
-  if (
-    !confirm(
-      "Are you sure you want to delete this gallery image?\nThis action cannot be undone."
-    )
-  ) {
+  const confirmed = await showPopup({
+    title: "Delete Gallery Image",
+    message:
+      "Are you sure you want to delete this gallery image?\nThis action cannot be undone.",
+    type: "warning",
+    showCancel: true,
+    cancelText: "Cancel",
+    confirmText: "Delete",
+  });
+
+  if (!confirmed) {
     return;
   }
 
@@ -1894,11 +2145,17 @@ async function importData(file) {
       return;
     }
 
-    if (
-      !confirm(
-        "WARNING: This will replace ALL current data. This action cannot be undone. Continue?"
-      )
-    ) {
+    const confirmed = await showPopup({
+      title: "Import Data",
+      message:
+        "WARNING: This will replace ALL current data. This action cannot be undone.\n\nAre you sure you want to continue?",
+      type: "warning",
+      showCancel: true,
+      cancelText: "Cancel",
+      confirmText: "Import",
+    });
+
+    if (!confirmed) {
       return;
     }
 
@@ -2256,15 +2513,31 @@ function setupEventListeners() {
 
   if (resetDataBtn) {
     resetDataBtn.addEventListener("click", async () => {
-      if (
-        !confirm(
-          "DANGER: This will PERMANENTLY delete ALL data. This action cannot be undone!\n\nType 'DELETE ALL' to confirm:"
-        )
-      ) {
+      const confirmed = await showPopup({
+        title: "Danger: Delete All Data",
+        message:
+          'This will PERMANENTLY delete ALL data. This action cannot be undone!\n\nTo confirm, please type "DELETE ALL" in the box below:',
+        type: "error",
+        showCancel: true,
+        cancelText: "Cancel",
+        confirmText: "Continue",
+      });
+
+      if (!confirmed) {
         return;
       }
 
-      const confirmation = prompt("Type 'DELETE ALL' to confirm deletion:");
+      const confirmation = await showPopup({
+        title: "Type Confirmation",
+        message: 'Please type "DELETE ALL" to confirm deletion:',
+        type: "warning",
+        showInput: true,
+        inputPlaceholder: "Type DELETE ALL here",
+        showCancel: true,
+        cancelText: "Cancel",
+        confirmText: "Delete All",
+      });
+
       if (confirmation !== "DELETE ALL") {
         showNotification("Deletion cancelled", "info");
         return;
