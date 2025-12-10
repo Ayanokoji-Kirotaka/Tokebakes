@@ -365,6 +365,66 @@ function updateCartWithValidation(validationResults) {
   return updatedCart;
 }
 
+/* ================== NOTIFICATION FUNCTION ================== */
+function showNotification(message, type = "success") {
+  // Create a simple notification element
+  const notification = document.createElement("div");
+  notification.textContent = message;
+  notification.style.cssText = `
+    position: fixed;
+    top: 25px;
+    right: 25px;
+    background: ${type === "success" ? "#4CAF50" : "#F44336"};
+    color: white;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    z-index: 9999;
+    animation: slideInRight 0.3s ease-out;
+    font-family: 'Poppins', sans-serif;
+    font-weight: 500;
+    max-width: 300px;
+  `;
+
+  document.body.appendChild(notification);
+
+  // Remove after 3 seconds
+  setTimeout(() => {
+    notification.style.animation = "slideOutRight 0.3s ease-out forwards";
+    setTimeout(() => notification.remove(), 300);
+  }, 3000);
+}
+
+// Add animation keyframes for notifications
+if (!document.querySelector("#notification-styles")) {
+  const style = document.createElement("style");
+  style.id = "notification-styles";
+  style.textContent = `
+    @keyframes slideInRight {
+      from {
+        opacity: 0;
+        transform: translateX(100%);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    @keyframes slideOutRight {
+      from {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      to {
+        opacity: 0;
+        transform: translateX(100%);
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 /* ================== LOADER ================== */
 window.addEventListener("load", () => {
   const loader = document.getElementById("loader");
@@ -951,6 +1011,7 @@ async function renderCartOnOrderPage() {
     `;
 
     const cleanupBtn = document.createElement("button");
+    cleanupBtn.id = "remove-unavailable";
     cleanupBtn.textContent = "Remove Unavailable Items";
     cleanupBtn.style.cssText = `
       background: linear-gradient(135deg, #dc3545, #c82333);
@@ -1018,13 +1079,6 @@ async function renderCartOnOrderPage() {
   });
 }
 
-document.addEventListener("click", (e) => {
-  if (e.target && e.target.id === "clear-cart") {
-    saveCart([]);
-    renderCartOnOrderPage();
-  }
-});
-
 /* ================== RIPPLE EFFECT ================== */
 function initRipple(selector) {
   document.addEventListener(
@@ -1081,3 +1135,23 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 // Make sure config.js is loaded before script.js
 // Add this to your HTML: <script src="config.js"></script> BEFORE <script src="script.js"></script>
+
+// ================== GLOBAL EVENT LISTENERS ==================
+// Clear cart button
+document.addEventListener("click", (e) => {
+  if (e.target && e.target.id === "clear-cart") {
+    saveCart([]);
+    renderCartOnOrderPage();
+  }
+});
+
+// Remove unavailable items button - ADD THIS
+document.addEventListener("click", (e) => {
+  if (e.target && e.target.id === "remove-unavailable") {
+    const cart = readCart();
+    const updatedCart = cart.filter((item) => !item.unavailable);
+    saveCart(updatedCart);
+    renderCartOnOrderPage();
+    showNotification("Unavailable items removed from cart", "success");
+  }
+});
