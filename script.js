@@ -7,6 +7,11 @@ const useSupabase = true; // Always use Supabase
 
 // ================== DATA LOADING FUNCTIONS ==================
 
+// Cache for menu items to reduce API calls
+let cachedMenuItems = null;
+let cacheTimestamp = null;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 // Load from Supabase
 async function loadFromSupabase(endpoint) {
   try {
@@ -43,6 +48,23 @@ async function loadFromSupabase(endpoint) {
     console.error(`Error loading from Supabase ${endpoint}:`, error);
     return [];
   }
+}
+
+// Get menu items with caching
+async function getMenuItems() {
+  const now = Date.now();
+
+  if (
+    cachedMenuItems &&
+    cacheTimestamp &&
+    now - cacheTimestamp < CACHE_DURATION
+  ) {
+    return cachedMenuItems;
+  }
+
+  cachedMenuItems = await loadFromSupabase(API_ENDPOINTS.MENU);
+  cacheTimestamp = now;
+  return cachedMenuItems;
 }
 
 // Load featured items
@@ -94,7 +116,7 @@ async function loadMenuItems() {
   if (!container) return;
 
   try {
-    const items = await loadFromSupabase(API_ENDPOINTS.MENU);
+    const items = await getMenuItems();
 
     if (!items || items.length === 0) {
       container.innerHTML = `
@@ -266,8 +288,8 @@ async function validateCartItems() {
     const cart = readCart();
     if (cart.length === 0) return { valid: true, items: [] };
 
-    // Load current menu items
-    const currentMenu = await loadFromSupabase(API_ENDPOINTS.MENU);
+    // Load current menu items using cache
+    const currentMenu = await getMenuItems();
 
     const validationResults = [];
     let hasChanges = false;
@@ -870,24 +892,46 @@ function initBottomSheet() {
 }
 
 /* ================== CART PAGE WITH VALIDATION ================== */
-async function renderCartOnOrderPage() {
+async function renderCartOnOrderPage(shouldValidate = true) {
   const cartContainer = document.getElementById("cart-container");
   if (!cartContainer) return;
 
-  // First, validate cart items
-  const validation = await validateCartItems();
-  const cart = updateCartWithValidation(validation.results);
+  let validation = null;
+  let cart = readCart();
+
+  // Only validate on initial load, not on every button click
+  if (shouldValidate) {
+    validation = await validateCartItems();
+    cart = updateCartWithValidation(validation.results);
+  }
 
   cartContainer.innerHTML = "";
 
   if (cart.length === 0) {
     cartContainer.innerHTML =
       '<p class="empty-cart">Your cart is empty. Visit the <a href="menu.html">menu</a> to add items.</p>';
+
+    // Clear cart button for empty state
+    const clearCartBtn = document.getElementById("clear-cart");
+    if (clearCartBtn) clearCartBtn.style.display = "none";
+
     return;
   }
 
-  // Show validation message if there are changes
-  if (validation.hasChanges) {
+  // Show clear cart button
+  const clearCartBtn = document.getElementById("clear-cart");
+  if (clearCartBtn) {
+    clearCartBtn.style.display = "block";
+    clearCartBtn.onclick = (e) => {
+      e.preventDefault();
+      saveCart([]);
+      renderCartOnOrderPage(false);
+      showNotification("Cart cleared successfully", "success");
+    };
+  }
+
+  // Show validation message if there are changes (only when validating)
+  if (shouldValidate && validation && validation.hasChanges) {
     const warningDiv = document.createElement("div");
     warningDiv.className = "cart-validation-warning";
     warningDiv.style.cssText = `
@@ -927,11 +971,10 @@ async function renderCartOnOrderPage() {
     const row = document.createElement("div");
     row.className = "cart-row";
 
-    // Check validation status for this item
-    const validationResult = validation.results.find((r) => r.index === idx);
-    const isUnavailable =
-      it.unavailable ||
-      (validationResult && validationResult.status === "removed");
+    // Check if item is unavailable
+    const isUnavailable = it.unavailable;
+    const validationResult =
+      validation && validation.results.find((r) => r.index === idx);
     const isPriceChanged =
       validationResult && validationResult.status === "price_changed";
 
@@ -1001,7 +1044,7 @@ async function renderCartOnOrderPage() {
   });
 
   // Add "Remove Unavailable Items" button if needed
-  if (validation.hasRemovals) {
+  if (validation && validation.hasRemovals) {
     const cleanupDiv = document.createElement("div");
     cleanupDiv.style.cssText = `
       margin-top: 1rem;
@@ -1038,7 +1081,7 @@ async function renderCartOnOrderPage() {
       const cart = readCart();
       const updatedCart = cart.filter((item) => !item.unavailable);
       saveCart(updatedCart);
-      renderCartOnOrderPage();
+      renderCartOnOrderPage(false);
       showNotification("Unavailable items removed from cart", "success");
     });
 
@@ -1046,37 +1089,35 @@ async function renderCartOnOrderPage() {
     cartContainer.appendChild(cleanupDiv);
   }
 
-  // Cart event listeners
-  cartContainer.querySelectorAll(".remove-item").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const idx = Number(btn.dataset.index);
-      let cart = readCart();
-      cart.splice(idx, 1);
-      saveCart(cart);
-      renderCartOnOrderPage();
-    });
-  });
+  // Use event delegation for all cart buttons (FIX FOR SLUGGISHNESS)
+  cartContainer.addEventListener(
+    "click",
+    (e) => {
+      const target = e.target;
 
-  cartContainer.querySelectorAll(".qty-increase").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const idx = Number(btn.dataset.index);
-      let cart = readCart();
-      cart[idx].quantity = (cart[idx].quantity || 1) + 1;
-      saveCart(cart);
-      renderCartOnOrderPage();
-    });
-  });
-
-  cartContainer.querySelectorAll(".qty-decrease").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const idx = Number(btn.dataset.index);
-      let cart = readCart();
-      cart[idx].quantity = (cart[idx].quantity || 1) - 1;
-      if (cart[idx].quantity < 1) cart.splice(idx, 1);
-      saveCart(cart);
-      renderCartOnOrderPage();
-    });
-  });
+      if (target.classList.contains("qty-increase")) {
+        const idx = Number(target.dataset.index);
+        let cart = readCart();
+        cart[idx].quantity = (cart[idx].quantity || 1) + 1;
+        saveCart(cart);
+        renderCartOnOrderPage(false);
+      } else if (target.classList.contains("qty-decrease")) {
+        const idx = Number(target.dataset.index);
+        let cart = readCart();
+        cart[idx].quantity = (cart[idx].quantity || 1) - 1;
+        if (cart[idx].quantity < 1) cart.splice(idx, 1);
+        saveCart(cart);
+        renderCartOnOrderPage(false);
+      } else if (target.classList.contains("remove-item")) {
+        const idx = Number(target.dataset.index);
+        let cart = readCart();
+        cart.splice(idx, 1);
+        saveCart(cart);
+        renderCartOnOrderPage(false);
+      }
+    },
+    { passive: true }
+  );
 }
 
 /* ================== RIPPLE EFFECT ================== */
@@ -1123,7 +1164,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   );
 
   if (currentPage.includes("order")) {
-    await renderCartOnOrderPage();
+    await renderCartOnOrderPage(true); // Validate only on initial load
   }
 
   // Update copyright year
@@ -1133,25 +1174,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 });
 
-// Make sure config.js is loaded before script.js
-// Add this to your HTML: <script src="config.js"></script> BEFORE <script src="script.js"></script>
-
-// ================== GLOBAL EVENT LISTENERS ==================
-// Clear cart button
+// Global event listener for clear cart button (fallback)
 document.addEventListener("click", (e) => {
   if (e.target && e.target.id === "clear-cart") {
+    e.preventDefault();
     saveCart([]);
-    renderCartOnOrderPage();
-  }
-});
-
-// Remove unavailable items button - ADD THIS
-document.addEventListener("click", (e) => {
-  if (e.target && e.target.id === "remove-unavailable") {
-    const cart = readCart();
-    const updatedCart = cart.filter((item) => !item.unavailable);
-    saveCart(updatedCart);
-    renderCartOnOrderPage();
-    showNotification("Unavailable items removed from cart", "success");
+    renderCartOnOrderPage(false);
+    showNotification("Cart cleared successfully", "success");
   }
 });
