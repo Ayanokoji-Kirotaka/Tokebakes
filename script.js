@@ -539,50 +539,77 @@ window.addEventListener("load", () => {
   }
 });
 
-/* ================== NAV HIGHLIGHT - UNIVERSAL ================== */
+/* ================== BULLETPROOF NAV HIGHLIGHT ================== */
 (function highlightNav() {
-  const path = window.location.pathname;
-  const isHomePage = path === "/" || path === "" || path.endsWith("index.html");
+  const navLinks = document.querySelectorAll("nav a");
 
-  document.querySelectorAll("nav a, .navbar a").forEach((link) => {
+  // Get current location info
+  const loc = {
+    href: window.location.href.toLowerCase(),
+    pathname: window.location.pathname.toLowerCase(),
+    hostname: window.location.hostname,
+  };
+
+  // Determine if we're local or online
+  const isLocal =
+    loc.hostname === "localhost" || loc.href.startsWith("file://");
+
+  // Parse current page
+  let currentPage = loc.pathname.split("/").pop() || "index";
+  currentPage = currentPage.replace(/\.(html|htm)$/, "").split("?")[0];
+  if (currentPage === "") currentPage = "index";
+
+  console.log(
+    `Nav Debug: Current page="${currentPage}", Path="${loc.pathname}", Local=${isLocal}`
+  );
+
+  navLinks.forEach((link, index) => {
     const href = link.getAttribute("href");
     if (!href) return;
 
+    // Parse link page
+    let linkPage = href.split("/").pop() || "index";
+    linkPage = linkPage.replace(/\.(html|htm)$/, "").split("?")[0];
+    if (linkPage === "") linkPage = "index";
+
+    // Reset
     link.classList.remove("active");
 
-    const linkFile = href.split("/").pop();
-    let isActive = false;
+    // LOGIC THAT WORKS EVERYWHERE:
 
-    // HOME PAGE LOGIC
-    if (isHomePage) {
-      if (linkFile === "index.html" || href === "/" || href === "") {
-        isActive = true;
-      }
-    }
-    // OTHER PAGES LOGIC
-    else {
-      const currentFile = path.split("/").pop();
-
-      // Multiple checks for different formats
-      isActive =
-        // Exact match (local)
-        linkFile === currentFile ||
-        // Server format match (no .html)
-        linkFile === currentFile + ".html" ||
-        // Remove .html and compare
-        linkFile.replace(".html", "") === currentFile ||
-        // Partial match
-        (currentFile &&
-          linkFile &&
-          currentFile.includes(linkFile.replace(".html", "")));
-    }
-
-    if (isActive) {
+    // 1. Home page check
+    if (linkPage === "index" && currentPage === "index") {
       link.classList.add("active");
+      console.log(`✓ Link ${index} (${href}) activated as HOME`);
+      return;
     }
+
+    // 2. Direct match
+    if (linkPage === currentPage && linkPage !== "index") {
+      link.classList.add("active");
+      console.log(`✓ Link ${index} (${href}) activated as DIRECT MATCH`);
+      return;
+    }
+
+    // 3. For online (Netlify) - check if current path contains page name
+    if (!isLocal && loc.pathname.includes(linkPage) && linkPage !== "index") {
+      link.classList.add("active");
+      console.log(`✓ Link ${index} (${href}) activated as PATH CONTAINS`);
+      return;
+    }
+
+    // 4. For local - check full path
+    if (isLocal && loc.href.endsWith(href)) {
+      link.classList.add("active");
+      console.log(`✓ Link ${index} (${href}) activated as LOCAL MATCH`);
+      return;
+    }
+
+    console.log(`✗ Link ${index} (${href}) NOT activated`);
   });
+
+  console.log("--- Navigation Highlight Complete ---");
 })();
-window.highlightNav = highlightNav;
 
 /* ================== CART COUNT ================== */
 function refreshCartCount() {
