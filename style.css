@@ -4031,3 +4031,58 @@ html {
     transform: none;
   }
 }
+
+/* ================== SYNC STATUS INDICATOR ================== */
+#sync-status-indicator {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #f8f9fa;
+    border: 2px solid #e67a00;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+    z-index: 10000;
+    transition: all 0.3s ease;
+    opacity: 0;
+    transform: translateY(10px);
+}
+
+#sync-status-indicator.syncing {
+    display: flex;
+    color: #e67a00;
+    opacity: 1;
+    transform: translateY(0);
+    animation: pulse 1.5s infinite;
+}
+
+#sync-status-indicator.updated {
+    display: flex;
+    background: #e67a00;
+    color: white;
+    border-color: #e67a00;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+@keyframes pulse {
+    0% { opacity: 0.7; }
+    50% { opacity: 1; }
+    100% { opacity: 0.7; }
+}
+
+/* Responsive adjustment */
+@media (max-width: 768px) {
+    #sync-status-indicator {
+        bottom: 70px; /* Above mobile browser UI */
+        right: 15px;
+        width: 36px;
+        height: 36px;
+        font-size: 1rem;
+    }
+}

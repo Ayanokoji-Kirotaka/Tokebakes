@@ -1,31 +1,51 @@
 /* ================== script.js - TOKE BAKES WEBSITE ================== */
 /* SUPABASE-ONLY VERSION - FIXED WITH CART VALIDATION */
 
-/* ================== AUTO-UPDATE SYSTEM ================== */
+/* ================== ENHANCED AUTO-UPDATE SYSTEM ================== */
 class WebsiteAutoUpdater {
   constructor() {
     this.lastUpdateKey = "toke_bakes_last_update";
     this.broadcastChannel = null;
+    this.pollingInterval = null;
     this.init();
   }
 
   init() {
+    console.log("🔧 Initializing Enhanced WebsiteAutoUpdater...");
+
+    // 1. Setup BroadcastChannel for instant sync (same browser tabs)
     if (typeof BroadcastChannel !== "undefined") {
       this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
       this.broadcastChannel.onmessage = (event) => {
         if (event.data.type === "DATA_UPDATED") {
-          this.refreshData();
+          console.log("📡 BroadcastChannel update received!", event.data);
+          this.refreshDataWithUI();
         }
       };
+      console.log("✅ BroadcastChannel ready for instant sync");
     }
 
-    // Check for updates every 30 seconds
-    setInterval(() => this.checkForUpdates(), 30000);
+    // 2. Check for updates every 25 seconds
+    this.startPolling(25000); // 25 seconds
 
-    // Check when tab becomes visible
+    // 3. Check when user returns to tab
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) this.checkForUpdates();
+      if (!document.hidden) {
+        console.log("👁️ Tab became visible, checking for updates...");
+        this.checkForUpdates();
+      }
     });
+
+    // 4. Initial check on page load
+    setTimeout(() => this.checkForUpdates(), 3000);
+  }
+
+  startPolling(interval = 25000) {
+    if (this.pollingInterval) clearInterval(this.pollingInterval);
+    this.pollingInterval = setInterval(() => {
+      this.checkForUpdates();
+    }, interval);
+    console.log(`✅ Polling started (every ${interval / 1000}s)`);
   }
 
   async checkForUpdates() {
@@ -33,54 +53,121 @@ class WebsiteAutoUpdater {
     const myLastCheck = localStorage.getItem("my_last_check") || "0";
 
     if (lastUpdate && lastUpdate > myLastCheck) {
+      console.log("🔄 Update detected via localStorage/timestamp");
       localStorage.setItem("my_last_check", lastUpdate);
-      await this.refreshData();
+      await this.refreshDataWithUI();
+      return true;
+    }
+    return false;
+  }
+
+  async refreshDataWithUI() {
+    // Show syncing indicator
+    this.showSyncIndicator("syncing");
+
+    try {
+      console.log("🔄 Refreshing website data...");
+
+      // Clear ALL caches aggressively
+      if (window.cachedMenuItems) {
+        window.cachedMenuItems = null;
+        window.cacheTimestamp = null;
+      }
+
+      // Clear dataCache if it exists (from admin.js)
+      if (window.dataCache && window.dataCache.clear) {
+        window.dataCache.clear();
+      }
+
+      // Reload content based on current page
+      if (typeof loadDynamicContent === "function") {
+        await loadDynamicContent();
+        console.log("✅ Dynamic content reloaded");
+      }
+
+      // Also refresh cart if on order page
+      if (
+        window.location.pathname.includes("order") &&
+        typeof renderCartOnOrderPage === "function"
+      ) {
+        await renderCartOnOrderPage(true);
+        console.log("✅ Cart refreshed");
+      }
+
+      // Show success indicator
+      this.showSyncIndicator("updated");
+
+      // Show notification
+      this.showUpdateNotification();
+
+      // Hide indicator after 2 seconds
+      setTimeout(() => {
+        this.hideSyncIndicator();
+      }, 2000);
+    } catch (error) {
+      console.error("❌ Sync refresh failed:", error);
+      this.hideSyncIndicator();
+
+      // Show error state briefly
+      this.showSyncIndicator("error");
+      setTimeout(() => this.hideSyncIndicator(), 3000);
     }
   }
 
-  async refreshData() {
-    // Clear cache
-    if (window.cachedMenuItems) {
-      window.cachedMenuItems = null;
-      window.cacheTimestamp = null;
+  showSyncIndicator(state) {
+    let indicator = document.getElementById("sync-status-indicator");
+
+    if (!indicator) {
+      // Create indicator if it doesn't exist
+      indicator = document.createElement("div");
+      indicator.id = "sync-status-indicator";
+      document.body.appendChild(indicator);
     }
 
-    // Reload content
-    if (typeof loadDynamicContent === "function") {
-      await loadDynamicContent();
-    }
+    // Reset classes
+    indicator.className = "";
 
-    // Show notification
-    this.showUpdateNotification();
+    // Set state
+    if (state === "syncing") {
+      indicator.classList.add("syncing");
+      indicator.innerHTML = "⟳";
+      indicator.title = "Updating content...";
+    } else if (state === "updated") {
+      indicator.classList.add("updated");
+      indicator.innerHTML = "✓";
+      indicator.title = "Content updated!";
+    } else if (state === "error") {
+      indicator.style.cssText = `
+        position: fixed; bottom: 20px; right: 20px;
+        width: 40px; height: 40px; border-radius: 50%;
+        background: #dc3545; color: white; display: flex;
+        align-items: center; justify-content: center;
+        font-size: 1.2rem; z-index: 10000;
+      `;
+      indicator.innerHTML = "!";
+      indicator.title = "Update failed";
+    }
+  }
+
+  hideSyncIndicator() {
+    const indicator = document.getElementById("sync-status-indicator");
+    if (indicator) {
+      indicator.style.display = "none";
+      indicator.className = "";
+    }
   }
 
   showUpdateNotification() {
-    const notification = document.createElement("div");
-    notification.innerHTML = `
-      <div style="
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        background: var(--primary);
-        color: white;
-        padding: 10px 15px;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        z-index: 9998;
-        animation: slideInUp 0.3s ease;
-        font-family: 'Poppins', sans-serif;
-        font-size: 0.9rem;
-      ">
-        🔄 Menu updated
-      </div>
-    `;
+    // Optional: You can enable this for visual toast
+    // For now, just log to console
+    console.log("✅ Website content updated successfully!");
 
-    document.body.appendChild(notification);
-    setTimeout(() => notification.remove(), 3000);
+    // If you want a toast notification later, uncomment:
+    /*
+    showNotification('Content updated! New items are available.', 'success');
+    */
   }
 }
-
-let websiteUpdater = null;
 
 // ================== DATA SOURCE CONFIGURATION ==================
 
@@ -1280,17 +1367,17 @@ function initRipple(selector) {
   );
 }
 
-/* ================== INITIALIZE EVERYTHING ================== */
+// Initialize when DOM is loaded
 document.addEventListener("DOMContentLoaded", async () => {
-  console.log("Initializing Toke Bakes with Supabase...");
+  console.log("🚀 Initializing Toke Bakes with Enhanced Sync...");
 
-  // Initialize auto-updater FIRST
-  websiteUpdater = new WebsiteAutoUpdater(); // <-- ADD THIS LINE
+  // Initialize auto-updater FIRST (IMPORTANT!)
+  window.websiteUpdater = new WebsiteAutoUpdater();
 
   // Load dynamic content from Supabase
   await loadDynamicContent();
 
-  // Your existing initialization code
+  // Your existing initialization code...
   refreshCartCount();
   initMobileMenu();
   initThemeToggle();
@@ -1303,7 +1390,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   );
 
   if (currentPage.includes("order")) {
-    await renderCartOnOrderPage(true); // Validate only on initial load
+    await renderCartOnOrderPage(true);
   }
 
   // Update copyright year
@@ -1311,6 +1398,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (yearElement) {
     yearElement.textContent = new Date().getFullYear();
   }
+
+  console.log("✅ Toke Bakes fully initialized with enhanced sync");
 });
 
 // Global event listener for clear cart button (fallback)
