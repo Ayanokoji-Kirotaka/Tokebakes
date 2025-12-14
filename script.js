@@ -582,6 +582,7 @@ window.addEventListener("load", () => {
     }
   });
 })();
+window.highlightNav = highlightNav;
 
 /* ================== CART COUNT ================== */
 function refreshCartCount() {
