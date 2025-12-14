@@ -600,7 +600,299 @@ header {
   box-shadow: 0 12px 20px var(--shadow); /* Reduced from 30px to 20px */
 }
 
+/* ================== PREMIUM FEATURED CREATIONS ================== */
+.featured {
+  text-align: center;
+  padding: 5rem 1.25rem;
+  position: relative;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 248, 240, 0.6) 0%,
+    rgba(255, 253, 250, 0.3) 50%,
+    rgba(255, 248, 240, 0.6) 100%
+  );
+  margin: 3rem 0;
+  border-radius: 0;
+  overflow: hidden;
+}
 
+[data-theme="dark"] .featured {
+  background: linear-gradient(
+    135deg,
+    rgba(26, 26, 26, 0.8) 0%,
+    rgba(45, 45, 45, 0.4) 50%,
+    rgba(26, 26, 26, 0.8) 100%
+  );
+}
+
+.featured::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(230, 122, 0, 0.5),
+    transparent
+  );
+}
+
+.featured::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(230, 122, 0, 0.5),
+    transparent
+  );
+}
+
+/* CONTAINER - BIGGER FOR BETTER IMAGE DISPLAY */
+#featured-container,
+.featured-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); /* Increased from 320px */
+  gap: 3rem; /* Increased from 2.5rem */
+  margin-top: 3rem; /* Increased from 2.5rem */
+  position: relative;
+  z-index: 1;
+}
+
+/* PREMIUM FEATURED ITEMS - DISTINCTIVE DESIGN */
+.featured-item,
+.item-card {
+  background: linear-gradient(145deg, #ffffff, #fff9f0);
+  border-radius: 24px;
+  overflow: hidden;
+  box-shadow: 0 15px 30px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 0 0 2px rgba(255, 223, 186, 0.4);
+  transition: all 0.4s ease;
+  position: relative;
+  border: none;
+  animation: featuredItemAppear 0.6s ease-out backwards;
+  cursor: pointer;
+}
+
+/* STAGGERED ENTRANCE - SIMPLE */
+.featured-item:nth-child(1) { animation-delay: 0.1s; }
+.featured-item:nth-child(2) { animation-delay: 0.2s; }
+.featured-item:nth-child(3) { animation-delay: 0.3s; }
+.featured-item:nth-child(4) { animation-delay: 0.4s; }
+.featured-item:nth-child(5) { animation-delay: 0.5s; }
+.featured-item:nth-child(6) { animation-delay: 0.6s; }
+.featured-item:nth-child(7) { animation-delay: 0.7s; }
+.featured-item:nth-child(8) { animation-delay: 0.8s; }
+
+@keyframes featuredItemAppear {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* GLOSSY SHINE EFFECT - SIMPLE */
+.featured-item::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 249, 230, 0.3) 20%,
+    rgba(255, 223, 186, 0.4) 50%,
+    rgba(255, 249, 230, 0.3) 80%,
+    transparent
+  );
+  transition: left 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.featured-item:hover::before {
+  left: 100%;
+}
+
+/* HOVER EFFECT - SIMPLE AND CLEAN */
+.featured-item:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 15px 35px rgba(211, 84, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 0 0 2px rgba(255, 223, 186, 0.5);
+}
+
+/* ================== IMAGE FIX - USING YOUR REFERENCE CODE'S METHOD ================== */
+.featured-item img {
+  width: 100%;
+  aspect-ratio: 4/3; /* Same as your menu section */
+  object-fit: cover; /* Same as your menu section */
+  transition: all 0.5s cubic-bezier(0.2, 0.8, 0.4, 1);
+  display: block;
+
+  /* EXACT settings from your reference code */
+  image-rendering: -webkit-optimize-contrast;
+  background: linear-gradient(45deg, #f8f3e9, #f5e8d0);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+
+  /* No blur filters */
+  filter: none;
+
+  /* Remove border-bottom that was in your original */
+  border-bottom: none;
+}
+
+/* Hover zoom - subtle like your reference code */
+.featured-item:hover img {
+  transform: scale(1.05); /* Same as your menu section */
+  filter: brightness(1.08); /* Same as your menu section */
+}
+
+/* Fallback for browsers without aspect-ratio support */
+@supports not (aspect-ratio: 4/3) {
+  .featured-item img {
+    height: 280px; /* Fallback height */
+  }
+}
+
+/* Mobile optimization - same as your reference */
+@media (max-width: 768px) {
+  #featured-container,
+  .featured-grid {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem;
+  }
+
+  .featured-item img {
+    aspect-ratio: 3/2; /* Same as your menu section mobile */
+  }
+
+  .featured-item:hover img {
+    transform: scale(1.03); /* Same subtle effect as your menu */
+  }
+}
+
+/* Tablet optimization - same as your reference */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .featured-item img {
+    aspect-ratio: 5/4; /* Same as your menu section tablet */
+  }
+}
+
+/* FIXED: Text container - using your ORIGINAL selector */
+.featured-item > *:not(img):not(:before) {
+  position: relative;
+  z-index: 3;
+  background: rgba(255, 255, 255, 0.9);
+  margin: 0;
+  padding: 1.5rem;
+  transition: all 0.4s ease;
+}
+
+/* Add hover effect to text container */
+.featured-item:hover > *:not(img):not(:before) {
+  transform: translateY(-2px);
+}
+
+/* PREMIUM TYPOGRAPHY - using your ORIGINAL selectors */
+.featured-item h3,
+.featured-item h4 {
+  margin: 0 0 0.75rem;
+  font-size: 1.5rem;
+  color: #2c3e50;
+  font-weight: 800;
+  text-align: center;
+  letter-spacing: -0.5px;
+  transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+  position: relative;
+  display: inline-block;
+  z-index: 4;
+}
+
+.featured-item h3::after,
+.featured-item h4::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+  transition: width 0.4s ease;
+  z-index: 5;
+}
+
+.featured-item:hover h3::after,
+.featured-item:hover h4::after {
+  width: 80px;
+}
+
+.featured-item:hover h3,
+.featured-item:hover h4 {
+  color: var(--primary);
+  transform: translateY(-3px);
+}
+
+/* ENHANCED DESCRIPTION - using your ORIGINAL selector */
+.featured-item p {
+  margin: 0 1.5rem 1.5rem;
+  color: #5a5a5a;
+  font-size: 1.05rem;
+  text-align: center;
+  line-height: 1.7;
+  font-weight: 400;
+  transition: all 0.4s ease;
+  padding: 0 0.5rem;
+  z-index: 4;
+}
+
+.featured-item:hover p {
+  color: #444;
+  transform: translateY(2px);
+}
+
+/* DARK THEME ENHANCEMENTS - using your ORIGINAL selectors */
+[data-theme="dark"] .featured-item {
+  background: linear-gradient(145deg, #2a2a2a, #1f1f1f);
+  box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 2px rgba(211, 84, 0, 0.2);
+}
+
+[data-theme="dark"] .featured-item:hover {
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 0 0 2px rgba(211, 84, 0, 0.4);
+}
+
+[data-theme="dark"] .featured-item img {
+  background: linear-gradient(45deg, #2a2a2a, #333);
+}
+
+[data-theme="dark"] .featured-item > *:not(img):not(:before) {
+  background: rgba(45, 45, 45, 0.9);
+}
+
+[data-theme="dark"] .featured-item h3,
+[data-theme="dark"] .featured-item h4 {
+  color: #ffffff;
+}
+
+[data-theme="dark"] .featured-item p {
+  color: #cccccc;
+}
 
 /* ================== MENU SECTION ================== */
 .menu-section {
