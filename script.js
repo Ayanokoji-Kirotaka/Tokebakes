@@ -615,16 +615,84 @@ if (!document.querySelector("#notification-styles")) {
   document.head.appendChild(style);
 }
 
-/* ================== LOADER ================== */
-window.addEventListener("load", () => {
+/* ================== Old LOADER ================== */
+// window.addEventListener("load", () => {
+//   const loader = document.getElementById("loader");
+//   if (loader) {
+//     setTimeout(() => {
+//       loader.style.opacity = "0";
+//       setTimeout(() => (loader.style.display = "none"), 600);
+//     }, 600);
+//   }
+// });
+
+/* ================== ENHANCED SESSION AWARE LOADER ================== */
+(function () {
   const loader = document.getElementById("loader");
-  if (loader) {
-    setTimeout(() => {
-      loader.style.opacity = "0";
-      setTimeout(() => (loader.style.display = "none"), 600);
-    }, 600);
+  if (!loader) return;
+
+  const isHomePage =
+    window.location.pathname.endsWith("/") ||
+    window.location.pathname.endsWith("/index.html") ||
+    window.location.pathname === "";
+
+  if (!isHomePage) {
+    loader.style.display = "none";
+    return;
   }
-});
+
+  // Session tracking (more intelligent than daily)
+  const SESSION_KEY = "toke_bakes_session";
+  const sessionData = JSON.parse(localStorage.getItem(SESSION_KEY) || "{}");
+  const now = Date.now();
+  const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+
+  // Check if user is in an active "session"
+  const hasActiveSession =
+    sessionData.timestamp && now - sessionData.timestamp < SESSION_TIMEOUT;
+
+  if (hasActiveSession) {
+    // User is in active session (visited within 30 minutes)
+    loader.style.display = "none";
+    console.log("🔁 Active session - seamless experience");
+  } else {
+    // New session or session expired
+    sessionData.timestamp = now;
+    sessionData.visitCount = (sessionData.visitCount || 0) + 1;
+    localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData));
+
+    // Show loader on first 2 visits, then never again
+    if (sessionData.visitCount <= 2) {
+      window.addEventListener("load", () => {
+        // Shorter loader on second visit
+        const duration = sessionData.visitCount === 1 ? 1200 : 600;
+
+        setTimeout(() => {
+          loader.style.opacity = "0";
+          setTimeout(() => (loader.style.display = "none"), 800);
+        }, duration);
+      });
+    } else {
+      // Experienced user - no loader at all
+      loader.style.display = "none";
+    }
+  }
+
+  // Update session timestamp on user activity
+  ["click", "scroll", "mousemove", "keypress"].forEach((event) => {
+    document.addEventListener(
+      event,
+      () => {
+        const updatedData = JSON.parse(
+          localStorage.getItem(SESSION_KEY) || "{}"
+        );
+        updatedData.timestamp = Date.now();
+        localStorage.setItem(SESSION_KEY, JSON.stringify(updatedData)); // ✅ FIXED
+      },
+      { passive: true }
+    );
+  });
+})();
 
 /* ================== BULLETPROOF NAV HIGHLIGHT ================== */
 (function highlightNav() {
