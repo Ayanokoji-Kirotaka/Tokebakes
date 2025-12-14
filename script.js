@@ -1,6 +1,87 @@
 /* ================== script.js - TOKE BAKES WEBSITE ================== */
 /* SUPABASE-ONLY VERSION - FIXED WITH CART VALIDATION */
 
+/* ================== AUTO-UPDATE SYSTEM ================== */
+class WebsiteAutoUpdater {
+  constructor() {
+    this.lastUpdateKey = "toke_bakes_last_update";
+    this.broadcastChannel = null;
+    this.init();
+  }
+
+  init() {
+    if (typeof BroadcastChannel !== "undefined") {
+      this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
+      this.broadcastChannel.onmessage = (event) => {
+        if (event.data.type === "DATA_UPDATED") {
+          this.refreshData();
+        }
+      };
+    }
+
+    // Check for updates every 30 seconds
+    setInterval(() => this.checkForUpdates(), 30000);
+
+    // Check when tab becomes visible
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) this.checkForUpdates();
+    });
+  }
+
+  async checkForUpdates() {
+    const lastUpdate = localStorage.getItem(this.lastUpdateKey);
+    const myLastCheck = localStorage.getItem("my_last_check") || "0";
+
+    if (lastUpdate && lastUpdate > myLastCheck) {
+      localStorage.setItem("my_last_check", lastUpdate);
+      await this.refreshData();
+    }
+  }
+
+  async refreshData() {
+    // Clear cache
+    if (window.cachedMenuItems) {
+      window.cachedMenuItems = null;
+      window.cacheTimestamp = null;
+    }
+
+    // Reload content
+    if (typeof loadDynamicContent === "function") {
+      await loadDynamicContent();
+    }
+
+    // Show notification
+    this.showUpdateNotification();
+  }
+
+  showUpdateNotification() {
+    const notification = document.createElement("div");
+    notification.innerHTML = `
+      <div style="
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: var(--primary);
+        color: white;
+        padding: 10px 15px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        z-index: 9998;
+        animation: slideInUp 0.3s ease;
+        font-family: 'Poppins', sans-serif;
+        font-size: 0.9rem;
+      ">
+        🔄 Menu updated
+      </div>
+    `;
+
+    document.body.appendChild(notification);
+    setTimeout(() => notification.remove(), 3000);
+  }
+}
+
+let websiteUpdater = null;
+
 // ================== DATA SOURCE CONFIGURATION ==================
 
 const useSupabase = true; // Always use Supabase
@@ -1147,6 +1228,9 @@ function initRipple(selector) {
 /* ================== INITIALIZE EVERYTHING ================== */
 document.addEventListener("DOMContentLoaded", async () => {
   console.log("Initializing Toke Bakes with Supabase...");
+
+  // Initialize auto-updater FIRST
+  websiteUpdater = new WebsiteAutoUpdater(); // <-- ADD THIS LINE
 
   // Load dynamic content from Supabase
   await loadDynamicContent();

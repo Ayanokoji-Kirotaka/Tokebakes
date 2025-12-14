@@ -1,6 +1,37 @@
 /* ================== admin.js ================== */
 /* Toke Bakes Admin Panel - MODERN CONFIRMATION DIALOG VERSION */
 
+/* ================== AUTO-UPDATE SYSTEM ================== */
+class DataSyncManager {
+  constructor() {
+    this.lastUpdateKey = "toke_bakes_last_update";
+    this.broadcastChannel = null;
+    this.init();
+  }
+
+  init() {
+    if (typeof BroadcastChannel !== "undefined") {
+      this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
+    }
+  }
+
+  notifyDataChanged(operationType, itemType) {
+    const timestamp = Date.now().toString();
+    localStorage.setItem(this.lastUpdateKey, timestamp);
+
+    if (this.broadcastChannel) {
+      this.broadcastChannel.postMessage({
+        type: "DATA_UPDATED",
+        timestamp: timestamp,
+        operation: operationType,
+        itemType: itemType,
+      });
+    }
+  }
+}
+
+const dataSync = new DataSyncManager();
+
 // Admin credentials with SHA-256 hash for "admin123"
 const ADMIN_CREDENTIALS = {
   username: "admin",
@@ -221,6 +252,8 @@ async function deleteFeaturedItem(id) {
 
     await renderFeaturedItems();
     await updateItemCounts();
+
+    dataSync.notifyDataChanged("delete", "featured");
   } catch (error) {
     console.error("Error deleting featured item:", error);
     showNotification("Failed to delete item", "error");
@@ -247,6 +280,8 @@ async function deleteMenuItem(id) {
 
     await renderMenuItems();
     await updateItemCounts();
+
+    dataSync.notifyDataChanged("delete", "menu");
   } catch (error) {
     console.error("Error deleting menu item:", error);
     showNotification("Failed to delete menu item", "error");
@@ -273,6 +308,8 @@ async function deleteGalleryItem(id) {
 
     await renderGalleryItems();
     await updateItemCounts();
+
+    dataSync.notifyDataChanged("delete", "gallery");
   } catch (error) {
     console.error("Error deleting gallery item:", error);
     showNotification("Failed to delete gallery item", "error");
@@ -1898,6 +1935,7 @@ async function saveFeaturedItem(e) {
       await renderFeaturedItems();
       await updateItemCounts();
       showNotification("Featured item saved successfully!", "success");
+      dataSync.notifyDataChanged(isEditing ? "update" : "create", "featured");
     }
   } catch (error) {
     console.error("Error saving featured item:", error);
@@ -2031,6 +2069,7 @@ async function saveMenuItem(e) {
       await renderMenuItems();
       await updateItemCounts();
       showNotification("Menu item saved successfully!", "success");
+      dataSync.notifyDataChanged(isEditing ? "update" : "create", "menu");
     }
   } catch (error) {
     console.error("Error saving menu item:", error);
@@ -2149,6 +2188,7 @@ async function saveGalleryItem(e) {
       await renderGalleryItems();
       await updateItemCounts();
       showNotification("Gallery image saved successfully!", "success");
+      dataSync.notifyDataChanged(isEditing ? "update" : "create", "gallery");
     }
   } catch (error) {
     console.error("Error saving gallery item:", error);
@@ -2375,6 +2415,8 @@ async function importData(file) {
       renderGalleryItems(),
     ]);
     await updateItemCounts();
+
+    dataSync.notifyDataChanged("import", "all");
   } catch (error) {
     console.error("Error importing data:", error);
     showNotification("Failed to import data", "error");
@@ -2736,6 +2778,8 @@ function setupEventListeners() {
           renderGalleryItems(),
         ]);
         await updateItemCounts();
+
+        dataSync.notifyDataChanged("reset", "all");
       } catch (error) {
         console.error("Error resetting data:", error);
         showNotification("Failed to reset data", "error");
