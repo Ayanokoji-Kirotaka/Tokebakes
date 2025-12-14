@@ -539,19 +539,46 @@ window.addEventListener("load", () => {
   }
 });
 
-/* ================== NAV HIGHLIGHT ================== */
+/* ================== NAV HIGHLIGHT - UNIVERSAL ================== */
 (function highlightNav() {
-  const navLinks = document.querySelectorAll("nav a");
-  navLinks.forEach((a) => {
-    const href = a.getAttribute("href");
+  const path = window.location.pathname;
+  const isHomePage = path === "/" || path === "" || path.endsWith("index.html");
+
+  document.querySelectorAll("nav a, .navbar a").forEach((link) => {
+    const href = link.getAttribute("href");
     if (!href) return;
-    if (
-      (href === "index.html" &&
-        (currentPage === "index.html" || currentPage === "")) ||
-      href === currentPage ||
-      (href.includes("index") && currentPage.includes("index"))
-    ) {
-      a.classList.add("active");
+
+    link.classList.remove("active");
+
+    const linkFile = href.split("/").pop();
+    let isActive = false;
+
+    // HOME PAGE LOGIC
+    if (isHomePage) {
+      if (linkFile === "index.html" || href === "/" || href === "") {
+        isActive = true;
+      }
+    }
+    // OTHER PAGES LOGIC
+    else {
+      const currentFile = path.split("/").pop();
+
+      // Multiple checks for different formats
+      isActive =
+        // Exact match (local)
+        linkFile === currentFile ||
+        // Server format match (no .html)
+        linkFile === currentFile + ".html" ||
+        // Remove .html and compare
+        linkFile.replace(".html", "") === currentFile ||
+        // Partial match
+        (currentFile &&
+          linkFile &&
+          currentFile.includes(linkFile.replace(".html", "")));
+    }
+
+    if (isActive) {
+      link.classList.add("active");
     }
   });
 })();
