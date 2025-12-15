@@ -1,5 +1,59 @@
 /* ================== script.js - TOKE BAKES WEBSITE ================== */
-/* SUPABASE-ONLY VERSION - FIXED WITH CART VALIDATION */
+/* ================== CRITICAL: PREVENT THEME FLASH & TOGGLE FIX ================== */
+// This runs IMMEDIATELY when script loads, before any rendering
+(function preventThemeFlash() {
+  // 1. Check localStorage for saved theme
+  const savedTheme = localStorage.getItem("toke_bakes_theme");
+
+  // 2. Determine which theme to use
+  let theme;
+  if (savedTheme) {
+    theme = savedTheme;
+  } else {
+    const prefersDark = window.matchMedia(
+      "(prefers-color-scheme: dark)"
+    ).matches;
+    theme = prefersDark ? "dark" : "light";
+  }
+
+  // 3. Apply theme IMMEDIATELY to HTML element
+  document.documentElement.setAttribute("data-theme", theme);
+
+  // 4. Update footer IMMEDIATELY too (CRITICAL FIX!)
+  updateFooterTheme(theme);
+
+  // 5. FIX THEME TOGGLE ICON IMMEDIATELY - CRITICAL!
+  // Set the correct icon BEFORE the page renders
+  setTimeout(() => {
+    const themeToggle = document.getElementById("themeToggle");
+    if (themeToggle) {
+      const sunIcon = themeToggle.querySelector(".sun");
+      const moonIcon = themeToggle.querySelector(".moon");
+
+      if (theme === "dark") {
+        if (sunIcon) sunIcon.style.display = "none";
+        if (moonIcon) moonIcon.style.display = "inline-block";
+        themeToggle.classList.add("dark");
+      } else {
+        if (sunIcon) sunIcon.style.display = "inline-block";
+        if (moonIcon) moonIcon.style.display = "none";
+        themeToggle.classList.remove("dark");
+      }
+    }
+  }, 0);
+
+  // 6. Disable CSS transitions during initial page load
+  document.documentElement.style.transition = "none";
+  document.body.style.transition = "none";
+
+  // 7. Re-enable transitions after page is fully loaded
+  window.addEventListener("load", function () {
+    setTimeout(function () {
+      document.documentElement.style.transition = "";
+      document.body.style.transition = "";
+    }, 10);
+  });
+})();
 
 /* ================== ENHANCED AUTO-UPDATE SYSTEM ================== */
 class WebsiteAutoUpdater {
@@ -766,14 +820,22 @@ if (!document.querySelector("#notification-styles")) {
   console.log("--- Navigation Highlight Complete ---");
 })();
 
-/* ================== CART COUNT ================== */
+/* ================== FIXED CART COUNT - NO ZERO FLASH ================== */
 function refreshCartCount() {
   const countEls = document.querySelectorAll("#cart-count");
   const cart = readCart();
   const totalItems = cart.reduce((s, it) => s + (it.quantity || 1), 0);
+
   countEls.forEach((el) => {
     el.textContent = totalItems;
     el.setAttribute("data-count", String(totalItems));
+
+    // FIX: Hide immediately if zero
+    if (totalItems === 0) {
+      el.style.display = "none";
+    } else {
+      el.style.display = "inline-block";
+    }
   });
 }
 
@@ -813,6 +875,11 @@ function updateFooterTheme(theme) {
   const footer = document.querySelector(".bakes-footer");
   if (!footer) return;
 
+  // If no theme provided, get it from HTML attribute
+  if (!theme) {
+    theme = document.documentElement.getAttribute("data-theme") || "light";
+  }
+
   if (theme === "dark") {
     footer.classList.add("dark-theme");
     footer.classList.remove("light-theme");
@@ -827,44 +894,59 @@ function initThemeToggle() {
   const themeToggle = document.getElementById("themeToggle");
   if (!themeToggle) return;
 
-  const savedTheme =
-    localStorage.getItem(THEME_KEY) ||
-    (window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light");
+  // Get icon elements once
+  const sunIcon = themeToggle.querySelector(".sun");
+  const moonIcon = themeToggle.querySelector(".moon");
 
-  document.documentElement.setAttribute("data-theme", savedTheme);
-  themeToggle.classList.toggle("dark", savedTheme === "dark");
-  updateFooterTheme(savedTheme);
+  // Function to update icons based on theme
+  const updateIcons = (theme) => {
+    if (theme === "dark") {
+      if (sunIcon) sunIcon.style.display = "none";
+      if (moonIcon) moonIcon.style.display = "inline-block";
+      themeToggle.classList.add("dark");
+    } else {
+      if (sunIcon) sunIcon.style.display = "inline-block";
+      if (moonIcon) moonIcon.style.display = "none";
+      themeToggle.classList.remove("dark");
+    }
+  };
 
+  // Initial icon setup
+  const currentTheme =
+    document.documentElement.getAttribute("data-theme") || "light";
+  updateIcons(currentTheme);
+  updateFooterTheme(currentTheme);
+
+  // Click handler
   themeToggle.addEventListener("click", () => {
-    const currentTheme = document.documentElement.getAttribute("data-theme");
-    const newTheme = currentTheme === "dark" ? "light" : "dark";
+    const current = document.documentElement.getAttribute("data-theme");
+    const newTheme = current === "dark" ? "light" : "dark";
 
     document.documentElement.setAttribute("data-theme", newTheme);
-    themeToggle.classList.toggle("dark", newTheme === "dark");
+
+    // Update icons immediately
+    updateIcons(newTheme);
+
     localStorage.setItem(THEME_KEY, newTheme);
     updateFooterTheme(newTheme);
   });
 }
 
 function initFooterTheme() {
-  const footer = document.querySelector(".bakes-footer");
-  if (!footer) return;
-
-  function applyFooterTheme() {
-    const currentTheme =
-      document.documentElement.getAttribute("data-theme") ||
-      (window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light");
-    updateFooterTheme(currentTheme);
-  }
-
-  applyFooterTheme();
-  window
-    .matchMedia("(prefers-color-scheme: dark)")
-    .addListener(applyFooterTheme);
+  // Footer theme is already set by preventThemeFlash(),
+  // just listen for system preference changes
+  window.matchMedia("(prefers-color-scheme: dark)").addListener(() => {
+    // Only update if user hasn't set a preference
+    const savedTheme = localStorage.getItem(THEME_KEY);
+    if (!savedTheme) {
+      const prefersDark = window.matchMedia(
+        "(prefers-color-scheme: dark)"
+      ).matches;
+      const theme = prefersDark ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", theme);
+      updateFooterTheme(theme);
+    }
+  });
 }
 
 /* ================== FIXED MENU INTERACTIONS ================== */
@@ -1182,7 +1264,7 @@ function initBottomSheet() {
   });
 }
 
-/* ================== CART PAGE WITH VALIDATION ================== */
+/* ================== FIXED CART QUANTITY FUNCTION ================== */
 async function renderCartOnOrderPage(shouldValidate = true) {
   const cartContainer = document.getElementById("cart-container");
   if (!cartContainer) return;
@@ -1190,7 +1272,7 @@ async function renderCartOnOrderPage(shouldValidate = true) {
   let validation = null;
   let cart = readCart();
 
-  // Only validate on initial load, not on every button click
+  // Only validate on initial load
   if (shouldValidate) {
     validation = await validateCartItems();
     cart = updateCartWithValidation(validation.results);
@@ -1202,10 +1284,8 @@ async function renderCartOnOrderPage(shouldValidate = true) {
     cartContainer.innerHTML =
       '<p class="empty-cart">Your cart is empty. Visit the <a href="menu.html">menu</a> to add items.</p>';
 
-    // Clear cart button for empty state
     const clearCartBtn = document.getElementById("clear-cart");
     if (clearCartBtn) clearCartBtn.style.display = "none";
-
     return;
   }
 
@@ -1221,7 +1301,7 @@ async function renderCartOnOrderPage(shouldValidate = true) {
     };
   }
 
-  // Show validation message if there are changes (only when validating)
+  // Show validation warnings if needed
   if (shouldValidate && validation && validation.hasChanges) {
     const warningDiv = document.createElement("div");
     warningDiv.className = "cart-validation-warning";
@@ -1233,11 +1313,9 @@ async function renderCartOnOrderPage(shouldValidate = true) {
       margin-bottom: 1.5rem;
       border-left: 4px solid #ffc107;
       box-shadow: 0 4px 12px rgba(255, 193, 7, 0.15);
-      animation: slideInDown 0.4s ease-out;
     `;
 
     let warningMessage = "⚠️ Some items in your cart have changed:";
-
     validation.results.forEach((result) => {
       if (result.status === "removed") {
         warningMessage += `<br>• <strong>${escapeHtml(result.name)}</strong>: ${
@@ -1249,33 +1327,30 @@ async function renderCartOnOrderPage(shouldValidate = true) {
         }`;
       }
     });
-
     warningMessage +=
       "<br><br><em>Please review your cart before proceeding.</em>";
-
     warningDiv.innerHTML = warningMessage;
     cartContainer.appendChild(warningDiv);
   }
 
-  // Render cart items with validation highlights
-  cart.forEach((it, idx) => {
+  // Render cart items with PROPER event handling
+  cart.forEach((item, index) => {
     const row = document.createElement("div");
     row.className = "cart-row";
+    row.dataset.index = index; // Store index on the row itself
 
     // Check if item is unavailable
-    const isUnavailable = it.unavailable;
+    const isUnavailable = item.unavailable;
     const validationResult =
-      validation && validation.results.find((r) => r.index === idx);
+      validation && validation.results.find((r) => r.index === index);
     const isPriceChanged =
       validationResult && validationResult.status === "price_changed";
 
-    // Apply styles based on validation
     if (isUnavailable) {
       row.style.cssText = `
         opacity: 0.6;
         background: linear-gradient(135deg, #f8d7da, #f5c6cb);
         border-left: 4px solid #dc3545;
-        position: relative;
       `;
     } else if (isPriceChanged) {
       row.style.cssText = `
@@ -1286,18 +1361,19 @@ async function renderCartOnOrderPage(shouldValidate = true) {
 
     row.innerHTML = `
       <img src="${
-        it.image ||
+        item.image ||
         "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iI2ZmZTVjYyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiMzMzMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5DYXJ0PC90ZXh0Pjwvc3ZnPg=="
-      }" alt="${escapeHtml(it.name)}" loading="lazy" />
+      }"
+           alt="${escapeHtml(item.name)}" loading="lazy" />
       <div class="item-info">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <strong>${escapeHtml(it.name)}</strong>
+          <strong>${escapeHtml(item.name)}</strong>
           ${
             isUnavailable
               ? '<span style="color:#dc3545;font-weight:bold;font-size:0.9rem;">UNAVAILABLE</span>'
               : ""
           }
-          <button class="remove-item" data-index="${idx}">Remove</button>
+          <button class="remove-item">Remove</button>
         </div>
         ${
           isUnavailable
@@ -1317,98 +1393,84 @@ async function renderCartOnOrderPage(shouldValidate = true) {
         `
             : ""
         }
-        <div class="qty-controls" data-index="${idx}">
-          <button class="qty-decrease" data-index="${idx}" ${
-      isUnavailable ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ""
-    }>-</button>
-          <span class="qty" data-index="${idx}">${it.quantity}</span>
-          <button class="qty-increase" data-index="${idx}" ${
-      isUnavailable ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ""
-    }>+</button>
+        <div class="qty-controls">
+          <button class="qty-btn decrease" ${
+            isUnavailable
+              ? 'disabled style="opacity:0.5;cursor:not-allowed;"'
+              : ""
+          }>-</button>
+          <span class="qty-display">${item.quantity}</span>
+          <button class="qty-btn increase" ${
+            isUnavailable
+              ? 'disabled style="opacity:0.5;cursor:not-allowed;"'
+              : ""
+          }>+</button>
           <div style="margin-left:auto;font-weight:700;">NGN ${formatPrice(
-            (it.price || 0) * (it.quantity || 1)
+            (item.price || 0) * (item.quantity || 1)
           )}</div>
         </div>
       </div>
     `;
+
     cartContainer.appendChild(row);
   });
 
-  // Add "Remove Unavailable Items" button if needed
-  if (validation && validation.hasRemovals) {
-    const cleanupDiv = document.createElement("div");
-    cleanupDiv.style.cssText = `
-      margin-top: 1rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--border);
-      text-align: center;
-    `;
+  // Add event listeners AFTER rendering
+  setupCartEventListeners();
+}
 
-    const cleanupBtn = document.createElement("button");
-    cleanupBtn.id = "remove-unavailable";
-    cleanupBtn.textContent = "Remove Unavailable Items";
-    cleanupBtn.style.cssText = `
-      background: linear-gradient(135deg, #dc3545, #c82333);
-      color: white;
-      border: none;
-      padding: 0.75rem 1.5rem;
-      border-radius: 8px;
-      cursor: pointer;
-      font-weight: 600;
-      transition: all 0.3s ease;
-    `;
+/* ================== FIXED CART EVENT HANDLING ================== */
+function setupCartEventListeners() {
+  const cartContainer = document.getElementById("cart-container");
+  if (!cartContainer) return;
 
-    cleanupBtn.addEventListener("mouseenter", () => {
-      cleanupBtn.style.transform = "translateY(-2px)";
-      cleanupBtn.style.boxShadow = "0 4px 12px rgba(220, 53, 69, 0.3)";
-    });
+  // Remove old listeners to prevent duplicates
+  cartContainer.replaceWith(cartContainer.cloneNode(true));
+  const freshContainer = document.getElementById("cart-container");
 
-    cleanupBtn.addEventListener("mouseleave", () => {
-      cleanupBtn.style.transform = "translateY(0)";
-      cleanupBtn.style.boxShadow = "none";
-    });
+  // Add fresh event listener
+  freshContainer.addEventListener("click", function (e) {
+    const target = e.target;
+    const row = target.closest(".cart-row");
 
-    cleanupBtn.addEventListener("click", () => {
-      const cart = readCart();
-      const updatedCart = cart.filter((item) => !item.unavailable);
-      saveCart(updatedCart);
-      renderCartOnOrderPage(false);
-      showNotification("Unavailable items removed from cart", "success");
-    });
+    if (!row) return;
 
-    cleanupDiv.appendChild(cleanupBtn);
-    cartContainer.appendChild(cleanupDiv);
-  }
+    const index = parseInt(row.dataset.index);
+    let cart = readCart();
 
-  // Use event delegation for all cart buttons (FIX FOR SLUGGISHNESS)
-  cartContainer.addEventListener(
-    "click",
-    (e) => {
-      const target = e.target;
+    if (isNaN(index) || index < 0 || index >= cart.length) return;
 
-      if (target.classList.contains("qty-increase")) {
-        const idx = Number(target.dataset.index);
-        let cart = readCart();
-        cart[idx].quantity = (cart[idx].quantity || 1) + 1;
-        saveCart(cart);
-        renderCartOnOrderPage(false);
-      } else if (target.classList.contains("qty-decrease")) {
-        const idx = Number(target.dataset.index);
-        let cart = readCart();
-        cart[idx].quantity = (cart[idx].quantity || 1) - 1;
-        if (cart[idx].quantity < 1) cart.splice(idx, 1);
-        saveCart(cart);
-        renderCartOnOrderPage(false);
-      } else if (target.classList.contains("remove-item")) {
-        const idx = Number(target.dataset.index);
-        let cart = readCart();
-        cart.splice(idx, 1);
-        saveCart(cart);
-        renderCartOnOrderPage(false);
+    // Handle quantity buttons
+
+    if (target.classList.contains("qty-btn")) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (target.classList.contains("increase")) {
+        cart[index].quantity = (cart[index].quantity || 1) + 1;
+      } else if (target.classList.contains("decrease")) {
+        // Only decrease if quantity is greater than 1
+        if (cart[index].quantity > 1) {
+          cart[index].quantity = cart[index].quantity - 1;
+        }
+        // If quantity is 1, do nothing (don't decrease to 0)
       }
-    },
-    { passive: true }
-  );
+
+      saveCart(cart);
+      renderCartOnOrderPage(false); // Don't validate on button clicks
+    }
+
+    // Handle remove button
+    if (target.classList.contains("remove-item")) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      cart.splice(index, 1);
+      saveCart(cart);
+      renderCartOnOrderPage(false);
+      showNotification("Item removed from cart", "success");
+    }
+  });
 }
 
 /* ================== RIPPLE EFFECT ================== */
@@ -1439,14 +1501,19 @@ function initRipple(selector) {
 document.addEventListener("DOMContentLoaded", async () => {
   console.log("🚀 Initializing Toke Bakes with Enhanced Sync...");
 
-  // Initialize auto-updater FIRST (IMPORTANT!)
+  // STEP 2: Initialize sync system FIRST (IMPORTANT!)
   window.websiteUpdater = new WebsiteAutoUpdater();
 
-  // Load dynamic content from Supabase
+  // STEP 3: Tiny delay for sync to initialize (using requestAnimationFrame - faster)
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+
+  // STEP 4: NOW load cart (after sync is ready)
+  refreshCartCount();
+
+  // STEP 5: Load dynamic content
   await loadDynamicContent();
 
-  // Your existing initialization code...
-  refreshCartCount();
+  // STEP 6: Initialize everything else
   initMobileMenu();
   initThemeToggle();
   initFooterTheme();
@@ -1454,7 +1521,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   initOrderFunctionality();
   initBottomSheet();
   initRipple(
-    ".btn, .add-cart, .order-now, .qty-controls button, .order-option-btn, .remove-item"
+    ".btn, .add-cart, .order-now, .qty-controls button, .order-option-btn, .remove-item .theme-toggle"
   );
 
   if (currentPage.includes("order")) {

@@ -296,14 +296,16 @@ header {
   display: none;
 }
 
-/* ================== THEME TOGGLE ================== */
+/* ================== GLASS THEME TOGGLE - VISIBLE IN LIGHT MODE ================== */
 .theme-toggle {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0.5rem;
-  margin-left: 1.25rem;
+  background: rgba(255, 255, 255, 0.7); /* Much more opaque */
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border: 2px solid rgba(230, 122, 0, 0.3); /* Orange border for contrast */
   border-radius: 50%;
+  padding: 0.75rem;
+  margin-left: 1.25rem;
+  cursor: pointer;
   transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   display: flex;
   align-items: center;
@@ -314,33 +316,50 @@ header {
   color: var(--text);
   position: relative;
   overflow: hidden;
+  /* Inner shadow for depth */
+  box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.8),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.1); /* Subtle outer shadow */
 }
 
-.theme-toggle::before {
-  content: "";
+/* Glass effect for dark theme */
+[data-theme="dark"] .theme-toggle {
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(230, 122, 0, 0.4);
+  box-shadow: inset 0 2px 4px rgba(255, 255, 255, 0.1),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* RIPPLE EFFECT */
+.theme-toggle .ripple-effect {
   position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(230, 122, 0, 0.1),
-    transparent
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(230, 122, 0, 0.4) 0%,
+    rgba(230, 122, 0, 0.2) 40%,
+    transparent 70%
   );
-  transition: left 0.6s ease;
+  transform: scale(0);
+  animation: themeRipple 0.6s ease-out;
+  pointer-events: none;
+  z-index: 1;
 }
 
-.theme-toggle:hover::before {
-  left: 100%;
+@keyframes themeRipple {
+  0% {
+    transform: scale(0);
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(3);
+    opacity: 0;
+  }
 }
 
-.theme-toggle:hover {
-  background: rgba(230, 122, 0, 0.15);
-  transform: rotate(180deg) scale(1.1);
-}
-
+/* ====== KEEP YOUR ORIGINAL ROTATION LOGIC ====== */
 .theme-toggle .icon {
   transition: all 0.3s ease;
   display: inline-block;
@@ -360,6 +379,48 @@ header {
 .theme-toggle.dark .moon {
   opacity: 1;
   transform: scale(1) rotate(0deg);
+}
+
+/* Fix icon flash */
+.theme-toggle .moon {
+  display: none;
+}
+[data-theme="dark"] .theme-toggle .moon {
+  display: inline;
+}
+
+/* ====== ORIGINAL HOVER EFFECT ====== */
+.theme-toggle:hover {
+  background: rgba(230, 122, 0, 0.2); /* Orange tint on hover */
+  transform: rotate(180deg) scale(1.1);
+  border-color: rgba(230, 122, 0, 0.5);
+}
+
+[data-theme="dark"] .theme-toggle:hover {
+  background: rgba(230, 122, 0, 0.3);
+}
+
+/* Glass shine effect */
+.theme-toggle::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.5),
+    transparent
+  );
+  transition: left 0.6s ease;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.theme-toggle:hover::before {
+  left: 100%;
 }
 
 /* ================== NAVBAR TOGGLE ================== */
@@ -710,9 +771,11 @@ header {
     rgba(255, 223, 186, 0.15)
   );
 
+  /* Add standard properties first, then vendor prefixes */
+  mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
   -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
-  mask-composite: exclude;
   z-index: 1;
   pointer-events: none;
 }
@@ -2977,7 +3040,9 @@ html {
   margin-bottom: 1.25rem;
   line-height: 1.6;
   display: -webkit-box;
+  line-clamp: 3; /* ← ADD THIS STANDARD PROPERTY */
   -webkit-line-clamp: 3;
+  box-orient: vertical; /* ← ADD THIS STANDARD PROPERTY */
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
