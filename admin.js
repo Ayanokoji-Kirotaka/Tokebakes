@@ -1,5 +1,5 @@
-/* ================== admin.js - COMPLETE REWRITE ================== */
-/* Toke Bakes Admin Panel - FIXED THEME SYSTEM VERSION */
+/* ================== admin.js - COMPLETE FIXED VERSION ================== */
+/* Toke Bakes Admin Panel - NO DUPLICATE DECLARATIONS */
 
 // Initialize global variables
 let currentAdmin = null;
@@ -18,7 +18,7 @@ const ADMIN_CREDENTIALS = {
     "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
 };
 
-// Available themes
+// Available themes - MOVED TO TOP LEVEL TO AVOID REDECLARATION
 const AVAILABLE_THEMES = [
   {
     name: "Default Theme",
@@ -57,6 +57,42 @@ const AVAILABLE_THEMES = [
     description: "Festive red & green theme",
   },
 ];
+
+/* ================== AUTO-UPDATE SYSTEM ================== */
+class DataSyncManager {
+  constructor() {
+    this.lastUpdateKey = "toke_bakes_last_update";
+    this.broadcastChannel = null;
+    this.init();
+  }
+
+  init() {
+    if (typeof BroadcastChannel !== "undefined") {
+      this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
+      console.log("✅ DataSyncManager initialized");
+    }
+  }
+
+  notifyDataChanged(operationType, itemType, data = null) {
+    const timestamp = Date.now().toString();
+    localStorage.setItem(this.lastUpdateKey, timestamp);
+
+    if (this.broadcastChannel) {
+      this.broadcastChannel.postMessage({
+        type: "DATA_UPDATED",
+        timestamp: timestamp,
+        operation: operationType,
+        itemType: itemType,
+        data: data,
+      });
+    }
+
+    console.log(`📡 Data changed: ${operationType} ${itemType}`);
+  }
+}
+
+// Initialize sync manager
+const dataSync = new DataSyncManager();
 
 /* ================== CUSTOM POPUP SYSTEM ================== */
 function showPopup(options) {
@@ -266,7 +302,7 @@ function showNotification(message, type = "success") {
   }, 3000);
 }
 
-// Add CSS animations
+// Add CSS animations (only once)
 if (!document.querySelector("#notification-animations")) {
   const style = document.createElement("style");
   style.id = "notification-animations";
@@ -564,7 +600,8 @@ function logoutAdmin() {
   showNotification("Logged out successfully", "success");
 }
 
-// ================== UPDATE THEME UI FUNCTION ==================
+/* ================== HOLIDAY THEME MANAGEMENT ================== */
+// Update theme UI
 function updateThemeUI(activeThemeFile) {
   const themeCards = document.querySelectorAll(".theme-card");
 
@@ -581,7 +618,7 @@ function updateThemeUI(activeThemeFile) {
         statusBadge.innerHTML = '<i class="fas fa-check-circle"></i> ACTIVE';
         statusBadge.classList.add("active");
       } else {
-        // Restore original status based on theme type
+        // Restore original status
         const themeFile = card.dataset.themeFile;
         const themeInfo = AVAILABLE_THEMES.find((t) => t.file === themeFile);
         if (themeInfo) {
@@ -611,7 +648,7 @@ function updateThemeUI(activeThemeFile) {
   });
 }
 
-/* ================== THEME MANAGEMENT - FIXED ================== */
+// Load current theme from database
 async function loadCurrentTheme() {
   try {
     const themesLoading = document.getElementById("themes-loading");
@@ -648,23 +685,18 @@ async function loadCurrentTheme() {
         }
       }
     } catch (dbError) {
-      console.log(
-        "Database theme load failed, checking localStorage:",
-        dbError.message
-      );
+      console.log("Database theme load failed:", dbError.message);
     }
 
-    // Fallback: Check localStorage
-    const localTheme =
-      localStorage.getItem("toke_bakes_active_theme") || "style.css";
-    updateThemeUI(localTheme);
+    // Fallback: Default theme
+    updateThemeUI("style.css");
 
     // Hide loading, show grid
     if (themesLoading) themesLoading.style.display = "none";
     if (themesGrid) themesGrid.style.display = "grid";
 
-    console.log("✅ Current theme loaded from localStorage:", localTheme);
-    return localTheme;
+    console.log("✅ Using default theme");
+    return "style.css";
   } catch (error) {
     console.error("Error loading current theme:", error);
 
@@ -690,6 +722,7 @@ async function loadCurrentTheme() {
   }
 }
 
+// Activate holiday theme
 async function activateTheme(themeFile) {
   try {
     showNotification("🔄 Activating theme...", "info");
@@ -699,7 +732,7 @@ async function activateTheme(themeFile) {
 
     const confirmed = await showPopup({
       title: "Activate Theme",
-      message: `Are you sure you want to activate "${themeName}"?\n\nThis will change the appearance of your website for all visitors.`,
+      message: `Are you sure you want to activate "${themeName}"?\n\nThis will change the appearance of your website for ALL visitors.`,
       type: "question",
       showCancel: true,
       cancelText: "Cancel",
@@ -711,9 +744,7 @@ async function activateTheme(themeFile) {
       return false;
     }
 
-    // ========== CRITICAL FIX: Check if table exists first ==========
-    console.log("🔍 Checking website_themes table...");
-
+    // Check if table exists
     try {
       const testResponse = await fetch(
         `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?limit=1`,
@@ -726,41 +757,61 @@ async function activateTheme(themeFile) {
       );
 
       if (!testResponse.ok) {
-        // Table doesn't exist or RLS issue
-        console.error(
-          "❌ website_themes table not accessible:",
-          testResponse.status
-        );
-
-        // Show user-friendly error
-        const useFallback = await showPopup({
-          title: "Theme System Not Ready",
-          message: `The theme database isn't set up yet.\n\nWould you like to use a local fallback? The theme will only change on your current browser.\n\nYou need to run the SQL setup in Supabase for permanent theme switching.`,
-          type: "warning",
-          showCancel: true,
-          cancelText: "Cancel",
-          confirmText: "Use Local Fallback",
-        });
-
-        if (useFallback) {
-          // Local fallback: store in localStorage
-          localStorage.setItem("toke_bakes_active_theme", themeFile);
-          updateThemeUI(themeFile);
-          showNotification(`🎨 "${themeName}" activated locally!`, "success");
-          console.log("✅ Theme activated locally (fallback)");
-          return true;
-        }
-        return false;
+        throw new Error("Theme table not accessible");
       }
+    } catch (error) {
+      console.error("Theme system error:", error);
+      showNotification(
+        "Theme system not set up. Please check database.",
+        "error"
+      );
+      return false;
+    }
 
-      // ========== TABLE EXISTS - Proceed with normal flow ==========
-      console.log("✅ website_themes table is accessible");
+    // 1. Deactivate all themes
+    await fetch(`${SUPABASE_CONFIG.URL}/rest/v1/website_themes`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_CONFIG.ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        is_active: false,
+        updated_at: new Date().toISOString(),
+      }),
+    });
 
-      // 1. Deactivate all themes
-      const deactivateResponse = await fetch(
+    // 2. Activate selected theme
+    const activateResponse = await fetch(
+      `${
+        SUPABASE_CONFIG.URL
+      }/rest/v1/website_themes?css_file=eq.${encodeURIComponent(themeFile)}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_CONFIG.ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({
+          is_active: true,
+          activated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+      }
+    );
+
+    if (!activateResponse.ok) {
+      // Theme might not exist in database yet
+      console.log("Theme not found, inserting...");
+
+      const insertResponse = await fetch(
         `${SUPABASE_CONFIG.URL}/rest/v1/website_themes`,
         {
-          method: "PATCH",
+          method: "POST",
           headers: {
             "Content-Type": "application/json",
             apikey: SUPABASE_CONFIG.ANON_KEY,
@@ -768,120 +819,44 @@ async function activateTheme(themeFile) {
             Prefer: "return=minimal",
           },
           body: JSON.stringify({
-            is_active: false,
-            updated_at: new Date().toISOString(),
-          }),
-        }
-      );
-
-      if (!deactivateResponse.ok) {
-        console.error("Deactivate failed:", deactivateResponse.status);
-        // Continue anyway - might be permission issue
-      }
-
-      // 2. Activate selected theme
-      const activateResponse = await fetch(
-        `${
-          SUPABASE_CONFIG.URL
-        }/rest/v1/website_themes?css_file=eq.${encodeURIComponent(themeFile)}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: SUPABASE_CONFIG.ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-            Prefer: "return=minimal",
-          },
-          body: JSON.stringify({
+            css_file: themeFile,
+            theme_name: themeName,
             is_active: true,
-            activated_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            activated_at: new Date().toISOString(),
           }),
         }
       );
 
-      if (!activateResponse.ok) {
-        // Theme might not exist in database yet - try to insert it
-        console.log("Theme not found in database, attempting to insert...");
-
-        const insertResponse = await fetch(
-          `${SUPABASE_CONFIG.URL}/rest/v1/website_themes`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              apikey: SUPABASE_CONFIG.ANON_KEY,
-              Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-              Prefer: "return=minimal",
-            },
-            body: JSON.stringify({
-              css_file: themeFile,
-              theme_name: themeName,
-              is_active: true,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            }),
-          }
+      if (!insertResponse.ok) {
+        throw new Error(
+          `Failed to insert theme: HTTP ${insertResponse.status}`
         );
-
-        if (!insertResponse.ok) {
-          throw new Error(
-            `Failed to insert theme: HTTP ${insertResponse.status}`
-          );
-        }
-
-        console.log("✅ Theme inserted into database");
-      } else {
-        console.log("✅ Theme updated in database");
       }
-
-      // 3. Update UI immediately
-      updateThemeUI(themeFile);
-
-      // 4. Notify all website instances
-      if (typeof dataSync?.notifyDataChanged === "function") {
-        dataSync.notifyDataChanged("theme_activated", themeFile);
-      }
-
-      // 5. Show success notification
-      showNotification(`🎨 "${themeName}" theme activated!`, "success");
-
-      console.log(
-        `✅ Theme "${themeName}" (${themeFile}) activated successfully`
-      );
-      return true;
-    } catch (dbError) {
-      console.error("Database operation failed:", dbError);
-      throw dbError; // Re-throw to outer catch
     }
+
+    // 3. Update UI immediately
+    updateThemeUI(themeFile);
+
+    // 4. Notify all website instances
+    dataSync.notifyDataChanged("theme_activated", "website_theme", {
+      css_file: themeFile,
+      theme_name: themeName,
+      timestamp: Date.now(),
+    });
+
+    // 5. Show success notification
+    showNotification(
+      `🎨 "${themeName}" theme activated for all visitors!`,
+      "success"
+    );
+
+    console.log(`✅ Theme "${themeName}" activated successfully`);
+    return true;
   } catch (error) {
     console.error("Theme activation failed:", error);
-
-    // User-friendly error based on error type
-    let errorMessage = "Failed to activate theme";
-
-    if (error.message.includes("Failed to fetch")) {
-      errorMessage = "Network error. Cannot connect to database.";
-    } else if (
-      error.message.includes("404") ||
-      error.message.includes("undefined table")
-    ) {
-      errorMessage = "Theme system not set up. Please check database tables.";
-    } else if (
-      error.message.includes("permission denied") ||
-      error.message.includes("RLS")
-    ) {
-      errorMessage = "Permission denied. Check RLS policies in Supabase.";
-    }
-
-    showNotification(errorMessage, "error");
-
-    // Emergency fallback: Update UI locally anyway
-    updateThemeUI(themeFile);
-    localStorage.setItem("toke_bakes_active_theme", themeFile);
-
-    showNotification("Theme UI updated locally", "warning");
-
+    showNotification("Failed to activate theme: " + error.message, "error");
     return false;
   }
 }
@@ -982,9 +957,11 @@ async function saveFeaturedItem(e) {
         formData
       );
       showNotification("Featured item updated!", "success");
+      dataSync.notifyDataChanged("update", "featured");
     } else {
       await secureRequest(API_ENDPOINTS.FEATURED, "POST", formData);
       showNotification("Featured item added!", "success");
+      dataSync.notifyDataChanged("create", "featured");
     }
 
     resetFeaturedForm();
@@ -1052,6 +1029,7 @@ async function deleteFeaturedItem(id) {
     tempImageCache.delete(id);
     await renderFeaturedItems();
     await updateItemCounts();
+    dataSync.notifyDataChanged("delete", "featured");
   } catch (error) {
     console.error("Error deleting featured item:", error);
     showNotification("Failed to delete item", "error");
@@ -1158,9 +1136,11 @@ async function saveMenuItem(e) {
         formData
       );
       showNotification("Menu item updated!", "success");
+      dataSync.notifyDataChanged("update", "menu");
     } else {
       await secureRequest(API_ENDPOINTS.MENU, "POST", formData);
       showNotification("Menu item added!", "success");
+      dataSync.notifyDataChanged("create", "menu");
     }
 
     resetMenuForm();
@@ -1228,6 +1208,7 @@ async function deleteMenuItem(id) {
     tempImageCache.delete(id);
     await renderMenuItems();
     await updateItemCounts();
+    dataSync.notifyDataChanged("delete", "menu");
   } catch (error) {
     console.error("Error deleting menu item:", error);
     showNotification("Failed to delete menu item", "error");
@@ -1322,9 +1303,11 @@ async function saveGalleryItem(e) {
         formData
       );
       showNotification("Gallery image updated!", "success");
+      dataSync.notifyDataChanged("update", "gallery");
     } else {
       await secureRequest(API_ENDPOINTS.GALLERY, "POST", formData);
       showNotification("Gallery image added!", "success");
+      dataSync.notifyDataChanged("create", "gallery");
     }
 
     resetGalleryForm();
@@ -1390,6 +1373,7 @@ async function deleteGalleryItem(id) {
     tempImageCache.delete(id);
     await renderGalleryItems();
     await updateItemCounts();
+    dataSync.notifyDataChanged("delete", "gallery");
   } catch (error) {
     console.error("Error deleting gallery item:", error);
     showNotification("Failed to delete gallery item", "error");
@@ -1642,6 +1626,7 @@ async function importData(file) {
       renderGalleryItems(),
     ]);
     await updateItemCounts();
+    dataSync.notifyDataChanged("import", "all");
   } catch (error) {
     console.error("Error importing data:", error);
     showNotification("Failed to import data", "error");
@@ -1650,6 +1635,8 @@ async function importData(file) {
 
 /* ================== EVENT LISTENERS ================== */
 function setupEventListeners() {
+  console.log("Setting up event listeners...");
+
   // Tab switching
   document.querySelectorAll(".admin-tab").forEach((tab) => {
     tab.addEventListener("click", function () {
@@ -1865,6 +1852,7 @@ function setupEventListeners() {
           renderGalleryItems(),
         ]);
         await updateItemCounts();
+        dataSync.notifyDataChanged("reset", "all");
       } catch (error) {
         console.error("Error resetting data:", error);
         showNotification("Failed to reset data", "error");
@@ -1874,11 +1862,12 @@ function setupEventListeners() {
 
   // Theme activation buttons (event delegation)
   document.addEventListener("click", (e) => {
-    if (e.target.closest(".btn-activate-theme")) {
+    const themeBtn = e.target.closest(".btn-activate-theme");
+    if (themeBtn) {
       e.preventDefault();
       e.stopPropagation();
 
-      const themeCard = e.target.closest(".theme-card");
+      const themeCard = themeBtn.closest(".theme-card");
       const themeFile = themeCard?.dataset.themeFile;
       const isActive = themeCard?.classList.contains("active");
 
@@ -1887,11 +1876,60 @@ function setupEventListeners() {
       }
     }
   });
+
+  // Dark/light theme toggle (user preference)
+  const themeToggle = document.getElementById("themeToggle");
+  if (themeToggle) {
+    themeToggle.addEventListener("click", () => {
+      const current = document.documentElement.getAttribute("data-theme");
+      const newTheme = current === "dark" ? "light" : "dark";
+
+      document.documentElement.setAttribute("data-theme", newTheme);
+
+      // Update icons
+      const sunIcon = themeToggle.querySelector(".sun");
+      const moonIcon = themeToggle.querySelector(".moon");
+
+      if (newTheme === "dark") {
+        if (sunIcon) sunIcon.style.display = "none";
+        if (moonIcon) moonIcon.style.display = "inline-block";
+        themeToggle.classList.add("dark");
+      } else {
+        if (sunIcon) sunIcon.style.display = "inline-block";
+        if (moonIcon) moonIcon.style.display = "none";
+        themeToggle.classList.remove("dark");
+      }
+
+      localStorage.setItem("toke_bakes_theme", newTheme);
+      updateFooterTheme(newTheme);
+    });
+  }
 }
 
 /* ================== INITIALIZATION ================== */
 async function initAdminPanel() {
   console.log("🔧 Initializing Admin Panel v2.0");
+
+  // Apply dark/light theme immediately
+  const savedTheme = localStorage.getItem("toke_bakes_theme");
+  if (savedTheme) {
+    document.documentElement.setAttribute("data-theme", savedTheme);
+    const themeToggle = document.getElementById("themeToggle");
+    if (themeToggle) {
+      const sunIcon = themeToggle.querySelector(".sun");
+      const moonIcon = themeToggle.querySelector(".moon");
+
+      if (savedTheme === "dark") {
+        if (sunIcon) sunIcon.style.display = "none";
+        if (moonIcon) moonIcon.style.display = "inline-block";
+        themeToggle.classList.add("dark");
+      } else {
+        if (sunIcon) sunIcon.style.display = "inline-block";
+        if (moonIcon) moonIcon.style.display = "none";
+        themeToggle.classList.remove("dark");
+      }
+    }
+  }
 
   // Check session
   if (checkSession()) {
@@ -1944,13 +1982,7 @@ async function initAdminPanel() {
   // Setup event listeners
   setupEventListeners();
 
-  // Setup theme listeners
-  const themesTab = document.querySelector('.admin-tab[data-tab="themes"]');
-  if (themesTab) {
-    themesTab.addEventListener("click", async () => {
-      await loadCurrentTheme();
-    });
-  }
+  console.log("✅ Admin Panel initialized");
 }
 
 // Make functions available globally
@@ -1968,4 +2000,4 @@ if (document.readyState === "loading") {
   initAdminPanel();
 }
 
-console.log("✅ Toke Bakes Admin Panel v2.0 - THEME SYSTEM READY");
+console.log("✅ Toke Bakes Admin Panel v2.0 - NO DUPLICATE DECLARATIONS");
