@@ -1,5 +1,6 @@
 /* ================== script.js - TOKE BAKES WEBSITE ================== */
 /* ================== CRITICAL: PREVENT THEME FLASH & TOGGLE FIX ================== */
+
 // This runs IMMEDIATELY when script loads, before any rendering
 (function preventThemeFlash() {
   // 1. Check localStorage for saved theme
@@ -74,6 +75,11 @@ class WebsiteAutoUpdater {
         if (event.data.type === "DATA_UPDATED") {
           console.log("📡 BroadcastChannel update received!", event.data);
           this.refreshDataWithUI();
+        }
+        // Handle theme updates
+        if (event.data.type === "theme_activated") {
+          console.log("🎨 Theme update received:", event.data.itemType);
+          this.updateTheme(event.data.itemType);
         }
       };
       console.log("✅ BroadcastChannel ready for instant sync");
@@ -175,6 +181,22 @@ class WebsiteAutoUpdater {
       // Create indicator if it doesn't exist
       indicator = document.createElement("div");
       indicator.id = "sync-status-indicator";
+      indicator.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #28a745;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        z-index: 10000;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      `;
       document.body.appendChild(indicator);
     }
 
@@ -186,20 +208,17 @@ class WebsiteAutoUpdater {
       indicator.classList.add("syncing");
       indicator.innerHTML = "⟳";
       indicator.title = "Updating content...";
+      indicator.style.background = "#ffc107";
     } else if (state === "updated") {
       indicator.classList.add("updated");
       indicator.innerHTML = "✓";
       indicator.title = "Content updated!";
+      indicator.style.background = "#28a745";
     } else if (state === "error") {
-      indicator.style.cssText = `
-        position: fixed; bottom: 20px; right: 20px;
-        width: 40px; height: 40px; border-radius: 50%;
-        background: #dc3545; color: white; display: flex;
-        align-items: center; justify-content: center;
-        font-size: 1.2rem; z-index: 10000;
-      `;
+      indicator.classList.add("error");
       indicator.innerHTML = "!";
       indicator.title = "Update failed";
+      indicator.style.background = "#dc3545";
     }
   }
 
@@ -212,14 +231,28 @@ class WebsiteAutoUpdater {
   }
 
   showUpdateNotification() {
-    // Optional: You can enable this for visual toast
-    // For now, just log to console
     console.log("✅ Website content updated successfully!");
+  }
 
-    // If you want a toast notification later, uncomment:
-    /*
-    showNotification('Content updated! New items are available.', 'success');
-    */
+  // Theme update handler
+  async updateTheme(themeFile) {
+    console.log(`🎨 Updating theme to: ${themeFile}`);
+
+    // Show loading indicator
+    const originalTitle = document.title;
+    document.title = "🎨 Updating theme...";
+
+    // Swap theme
+    swapWebsiteTheme(themeFile);
+
+    // Restore title
+    setTimeout(() => {
+      document.title = originalTitle;
+    }, 1000);
+
+    // Show notification
+    const themeName = themeFile.replace(".css", "").replace("theme-", "");
+    showNotification(`Theme changed to ${themeName}`, "info");
   }
 }
 
@@ -477,6 +510,9 @@ const BUSINESS_PHONE_E164 = "+234 706 346 6822";
 const BUSINESS_PHONE_WAME = "2347063466822";
 const BUSINESS_EMAIL = "tokebakes@gmail.com";
 
+/* ================== WEBSITE THEME MANAGEMENT ================== */
+let currentThemeFile = "style.css";
+
 /* Utility functions */
 function readCart() {
   try {
@@ -495,7 +531,7 @@ function formatPrice(num) {
   return Number(num).toLocaleString("en-NG");
 }
 
-// Escape HTML for security (already defined in admin.js, but defined here too)
+// Escape HTML for security
 function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
@@ -504,7 +540,7 @@ function escapeHtml(text) {
 
 /* ================== CART VALIDATION FUNCTIONS ================== */
 
-// NEW: Validate cart items against current menu
+// Validate cart items against current menu
 async function validateCartItems() {
   try {
     const cart = readCart();
@@ -584,7 +620,7 @@ async function validateCartItems() {
   }
 }
 
-// NEW: Update cart with validated prices
+// Update cart with validated prices
 function updateCartWithValidation(validationResults) {
   const cart = readCart();
   let updatedCart = [...cart];
@@ -618,7 +654,9 @@ function showNotification(message, type = "success") {
     position: fixed;
     top: 25px;
     right: 25px;
-    background: ${type === "success" ? "#4CAF50" : "#F44336"};
+    background: ${type === "success" ? "#4CAF50" :
+                 type === "error" ? "#F44336" :
+                 type === "warning" ? "#FF9800" : "#2196F3"};
     color: white;
     padding: 1rem 1.5rem;
     border-radius: 8px;
@@ -668,17 +706,6 @@ if (!document.querySelector("#notification-styles")) {
   `;
   document.head.appendChild(style);
 }
-
-/* ================== Old LOADER ================== */
-// window.addEventListener("load", () => {
-//   const loader = document.getElementById("loader");
-//   if (loader) {
-//     setTimeout(() => {
-//       loader.style.opacity = "0";
-//       setTimeout(() => (loader.style.display = "none"), 600);
-//     }, 600);
-//   }
-// });
 
 /* ================== ENHANCED SESSION AWARE LOADER ================== */
 (function () {
@@ -741,7 +768,7 @@ if (!document.querySelector("#notification-styles")) {
           localStorage.getItem(SESSION_KEY) || "{}"
         );
         updatedData.timestamp = Date.now();
-        localStorage.setItem(SESSION_KEY, JSON.stringify(updatedData)); // ✅ FIXED
+        localStorage.setItem(SESSION_KEY, JSON.stringify(updatedData));
       },
       { passive: true }
     );
@@ -789,32 +816,26 @@ if (!document.querySelector("#notification-styles")) {
     // 1. Home page check
     if (linkPage === "index" && currentPage === "index") {
       link.classList.add("active");
-      console.log(`✓ Link ${index} (${href}) activated as HOME`);
       return;
     }
 
     // 2. Direct match
     if (linkPage === currentPage && linkPage !== "index") {
       link.classList.add("active");
-      console.log(`✓ Link ${index} (${href}) activated as DIRECT MATCH`);
       return;
     }
 
     // 3. For online (Netlify) - check if current path contains page name
     if (!isLocal && loc.pathname.includes(linkPage) && linkPage !== "index") {
       link.classList.add("active");
-      console.log(`✓ Link ${index} (${href}) activated as PATH CONTAINS`);
       return;
     }
 
     // 4. For local - check full path
     if (isLocal && loc.href.endsWith(href)) {
       link.classList.add("active");
-      console.log(`✓ Link ${index} (${href}) activated as LOCAL MATCH`);
       return;
     }
-
-    console.log(`✗ Link ${index} (${href}) NOT activated`);
   });
 
   console.log("--- Navigation Highlight Complete ---");
@@ -947,6 +968,69 @@ function initFooterTheme() {
       updateFooterTheme(theme);
     }
   });
+}
+
+/* ================== WEBSITE THEME SWAPPER ================== */
+
+// Function to swap CSS files
+function swapWebsiteTheme(newThemeFile) {
+  // Don't swap if already using this theme
+  if (window.currentThemeFile === newThemeFile) return;
+
+  console.log(`🔄 Swapping theme: ${window.currentThemeFile || 'default'} → ${newThemeFile}`);
+
+  // Store current theme globally
+  window.currentThemeFile = newThemeFile;
+
+  // Method 1: Find existing theme link and replace
+  let themeLink = document.getElementById('active-theme-css');
+
+  if (themeLink) {
+    // Replace existing link
+    themeLink.href = `${newThemeFile}?v=${Date.now()}`;
+  } else {
+    // Create new link if doesn't exist
+    themeLink = document.createElement('link');
+    themeLink.rel = 'stylesheet';
+    themeLink.href = newThemeFile;
+    themeLink.id = 'active-theme-css';
+    document.head.appendChild(themeLink);
+
+    // Also remove any old theme links
+    document.querySelectorAll('link[href*="theme-"]').forEach(link => {
+      if (link.id !== 'active-theme-css') {
+        link.remove();
+      }
+    });
+  }
+
+  console.log(`✅ Theme swapped to: ${newThemeFile}`);
+}
+
+// Load active theme when website loads
+async function loadActiveTheme() {
+  try {
+    const response = await fetch(
+      `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?is_active=eq.true&select=css_file&limit=1`,
+      {
+        headers: {
+          apikey: SUPABASE_CONFIG.ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+        },
+        cache: "no-cache",
+      }
+    );
+
+    if (response.ok) {
+      const [theme] = await response.json();
+      const themeFile = theme?.css_file || "style.css";
+
+      // Swap to the active theme
+      swapWebsiteTheme(themeFile);
+    }
+  } catch (error) {
+    console.log("Using default theme");
+  }
 }
 
 /* ================== FIXED MENU INTERACTIONS ================== */
@@ -1509,6 +1593,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // STEP 4: NOW load cart (after sync is ready)
   refreshCartCount();
+
+  // ✅ ADD THIS: STEP 4.5: Load active theme
+  await loadActiveTheme();
 
   // STEP 5: Load dynamic content
   await loadDynamicContent();

@@ -1,4 +1,4 @@
-// config.js - WORKING VERSION (FIXED)
+// config.js - FIXED VERSION
 const SUPABASE_CONFIG = {
   URL: "https://lmqoflcikfcxoeyinjus.supabase.co",
   ANON_KEY:
@@ -9,7 +9,12 @@ const API_ENDPOINTS = {
   GALLERY: "/rest/v1/gallery",
   FEATURED: "/rest/v1/featured_items",
   MENU: "/rest/v1/menu_items",
+  ADMIN_USERS: "/rest/v1/admin_users",
+  WEBSITE_THEMES: "/rest/v1/website_themes",
 };
 
+// Make available globally
 window.SUPABASE_CONFIG = SUPABASE_CONFIG;
 window.API_ENDPOINTS = API_ENDPOINTS;
+
+console.log("✅ Config.js loaded");
