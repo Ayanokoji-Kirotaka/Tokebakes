@@ -750,6 +750,16 @@ if (!document.querySelector("#notification-styles")) {
 
 /* ================== BULLETPROOF NAV HIGHLIGHT ================== */
 (function highlightNav() {
+  // Skip navigation highlighting on admin pages
+  if (
+    window.location.pathname.includes("admin") ||
+    document.querySelector(".admin-dashboard") ||
+    document.querySelector(".admin-login-container")
+  ) {
+    console.log("⏭️ Skipping nav highlight on admin page");
+    return;
+  }
+
   const navLinks = document.querySelectorAll("nav a");
 
   // Get current location info
@@ -818,7 +828,7 @@ if (!document.querySelector("#notification-styles")) {
   });
 
   console.log("--- Navigation Highlight Complete ---");
-})();
+})(); // ← MAKE SURE THIS CLOSING LINE EXISTS
 
 /* ================== FIXED CART COUNT - NO ZERO FLASH ================== */
 function refreshCartCount() {

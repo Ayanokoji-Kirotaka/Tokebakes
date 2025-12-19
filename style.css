@@ -4519,3 +4519,69 @@ html {
     grid-template-columns: 1fr;
   }
 }
+
+/* ================== SPA TRANSITIONS ================== */
+/* All CSS lives here, not in JS */
+
+/* Fade animations */
+#main-content {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.spa-fade-out {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.spa-fade-in {
+  animation: spaFadeIn 0.4s ease forwards;
+}
+
+@keyframes spaFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Disable transitions during SPA navigation */
+body.spa-navigating a,
+body.spa-navigating button {
+  pointer-events: none;
+}
+
+/* Progress indicator (optional) */
+.spa-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--primary-color),
+    var(--secondary-color)
+  );
+  z-index: 9999;
+  transform: translateX(-100%);
+}
+
+.spa-progress.active {
+  animation: spaProgress 1s ease-in-out;
+}
+
+@keyframes spaProgress {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
