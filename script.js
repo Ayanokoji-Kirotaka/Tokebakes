@@ -1,13 +1,12 @@
-/* ================== script.js - COMPLETE FIXED VERSION ================== */
-/* Toke Bakes Website - SEPARATED THEME SYSTEMS */
-
-/* ================== CRITICAL: PREVENT THEME FLASH ================== */
-// This runs IMMEDIATELY when script loads
+/* ================== script.js - TOKE BAKES WEBSITE ================== */
+/* ================== CRITICAL: PREVENT THEME FLASH & TOGGLE FIX ================== */
+// This runs IMMEDIATELY when script loads, before any rendering
 (function preventThemeFlash() {
-  // 1. Dark/Light mode (user preference)
+  // 1. Check localStorage for saved theme
   const savedTheme = localStorage.getItem("toke_bakes_theme");
-  let theme = "light";
 
+  // 2. Determine which theme to use
+  let theme;
   if (savedTheme) {
     theme = savedTheme;
   } else {
@@ -17,14 +16,37 @@
     theme = prefersDark ? "dark" : "light";
   }
 
-  // Apply dark/light theme immediately
+  // 3. Apply theme IMMEDIATELY to HTML element
   document.documentElement.setAttribute("data-theme", theme);
 
-  // Disable transitions during initial load
+  // 4. Update footer IMMEDIATELY too (CRITICAL FIX!)
+  updateFooterTheme(theme);
+
+  // 5. FIX THEME TOGGLE ICON IMMEDIATELY - CRITICAL!
+  // Set the correct icon BEFORE the page renders
+  setTimeout(() => {
+    const themeToggle = document.getElementById("themeToggle");
+    if (themeToggle) {
+      const sunIcon = themeToggle.querySelector(".sun");
+      const moonIcon = themeToggle.querySelector(".moon");
+
+      if (theme === "dark") {
+        if (sunIcon) sunIcon.style.display = "none";
+        if (moonIcon) moonIcon.style.display = "inline-block";
+        themeToggle.classList.add("dark");
+      } else {
+        if (sunIcon) sunIcon.style.display = "inline-block";
+        if (moonIcon) moonIcon.style.display = "none";
+        themeToggle.classList.remove("dark");
+      }
+    }
+  }, 0);
+
+  // 6. Disable CSS transitions during initial page load
   document.documentElement.style.transition = "none";
   document.body.style.transition = "none";
 
-  // Re-enable transitions after page loads
+  // 7. Re-enable transitions after page is fully loaded
   window.addEventListener("load", function () {
     setTimeout(function () {
       document.documentElement.style.transition = "";
@@ -43,42 +65,36 @@ class WebsiteAutoUpdater {
   }
 
   init() {
-    console.log("🔧 Initializing WebsiteAutoUpdater...");
+    console.log("🔧 Initializing Enhanced WebsiteAutoUpdater...");
 
-    // Setup BroadcastChannel for instant sync
+    // 1. Setup BroadcastChannel for instant sync (same browser tabs)
     if (typeof BroadcastChannel !== "undefined") {
       this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
       this.broadcastChannel.onmessage = (event) => {
         if (event.data.type === "DATA_UPDATED") {
-          console.log("📡 Update received:", event.data);
+          console.log("📡 BroadcastChannel update received!", event.data);
           this.refreshDataWithUI();
         }
-
-        // Handle theme updates from admin panel
-        if (event.data.type === "theme_activated") {
-          console.log("🎨 Theme update received:", event.data.data.css_file);
-          this.updateWebsiteTheme(event.data.data.css_file);
-        }
       };
-      console.log("✅ BroadcastChannel ready");
+      console.log("✅ BroadcastChannel ready for instant sync");
     }
 
-    // Check for updates every 30 seconds
-    this.startPolling(30000);
+    // 2. Check for updates every 25 seconds
+    this.startPolling(25000); // 25 seconds
 
-    // Check when user returns to tab
+    // 3. Check when user returns to tab
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
-        console.log("👁️ Tab visible, checking for updates...");
+        console.log("👁️ Tab became visible, checking for updates...");
         this.checkForUpdates();
       }
     });
 
-    // Initial check
+    // 4. Initial check on page load
     setTimeout(() => this.checkForUpdates(), 3000);
   }
 
-  startPolling(interval = 30000) {
+  startPolling(interval = 25000) {
     if (this.pollingInterval) clearInterval(this.pollingInterval);
     this.pollingInterval = setInterval(() => {
       this.checkForUpdates();
@@ -91,7 +107,7 @@ class WebsiteAutoUpdater {
     const myLastCheck = localStorage.getItem("my_last_check") || "0";
 
     if (lastUpdate && lastUpdate > myLastCheck) {
-      console.log("🔄 Update detected");
+      console.log("🔄 Update detected via localStorage/timestamp");
       localStorage.setItem("my_last_check", lastUpdate);
       await this.refreshDataWithUI();
       return true;
@@ -100,187 +116,120 @@ class WebsiteAutoUpdater {
   }
 
   async refreshDataWithUI() {
+    // Show syncing indicator
+    this.showSyncIndicator("syncing");
+
     try {
       console.log("🔄 Refreshing website data...");
 
-      // Clear caches
+      // Clear ALL caches aggressively
       if (window.cachedMenuItems) {
         window.cachedMenuItems = null;
         window.cacheTimestamp = null;
       }
 
+      // Clear dataCache if it exists (from admin.js)
+      if (window.dataCache && window.dataCache.clear) {
+        window.dataCache.clear();
+      }
+
       // Reload content based on current page
       if (typeof loadDynamicContent === "function") {
         await loadDynamicContent();
+        console.log("✅ Dynamic content reloaded");
       }
 
-      // Refresh cart if on order page
+      // Also refresh cart if on order page
       if (
         window.location.pathname.includes("order") &&
         typeof renderCartOnOrderPage === "function"
       ) {
         await renderCartOnOrderPage(true);
+        console.log("✅ Cart refreshed");
       }
 
-      console.log("✅ Website content updated");
+      // Show success indicator
+      this.showSyncIndicator("updated");
+
+      // Show notification
+      this.showUpdateNotification();
+
+      // Hide indicator after 2 seconds
+      setTimeout(() => {
+        this.hideSyncIndicator();
+      }, 2000);
     } catch (error) {
       console.error("❌ Sync refresh failed:", error);
+      this.hideSyncIndicator();
+
+      // Show error state briefly
+      this.showSyncIndicator("error");
+      setTimeout(() => this.hideSyncIndicator(), 3000);
     }
   }
 
-  // Update website theme from admin panel
-  async updateWebsiteTheme(themeFile) {
-    console.log(`🎨 Updating website theme to: ${themeFile}`);
+  showSyncIndicator(state) {
+    let indicator = document.getElementById("sync-status-indicator");
 
-    // Show notification
-    const themeName = themeFile.replace(".css", "").replace("theme-", "");
-    showNotification(`Theme changed to ${themeName}`, "info");
-
-    // Load the new theme
-    loadActiveTheme();
-  }
-}
-
-// Initialize website updater
-window.websiteUpdater = new WebsiteAutoUpdater();
-
-/* ================== WEBSITE HOLIDAY THEME SYSTEM ================== */
-// This handles CSS file swapping for holiday themes
-
-let currentThemeFile = "style.css";
-
-// Function to swap CSS files
-function swapWebsiteTheme(newThemeFile) {
-  // Don't swap if already using this theme
-  if (currentThemeFile === newThemeFile) return;
-
-  console.log(`🔄 Swapping theme: ${currentThemeFile} → ${newThemeFile}`);
-
-  // Store current theme
-  currentThemeFile = newThemeFile;
-
-  // Find existing theme link
-  let themeLink = document.getElementById("active-theme-css");
-
-  if (!themeLink) {
-    // Create new link element
-    themeLink = document.createElement("link");
-    themeLink.rel = "stylesheet";
-    themeLink.id = "active-theme-css";
-    document.head.appendChild(themeLink);
-  }
-
-  // Set new CSS file with cache busting
-  themeLink.href = `${newThemeFile}?v=${Date.now()}`;
-
-  console.log(`✅ Theme swapped to: ${newThemeFile}`);
-}
-
-// Load active theme from database
-async function loadActiveTheme() {
-  try {
-    if (!window.SUPABASE_CONFIG || !window.SUPABASE_CONFIG.URL) {
-      console.log("Supabase not configured, using default theme");
-      return "style.css";
+    if (!indicator) {
+      // Create indicator if it doesn't exist
+      indicator = document.createElement("div");
+      indicator.id = "sync-status-indicator";
+      document.body.appendChild(indicator);
     }
 
-    const response = await fetch(
-      `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?is_active=eq.true&select=css_file&limit=1`,
-      {
-        headers: {
-          apikey: SUPABASE_CONFIG.ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-        },
-        cache: "no-cache",
-      }
-    );
+    // Reset classes
+    indicator.className = "";
 
-    if (response.ok) {
-      const [theme] = await response.json();
-      const themeFile = theme?.css_file || "style.css";
-
-      // Apply the theme
-      swapWebsiteTheme(themeFile);
-      return themeFile;
+    // Set state
+    if (state === "syncing") {
+      indicator.classList.add("syncing");
+      indicator.innerHTML = "⟳";
+      indicator.title = "Updating content...";
+    } else if (state === "updated") {
+      indicator.classList.add("updated");
+      indicator.innerHTML = "✓";
+      indicator.title = "Content updated!";
+    } else if (state === "error") {
+      indicator.style.cssText = `
+        position: fixed; bottom: 20px; right: 20px;
+        width: 40px; height: 40px; border-radius: 50%;
+        background: #dc3545; color: white; display: flex;
+        align-items: center; justify-content: center;
+        font-size: 1.2rem; z-index: 10000;
+      `;
+      indicator.innerHTML = "!";
+      indicator.title = "Update failed";
     }
-  } catch (error) {
-    console.log("Using default theme (error loading from database)");
-    swapWebsiteTheme("style.css");
   }
 
-  return "style.css";
-}
-
-/* ================== DARK/LIGHT THEME TOGGLE ================== */
-// This handles user preference only
-
-function initThemeToggle() {
-  const themeToggle = document.getElementById("themeToggle");
-  if (!themeToggle) return;
-
-  // Get icon elements
-  const sunIcon = themeToggle.querySelector(".sun");
-  const moonIcon = themeToggle.querySelector(".moon");
-
-  // Function to update icons
-  const updateIcons = (theme) => {
-    if (theme === "dark") {
-      if (sunIcon) sunIcon.style.display = "none";
-      if (moonIcon) moonIcon.style.display = "inline-block";
-      themeToggle.classList.add("dark");
-    } else {
-      if (sunIcon) sunIcon.style.display = "inline-block";
-      if (moonIcon) moonIcon.style.display = "none";
-      themeToggle.classList.remove("dark");
+  hideSyncIndicator() {
+    const indicator = document.getElementById("sync-status-indicator");
+    if (indicator) {
+      indicator.style.display = "none";
+      indicator.className = "";
     }
-  };
-
-  // Initial setup
-  const currentTheme =
-    document.documentElement.getAttribute("data-theme") || "light";
-  updateIcons(currentTheme);
-  updateFooterTheme(currentTheme);
-
-  // Click handler
-  themeToggle.addEventListener("click", () => {
-    const current = document.documentElement.getAttribute("data-theme");
-    const newTheme = current === "dark" ? "light" : "dark";
-
-    // Update HTML attribute
-    document.documentElement.setAttribute("data-theme", newTheme);
-
-    // Update icons
-    updateIcons(newTheme);
-
-    // Save preference
-    localStorage.setItem("toke_bakes_theme", newTheme);
-    updateFooterTheme(newTheme);
-
-    console.log(`🌓 Dark/Light theme: ${newTheme}`);
-  });
-}
-
-/* ================== FOOTER THEME ================== */
-function updateFooterTheme(theme) {
-  const footer = document.querySelector(".bakes-footer");
-  if (!footer) return;
-
-  if (!theme) {
-    theme = document.documentElement.getAttribute("data-theme") || "light";
   }
 
-  if (theme === "dark") {
-    footer.classList.add("dark-theme");
-    footer.classList.remove("light-theme");
-  } else {
-    footer.classList.add("light-theme");
-    footer.classList.remove("dark-theme");
+  showUpdateNotification() {
+    // Optional: You can enable this for visual toast
+    // For now, just log to console
+    console.log("✅ Website content updated successfully!");
+
+    // If you want a toast notification later, uncomment:
+    /*
+    showNotification('Content updated! New items are available.', 'success');
+    */
   }
 }
 
-/* ================== DATA LOADING FUNCTIONS ================== */
+// ================== DATA SOURCE CONFIGURATION ==================
 
-// Cache for menu items
+const useSupabase = true; // Always use Supabase
+
+// ================== DATA LOADING FUNCTIONS ==================
+
+// Cache for menu items to reduce API calls
 let cachedMenuItems = null;
 let cacheTimestamp = null;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -288,12 +237,13 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 // Load from Supabase
 async function loadFromSupabase(endpoint) {
   try {
+    // Check if Supabase config is available
     if (
       !window.SUPABASE_CONFIG ||
       !window.SUPABASE_CONFIG.URL ||
       !window.SUPABASE_CONFIG.ANON_KEY
     ) {
-      console.error("Supabase configuration not found");
+      console.error("Supabase configuration not found in script.js");
       return [];
     }
 
@@ -382,7 +332,7 @@ async function loadFeaturedItems() {
   }
 }
 
-// Load menu items
+// Load menu items - FIXED: Price removed from visible display
 async function loadMenuItems() {
   const container = document.getElementById("menu-container");
   if (!container) return;
@@ -400,7 +350,7 @@ async function loadMenuItems() {
       return;
     }
 
-    // Generate HTML from data
+    // Generate HTML from data - Price is NOT displayed directly
     container.innerHTML = items
       .map(
         (item) => `
@@ -412,6 +362,7 @@ async function loadMenuItems() {
         }" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4='">
             <h3>${escapeHtml(item.title)}</h3>
             <p>${escapeHtml(item.description)}</p>
+            <!-- Price is NOT displayed here - only in data attributes and popup -->
             <div class="popup">
               <button class="add-cart">Add to Cart</button>
               <a class="order-now" href="#">Order Now</a>
@@ -472,9 +423,12 @@ async function loadGalleryImages() {
 async function loadDynamicContent() {
   const currentPage = window.location.pathname.split("/").pop() || "index.html";
 
+  console.log("Loading content for page:", currentPage);
+
   // Check if Supabase config exists
   if (!window.SUPABASE_CONFIG || !window.API_ENDPOINTS) {
     console.error("Supabase configuration not loaded");
+    showConfigError();
     return;
   }
 
@@ -491,7 +445,23 @@ async function loadDynamicContent() {
   }
 }
 
-/* ================== ORIGINAL TOKE BAKES CODE ================== */
+function showConfigError() {
+  const containers = document.querySelectorAll(
+    "#featured-container, #menu-container, #gallery-container"
+  );
+  containers.forEach((container) => {
+    if (container) {
+      container.innerHTML = `
+        <div class="empty-state error">
+          <i class="fas fa-exclamation-triangle"></i>
+          <p>Website configuration error. Please check config.js file.</p>
+        </div>
+      `;
+    }
+  });
+}
+
+// ================== ORIGINAL TOKE BAKES CODE ==================
 
 const currentPage = (() => {
   const p = window.location.pathname.split("/").pop();
@@ -525,7 +495,7 @@ function formatPrice(num) {
   return Number(num).toLocaleString("en-NG");
 }
 
-// Escape HTML for security
+// Escape HTML for security (already defined in admin.js, but defined here too)
 function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
@@ -534,22 +504,27 @@ function escapeHtml(text) {
 
 /* ================== CART VALIDATION FUNCTIONS ================== */
 
+// NEW: Validate cart items against current menu
 async function validateCartItems() {
   try {
     const cart = readCart();
     if (cart.length === 0) return { valid: true, items: [] };
 
+    // Load current menu items using cache
     const currentMenu = await getMenuItems();
+
     const validationResults = [];
     let hasChanges = false;
     let hasRemovals = false;
 
+    // Check each item in cart
     cart.forEach((cartItem, index) => {
       const currentItem = currentMenu.find(
         (item) => item.title === cartItem.name || item.id === cartItem.id
       );
 
       if (!currentItem) {
+        // Item no longer exists in menu
         validationResults.push({
           index,
           name: cartItem.name,
@@ -561,6 +536,7 @@ async function validateCartItems() {
         hasRemovals = true;
         hasChanges = true;
       } else if (currentItem.price !== cartItem.price) {
+        // Price has changed
         validationResults.push({
           index,
           name: cartItem.name,
@@ -572,7 +548,19 @@ async function validateCartItems() {
           newPrice: currentItem.price,
         });
         hasChanges = true;
+      } else if (currentItem.image !== cartItem.image) {
+        // Image has changed (optional check)
+        validationResults.push({
+          index,
+          name: cartItem.name,
+          status: "updated",
+          message: "This item has been updated",
+          oldPrice: cartItem.price,
+          newPrice: currentItem.price,
+        });
+        hasChanges = true;
       } else {
+        // Item is still valid
         validationResults.push({
           index,
           name: cartItem.name,
@@ -596,6 +584,7 @@ async function validateCartItems() {
   }
 }
 
+// NEW: Update cart with validated prices
 function updateCartWithValidation(validationResults) {
   const cart = readCart();
   let updatedCart = [...cart];
@@ -603,9 +592,11 @@ function updateCartWithValidation(validationResults) {
 
   validationResults.forEach((result) => {
     if (result.status === "price_changed" && result.newPrice !== null) {
+      // Update price in cart
       updatedCart[result.index].price = result.newPrice;
       changesMade = true;
     } else if (result.status === "removed") {
+      // Mark item as unavailable (we'll handle display separately)
       updatedCart[result.index].unavailable = true;
       changesMade = true;
     }
@@ -620,21 +611,14 @@ function updateCartWithValidation(validationResults) {
 
 /* ================== NOTIFICATION FUNCTION ================== */
 function showNotification(message, type = "success") {
+  // Create a simple notification element
   const notification = document.createElement("div");
   notification.textContent = message;
   notification.style.cssText = `
     position: fixed;
     top: 25px;
     right: 25px;
-    background: ${
-      type === "success"
-        ? "#4CAF50"
-        : type === "error"
-        ? "#F44336"
-        : type === "warning"
-        ? "#FF9800"
-        : "#2196F3"
-    };
+    background: ${type === "success" ? "#4CAF50" : "#F44336"};
     color: white;
     padding: 1rem 1.5rem;
     border-radius: 8px;
@@ -685,6 +669,17 @@ if (!document.querySelector("#notification-styles")) {
   document.head.appendChild(style);
 }
 
+/* ================== Old LOADER ================== */
+// window.addEventListener("load", () => {
+//   const loader = document.getElementById("loader");
+//   if (loader) {
+//     setTimeout(() => {
+//       loader.style.opacity = "0";
+//       setTimeout(() => (loader.style.display = "none"), 600);
+//     }, 600);
+//   }
+// });
+
 /* ================== ENHANCED SESSION AWARE LOADER ================== */
 (function () {
   const loader = document.getElementById("loader");
@@ -700,24 +695,30 @@ if (!document.querySelector("#notification-styles")) {
     return;
   }
 
+  // Session tracking (more intelligent than daily)
   const SESSION_KEY = "toke_bakes_session";
   const sessionData = JSON.parse(localStorage.getItem(SESSION_KEY) || "{}");
   const now = Date.now();
-  const SESSION_TIMEOUT = 30 * 60 * 1000;
+  const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 
+  // Check if user is in an active "session"
   const hasActiveSession =
     sessionData.timestamp && now - sessionData.timestamp < SESSION_TIMEOUT;
 
   if (hasActiveSession) {
+    // User is in active session (visited within 30 minutes)
     loader.style.display = "none";
     console.log("🔁 Active session - seamless experience");
   } else {
+    // New session or session expired
     sessionData.timestamp = now;
     sessionData.visitCount = (sessionData.visitCount || 0) + 1;
     localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData));
 
+    // Show loader on first 2 visits, then never again
     if (sessionData.visitCount <= 2) {
       window.addEventListener("load", () => {
+        // Shorter loader on second visit
         const duration = sessionData.visitCount === 1 ? 1200 : 600;
 
         setTimeout(() => {
@@ -726,10 +727,12 @@ if (!document.querySelector("#notification-styles")) {
         }, duration);
       });
     } else {
+      // Experienced user - no loader at all
       loader.style.display = "none";
     }
   }
 
+  // Update session timestamp on user activity
   ["click", "scroll", "mousemove", "keypress"].forEach((event) => {
     document.addEventListener(
       event,
@@ -738,7 +741,7 @@ if (!document.querySelector("#notification-styles")) {
           localStorage.getItem(SESSION_KEY) || "{}"
         );
         updatedData.timestamp = Date.now();
-        localStorage.setItem(SESSION_KEY, JSON.stringify(updatedData));
+        localStorage.setItem(SESSION_KEY, JSON.stringify(updatedData)); // ✅ FIXED
       },
       { passive: true }
     );
@@ -749,52 +752,75 @@ if (!document.querySelector("#notification-styles")) {
 (function highlightNav() {
   const navLinks = document.querySelectorAll("nav a");
 
+  // Get current location info
   const loc = {
     href: window.location.href.toLowerCase(),
     pathname: window.location.pathname.toLowerCase(),
     hostname: window.location.hostname,
   };
 
+  // Determine if we're local or online
   const isLocal =
     loc.hostname === "localhost" || loc.href.startsWith("file://");
 
+  // Parse current page
   let currentPage = loc.pathname.split("/").pop() || "index";
   currentPage = currentPage.replace(/\.(html|htm)$/, "").split("?")[0];
   if (currentPage === "") currentPage = "index";
 
-  navLinks.forEach((link) => {
+  console.log(
+    `Nav Debug: Current page="${currentPage}", Path="${loc.pathname}", Local=${isLocal}`
+  );
+
+  navLinks.forEach((link, index) => {
     const href = link.getAttribute("href");
     if (!href) return;
 
+    // Parse link page
     let linkPage = href.split("/").pop() || "index";
     linkPage = linkPage.replace(/\.(html|htm)$/, "").split("?")[0];
     if (linkPage === "") linkPage = "index";
 
+    // Reset
     link.classList.remove("active");
 
+    // LOGIC THAT WORKS EVERYWHERE:
+
+    // 1. Home page check
     if (linkPage === "index" && currentPage === "index") {
       link.classList.add("active");
+      console.log(`✓ Link ${index} (${href}) activated as HOME`);
       return;
     }
 
+    // 2. Direct match
     if (linkPage === currentPage && linkPage !== "index") {
       link.classList.add("active");
+      console.log(`✓ Link ${index} (${href}) activated as DIRECT MATCH`);
       return;
     }
 
+    // 3. For online (Netlify) - check if current path contains page name
     if (!isLocal && loc.pathname.includes(linkPage) && linkPage !== "index") {
       link.classList.add("active");
+      console.log(`✓ Link ${index} (${href}) activated as PATH CONTAINS`);
       return;
     }
 
+    // 4. For local - check full path
     if (isLocal && loc.href.endsWith(href)) {
       link.classList.add("active");
+      console.log(`✓ Link ${index} (${href}) activated as LOCAL MATCH`);
       return;
     }
+
+    console.log(`✗ Link ${index} (${href}) NOT activated`);
   });
+
+  console.log("--- Navigation Highlight Complete ---");
 })();
 
-/* ================== FIXED CART COUNT ================== */
+/* ================== FIXED CART COUNT - NO ZERO FLASH ================== */
 function refreshCartCount() {
   const countEls = document.querySelectorAll("#cart-count");
   const cart = readCart();
@@ -804,6 +830,7 @@ function refreshCartCount() {
     el.textContent = totalItems;
     el.setAttribute("data-count", String(totalItems));
 
+    // FIX: Hide immediately if zero
     if (totalItems === 0) {
       el.style.display = "none";
     } else {
@@ -823,6 +850,7 @@ function initMobileMenu() {
       navList.classList.toggle("show");
     });
 
+    // Close when clicking outside
     document.addEventListener("click", (e) => {
       if (
         navList.classList.contains("show") &&
@@ -833,6 +861,7 @@ function initMobileMenu() {
       }
     });
 
+    // Close when clicking links
     document.querySelectorAll(".navbar a").forEach((link) => {
       link.addEventListener("click", () => {
         navList.classList.remove("show");
@@ -841,7 +870,86 @@ function initMobileMenu() {
   }
 }
 
-/* ================== MENU INTERACTIONS ================== */
+/* ================== FOOTER THEME ================== */
+function updateFooterTheme(theme) {
+  const footer = document.querySelector(".bakes-footer");
+  if (!footer) return;
+
+  // If no theme provided, get it from HTML attribute
+  if (!theme) {
+    theme = document.documentElement.getAttribute("data-theme") || "light";
+  }
+
+  if (theme === "dark") {
+    footer.classList.add("dark-theme");
+    footer.classList.remove("light-theme");
+  } else {
+    footer.classList.add("light-theme");
+    footer.classList.remove("dark-theme");
+  }
+}
+
+/* ================== THEME TOGGLE ================== */
+function initThemeToggle() {
+  const themeToggle = document.getElementById("themeToggle");
+  if (!themeToggle) return;
+
+  // Get icon elements once
+  const sunIcon = themeToggle.querySelector(".sun");
+  const moonIcon = themeToggle.querySelector(".moon");
+
+  // Function to update icons based on theme
+  const updateIcons = (theme) => {
+    if (theme === "dark") {
+      if (sunIcon) sunIcon.style.display = "none";
+      if (moonIcon) moonIcon.style.display = "inline-block";
+      themeToggle.classList.add("dark");
+    } else {
+      if (sunIcon) sunIcon.style.display = "inline-block";
+      if (moonIcon) moonIcon.style.display = "none";
+      themeToggle.classList.remove("dark");
+    }
+  };
+
+  // Initial icon setup
+  const currentTheme =
+    document.documentElement.getAttribute("data-theme") || "light";
+  updateIcons(currentTheme);
+  updateFooterTheme(currentTheme);
+
+  // Click handler
+  themeToggle.addEventListener("click", () => {
+    const current = document.documentElement.getAttribute("data-theme");
+    const newTheme = current === "dark" ? "light" : "dark";
+
+    document.documentElement.setAttribute("data-theme", newTheme);
+
+    // Update icons immediately
+    updateIcons(newTheme);
+
+    localStorage.setItem(THEME_KEY, newTheme);
+    updateFooterTheme(newTheme);
+  });
+}
+
+function initFooterTheme() {
+  // Footer theme is already set by preventThemeFlash(),
+  // just listen for system preference changes
+  window.matchMedia("(prefers-color-scheme: dark)").addListener(() => {
+    // Only update if user hasn't set a preference
+    const savedTheme = localStorage.getItem(THEME_KEY);
+    if (!savedTheme) {
+      const prefersDark = window.matchMedia(
+        "(prefers-color-scheme: dark)"
+      ).matches;
+      const theme = prefersDark ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", theme);
+      updateFooterTheme(theme);
+    }
+  });
+}
+
+/* ================== FIXED MENU INTERACTIONS ================== */
 function initMenuInteractions() {
   // Close popups when clicking outside
   document.addEventListener("click", (e) => {
@@ -866,7 +974,7 @@ function initMenuInteractions() {
     if (!isShown) menuItem.classList.add("show-popup");
   });
 
-  // Add to cart functionality
+  // Add to cart functionality - NOW WITH ITEM ID
   document.addEventListener("click", (e) => {
     const addBtn = e.target.closest(".add-cart");
     if (!addBtn) return;
@@ -886,7 +994,7 @@ function initMenuInteractions() {
     const existing = cart.find((it) => it.name === name);
     if (existing) {
       existing.quantity = (existing.quantity || 1) + 1;
-      existing.id = id;
+      existing.id = id; // Update ID if it exists
     } else {
       cart.push({ name, price, quantity: 1, image, id });
     }
@@ -922,7 +1030,7 @@ function initOrderFunctionality() {
     showOrderOptions(orderData);
   });
 
-  // Proceed to order button
+  // Proceed to order button - NOW WITH CART VALIDATION
   document.addEventListener("click", async (e) => {
     if (!e.target || e.target.id !== "proceed-order") return;
 
@@ -947,13 +1055,16 @@ function initOrderFunctionality() {
       return;
     }
 
+    // Validate cart before proceeding
     const validation = await validateCartItems();
     if (validation.hasChanges) {
+      // Show warning about changes
       const continueOrder = confirm(
         "Some items in your cart have changed. Please review your cart before proceeding.\n\nClick OK to review changes, or Cancel to continue anyway."
       );
 
       if (continueOrder) {
+        // User wants to review changes, don't proceed to order
         return;
       }
     }
@@ -1153,7 +1264,7 @@ function initBottomSheet() {
   });
 }
 
-/* ================== CART RENDERING ================== */
+/* ================== FIXED CART QUANTITY FUNCTION ================== */
 async function renderCartOnOrderPage(shouldValidate = true) {
   const cartContainer = document.getElementById("cart-container");
   if (!cartContainer) return;
@@ -1161,6 +1272,7 @@ async function renderCartOnOrderPage(shouldValidate = true) {
   let validation = null;
   let cart = readCart();
 
+  // Only validate on initial load
   if (shouldValidate) {
     validation = await validateCartItems();
     cart = updateCartWithValidation(validation.results);
@@ -1177,6 +1289,7 @@ async function renderCartOnOrderPage(shouldValidate = true) {
     return;
   }
 
+  // Show clear cart button
   const clearCartBtn = document.getElementById("clear-cart");
   if (clearCartBtn) {
     clearCartBtn.style.display = "block";
@@ -1188,6 +1301,7 @@ async function renderCartOnOrderPage(shouldValidate = true) {
     };
   }
 
+  // Show validation warnings if needed
   if (shouldValidate && validation && validation.hasChanges) {
     const warningDiv = document.createElement("div");
     warningDiv.className = "cart-validation-warning";
@@ -1219,11 +1333,13 @@ async function renderCartOnOrderPage(shouldValidate = true) {
     cartContainer.appendChild(warningDiv);
   }
 
+  // Render cart items with PROPER event handling
   cart.forEach((item, index) => {
     const row = document.createElement("div");
     row.className = "cart-row";
-    row.dataset.index = index;
+    row.dataset.index = index; // Store index on the row itself
 
+    // Check if item is unavailable
     const isUnavailable = item.unavailable;
     const validationResult =
       validation && validation.results.find((r) => r.index === index);
@@ -1299,17 +1415,20 @@ async function renderCartOnOrderPage(shouldValidate = true) {
     cartContainer.appendChild(row);
   });
 
+  // Add event listeners AFTER rendering
   setupCartEventListeners();
 }
 
-/* ================== CART EVENT HANDLING ================== */
+/* ================== FIXED CART EVENT HANDLING ================== */
 function setupCartEventListeners() {
   const cartContainer = document.getElementById("cart-container");
   if (!cartContainer) return;
 
+  // Remove old listeners to prevent duplicates
   cartContainer.replaceWith(cartContainer.cloneNode(true));
   const freshContainer = document.getElementById("cart-container");
 
+  // Add fresh event listener
   freshContainer.addEventListener("click", function (e) {
     const target = e.target;
     const row = target.closest(".cart-row");
@@ -1321,6 +1440,8 @@ function setupCartEventListeners() {
 
     if (isNaN(index) || index < 0 || index >= cart.length) return;
 
+    // Handle quantity buttons
+
     if (target.classList.contains("qty-btn")) {
       e.preventDefault();
       e.stopPropagation();
@@ -1328,15 +1449,18 @@ function setupCartEventListeners() {
       if (target.classList.contains("increase")) {
         cart[index].quantity = (cart[index].quantity || 1) + 1;
       } else if (target.classList.contains("decrease")) {
+        // Only decrease if quantity is greater than 1
         if (cart[index].quantity > 1) {
           cart[index].quantity = cart[index].quantity - 1;
         }
+        // If quantity is 1, do nothing (don't decrease to 0)
       }
 
       saveCart(cart);
-      renderCartOnOrderPage(false);
+      renderCartOnOrderPage(false); // Don't validate on button clicks
     }
 
+    // Handle remove button
     if (target.classList.contains("remove-item")) {
       e.preventDefault();
       e.stopPropagation();
@@ -1373,20 +1497,26 @@ function initRipple(selector) {
   );
 }
 
-/* ================== INITIALIZATION ================== */
+// Initialize when DOM is loaded
 document.addEventListener("DOMContentLoaded", async () => {
-  console.log("🚀 Initializing Toke Bakes Website...");
+  console.log("🚀 Initializing Toke Bakes with Enhanced Sync...");
 
-  // 1. Load holiday theme from database
-  await loadActiveTheme();
+  // STEP 2: Initialize sync system FIRST (IMPORTANT!)
+  window.websiteUpdater = new WebsiteAutoUpdater();
 
-  // 2. Setup dark/light theme toggle
-  initThemeToggle();
+  // STEP 3: Tiny delay for sync to initialize (using requestAnimationFrame - faster)
+  await new Promise((resolve) => requestAnimationFrame(resolve));
 
-  // 3. Initialize other components
+  // STEP 4: NOW load cart (after sync is ready)
   refreshCartCount();
+
+  // STEP 5: Load dynamic content
   await loadDynamicContent();
+
+  // STEP 6: Initialize everything else
   initMobileMenu();
+  initThemeToggle();
+  initFooterTheme();
   initMenuInteractions();
   initOrderFunctionality();
   initBottomSheet();
@@ -1404,10 +1534,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     yearElement.textContent = new Date().getFullYear();
   }
 
-  console.log("✅ Toke Bakes Website initialized");
+  console.log("✅ Toke Bakes fully initialized with enhanced sync");
 });
 
-// Global event listener for clear cart button
+// Global event listener for clear cart button (fallback)
 document.addEventListener("click", (e) => {
   if (e.target && e.target.id === "clear-cart") {
     e.preventDefault();

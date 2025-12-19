@@ -1,62 +1,5 @@
-/* ================== admin.js - COMPLETE FIXED VERSION ================== */
-/* Toke Bakes Admin Panel - NO DUPLICATE DECLARATIONS */
-
-// Initialize global variables
-let currentAdmin = null;
-let isEditing = false;
-let currentEditId = null;
-let sessionTimeout = null;
-const SESSION_TIMEOUT_MINUTES = 30;
-
-// Store for temporary image data
-let tempImageCache = new Map();
-
-// Admin credentials
-const ADMIN_CREDENTIALS = {
-  username: "admin",
-  passwordHash:
-    "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
-};
-
-// Available themes - MOVED TO TOP LEVEL TO AVOID REDECLARATION
-const AVAILABLE_THEMES = [
-  {
-    name: "Default Theme",
-    file: "style.css",
-    icon: "🍊",
-    description: "Orange bakery theme",
-  },
-  {
-    name: "Valentine's Day",
-    file: "theme-valentine.css",
-    icon: "❤️",
-    description: "Romantic pink & red theme",
-  },
-  {
-    name: "Ramadan",
-    file: "theme-ramadan.css",
-    icon: "🌙",
-    description: "Green & gold theme",
-  },
-  {
-    name: "Independence Day",
-    file: "theme-independenceday.css",
-    icon: "🇳🇬",
-    description: "Green & white Nigerian theme",
-  },
-  {
-    name: "Halloween",
-    file: "theme-halloween.css",
-    icon: "🎃",
-    description: "Spooky orange & purple theme",
-  },
-  {
-    name: "Christmas",
-    file: "theme-christmas.css",
-    icon: "🎄",
-    description: "Festive red & green theme",
-  },
-];
+/* ================== admin.js ================== */
+/* Toke Bakes Admin Panel - MODERN CONFIRMATION DIALOG VERSION */
 
 /* ================== AUTO-UPDATE SYSTEM ================== */
 class DataSyncManager {
@@ -69,11 +12,10 @@ class DataSyncManager {
   init() {
     if (typeof BroadcastChannel !== "undefined") {
       this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
-      console.log("✅ DataSyncManager initialized");
     }
   }
 
-  notifyDataChanged(operationType, itemType, data = null) {
+  notifyDataChanged(operationType, itemType) {
     const timestamp = Date.now().toString();
     localStorage.setItem(this.lastUpdateKey, timestamp);
 
@@ -83,23 +25,370 @@ class DataSyncManager {
         timestamp: timestamp,
         operation: operationType,
         itemType: itemType,
-        data: data,
       });
     }
-
-    console.log(`📡 Data changed: ${operationType} ${itemType}`);
   }
 }
 
-// Initialize sync manager
 const dataSync = new DataSyncManager();
 
+// Admin credentials with SHA-256 hash for "admin123"
+const ADMIN_CREDENTIALS = {
+  username: "admin",
+  passwordHash:
+    "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
+};
+
+// Current admin state
+let currentAdmin = null;
+let isEditing = false;
+let currentEditId = null;
+let sessionTimeout = null;
+const SESSION_TIMEOUT_MINUTES = 30;
+
+// Store for temporary image data
+let tempImageCache = new Map();
+
+/* ================== MODERN CONFIRMATION DIALOG SYSTEM ================== */
+
+class ModernConfirmationDialog {
+  constructor() {
+    this.dialogId = "modern-confirmation-dialog";
+    this.init();
+  }
+
+  init() {
+    if (!document.getElementById(this.dialogId)) {
+      this.createDialog();
+    }
+  }
+
+  createDialog() {
+    const dialogHTML = `
+      <div id="${this.dialogId}" class="confirmation-dialog" aria-hidden="true">
+        <div class="confirmation-content" role="dialog" aria-modal="true" aria-labelledby="confirmation-title">
+          <div class="confirmation-header">
+            <i class="fas fa-exclamation-triangle"></i>
+            <h3 id="confirmation-title">Confirm Deletion</h3>
+            <p>Are you sure you want to delete this item?</p>
+          </div>
+          <div class="confirmation-body">
+            <div id="confirmation-details"></div>
+          </div>
+          <div class="confirmation-actions">
+            <button id="confirm-cancel" class="btn-confirm-cancel">
+              <i class="fas fa-times"></i> Cancel
+            </button>
+            <button id="confirm-delete" class="btn-confirm-delete">
+              <i class="fas fa-trash"></i> Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.insertAdjacentHTML("beforeend", dialogHTML);
+  }
+
+  show(itemDetails) {
+    return new Promise((resolve) => {
+      const dialog = document.getElementById(this.dialogId);
+      const detailsEl = document.getElementById("confirmation-details");
+      const cancelBtn = document.getElementById("confirm-cancel");
+      const deleteBtn = document.getElementById("confirm-delete");
+      const titleEl = document.getElementById("confirmation-title");
+
+      // Set dialog content based on item type
+      let itemType = "Item";
+      if (itemDetails.type === "featured") itemType = "Featured Item";
+      if (itemDetails.type === "menu") itemType = "Menu Item";
+      if (itemDetails.type === "gallery") itemType = "Gallery Image";
+
+      titleEl.textContent = `Delete ${itemType}`;
+
+      const detailsHTML = `
+        <p>This action cannot be undone. The following ${itemType.toLowerCase()} will be permanently deleted:</p>
+        <div class="confirmation-item">
+          <h4>${escapeHtml(itemDetails.title)}</h4>
+          ${
+            itemDetails.description
+              ? `<p>${escapeHtml(itemDetails.description)}</p>`
+              : ""
+          }
+          ${
+            itemDetails.price
+              ? `<p><strong>Price:</strong> ₦${formatPrice(
+                  itemDetails.price
+                )}</p>`
+              : ""
+          }
+          ${
+            itemDetails.created
+              ? `<p><small>Created: ${new Date(
+                  itemDetails.created
+                ).toLocaleDateString()}</small></p>`
+              : ""
+          }
+        </div>
+        <p><strong>Warning:</strong> This will permanently remove this item from your database.</p>
+      `;
+
+      detailsEl.innerHTML = detailsHTML;
+
+      // Show dialog
+      dialog.classList.add("active");
+      dialog.setAttribute("aria-hidden", "false");
+      deleteBtn.focus();
+
+      // Handle escape key
+      const handleEscape = (e) => {
+        if (e.key === "Escape") {
+          dialog.classList.remove("active");
+          dialog.setAttribute("aria-hidden", "true");
+          resolve(false);
+          document.removeEventListener("keydown", handleEscape);
+        }
+      };
+
+      document.addEventListener("keydown", handleEscape);
+
+      // Button event handlers
+      const handleCancel = () => {
+        dialog.classList.remove("active");
+        dialog.setAttribute("aria-hidden", "true");
+        resolve(false);
+        cleanup();
+      };
+
+      const handleDelete = () => {
+        dialog.classList.remove("active");
+        dialog.setAttribute("aria-hidden", "true");
+        resolve(true);
+        cleanup();
+      };
+
+      const cleanup = () => {
+        cancelBtn.removeEventListener("click", handleCancel);
+        deleteBtn.removeEventListener("click", handleDelete);
+        document.removeEventListener("keydown", handleEscape);
+      };
+
+      cancelBtn.addEventListener("click", handleCancel, { once: true });
+      deleteBtn.addEventListener("click", handleDelete, { once: true });
+    });
+  }
+}
+
+// Initialize the modern confirmation dialog system
+const confirmationDialog = new ModernConfirmationDialog();
+
+// Helper function to get item details
+async function getItemDetails(itemId, itemType) {
+  try {
+    const endpoints = {
+      featured: API_ENDPOINTS.FEATURED,
+      menu: API_ENDPOINTS.MENU,
+      gallery: API_ENDPOINTS.GALLERY,
+    };
+
+    const endpoint = endpoints[itemType] || API_ENDPOINTS.FEATURED;
+    const response = await fetch(
+      `${SUPABASE_CONFIG.URL}${endpoint}/${itemId}`,
+      {
+        headers: {
+          apikey: SUPABASE_CONFIG.ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (response.ok) {
+      const item = await response.json();
+      return {
+        id: item.id,
+        title: item.title || item.name || "Untitled Item",
+        description: item.description || "",
+        price: item.price || null,
+        created: item.created_at || null,
+        type: itemType,
+      };
+    }
+  } catch (error) {
+    console.error("Error fetching item details:", error);
+  }
+
+  return {
+    id: itemId,
+    title: "Unknown Item",
+    description: "",
+    type: itemType,
+  };
+}
+
+// Price formatting function
+function formatPrice(num) {
+  return Number(num).toLocaleString("en-NG");
+}
+
+// Modified delete functions with modern confirmation dialog
+async function deleteFeaturedItem(id) {
+  try {
+    const itemDetails = await getItemDetails(id, "featured");
+
+    const confirmed = await confirmationDialog.show(itemDetails);
+
+    if (!confirmed) {
+      showNotification("Deletion cancelled", "info");
+      return;
+    }
+
+    await secureRequest(`${API_ENDPOINTS.FEATURED}?id=eq.${id}`, "DELETE");
+    showNotification("Featured item deleted!", "success");
+
+    // Clear from cache
+    tempImageCache.delete(id);
+    clearDataCache();
+
+    await renderFeaturedItems();
+    await updateItemCounts();
+
+    dataSync.notifyDataChanged("delete", "featured");
+  } catch (error) {
+    console.error("Error deleting featured item:", error);
+    showNotification("Failed to delete item", "error");
+  }
+}
+
+async function deleteMenuItem(id) {
+  try {
+    const itemDetails = await getItemDetails(id, "menu");
+
+    const confirmed = await confirmationDialog.show(itemDetails);
+
+    if (!confirmed) {
+      showNotification("Deletion cancelled", "info");
+      return;
+    }
+
+    await secureRequest(`${API_ENDPOINTS.MENU}?id=eq.${id}`, "DELETE");
+    showNotification("Menu item deleted!", "success");
+
+    // Clear from cache
+    tempImageCache.delete(id);
+    clearDataCache();
+
+    await renderMenuItems();
+    await updateItemCounts();
+
+    dataSync.notifyDataChanged("delete", "menu");
+  } catch (error) {
+    console.error("Error deleting menu item:", error);
+    showNotification("Failed to delete menu item", "error");
+  }
+}
+
+async function deleteGalleryItem(id) {
+  try {
+    const itemDetails = await getItemDetails(id, "gallery");
+
+    const confirmed = await confirmationDialog.show(itemDetails);
+
+    if (!confirmed) {
+      showNotification("Deletion cancelled", "info");
+      return;
+    }
+
+    await secureRequest(`${API_ENDPOINTS.GALLERY}?id=eq.${id}`, "DELETE");
+    showNotification("Gallery image deleted!", "success");
+
+    // Clear from cache
+    tempImageCache.delete(id);
+    clearDataCache();
+
+    await renderGalleryItems();
+    await updateItemCounts();
+
+    dataSync.notifyDataChanged("delete", "gallery");
+  } catch (error) {
+    console.error("Error deleting gallery item:", error);
+    showNotification("Failed to delete gallery item", "error");
+  }
+}
+
+/* ================== ENHANCED SECURITY FUNCTIONS ================== */
+
+// Generate secure session token
+function generateSessionToken() {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join(
+    ""
+  );
+}
+
+// Secure storage for session data
+const secureStorage = {
+  setItem: (key, value) => {
+    try {
+      sessionStorage.setItem(`secure_${key}`, btoa(JSON.stringify(value)));
+    } catch (e) {
+      console.warn("Secure storage failed:", e);
+      // Fallback to memory storage
+      window.tempStorage = window.tempStorage || {};
+      window.tempStorage[`secure_${key}`] = value;
+    }
+  },
+  getItem: (key) => {
+    try {
+      const item = sessionStorage.getItem(`secure_${key}`);
+      return item ? JSON.parse(atob(item)) : null;
+    } catch (e) {
+      console.warn("Secure storage retrieval failed:", e);
+      // Check memory storage
+      return window.tempStorage ? window.tempStorage[`secure_${key}`] : null;
+    }
+  },
+  removeItem: (key) => {
+    try {
+      sessionStorage.removeItem(`secure_${key}`);
+    } catch (e) {
+      console.warn("Secure storage removal failed:", e);
+    }
+    // Also remove from memory storage
+    if (window.tempStorage) {
+      delete window.tempStorage[`secure_${key}`];
+    }
+  },
+};
+
+// Input sanitization
+function sanitizeInput(input) {
+  if (typeof input !== "string") return input;
+  return input
+    .replace(/[<>]/g, "")
+    .replace(/javascript:/gi, "")
+    .replace(/on\w+=/gi, "")
+    .trim();
+}
+
+// Escape HTML for safety
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 /* ================== CUSTOM POPUP SYSTEM ================== */
+
+// Custom popup system to replace alert/confirm
 function showPopup(options) {
   return new Promise((resolve) => {
-    // Remove existing popup
+    // Remove existing popup if any
     const existingPopup = document.getElementById("custom-popup-overlay");
-    if (existingPopup) existingPopup.remove();
+    if (existingPopup) {
+      existingPopup.remove();
+    }
 
     const {
       title = "Notification",
@@ -108,6 +397,8 @@ function showPopup(options) {
       showCancel = false,
       cancelText = "Cancel",
       confirmText = "OK",
+      onConfirm = () => {},
+      onCancel = () => {},
     } = options;
 
     // Create overlay
@@ -125,6 +416,7 @@ function showPopup(options) {
       justify-content: center;
       z-index: 10001;
       backdrop-filter: blur(4px);
+      animation: fadeIn 0.3s ease;
     `;
 
     // Create popup
@@ -136,11 +428,12 @@ function showPopup(options) {
       min-width: 320px;
       max-width: 450px;
       box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      animation: slideIn 0.3s ease;
       overflow: hidden;
       font-family: 'Poppins', sans-serif;
     `;
 
-    // Header
+    // Header with type-based color
     const typeColors = {
       info: "#2196F3",
       success: "#4CAF50",
@@ -164,6 +457,7 @@ function showPopup(options) {
       font-size: 1.4rem;
       font-weight: 600;
     `;
+
     header.appendChild(titleEl);
     popup.appendChild(header);
 
@@ -179,7 +473,7 @@ function showPopup(options) {
     messageEl.textContent = message;
     popup.appendChild(messageEl);
 
-    // Buttons
+    // Buttons container
     const buttonsContainer = document.createElement("div");
     buttonsContainer.style.cssText = `
       display: flex;
@@ -206,10 +500,20 @@ function showPopup(options) {
         font-family: 'Poppins', sans-serif;
       `;
 
+      cancelBtn.addEventListener("mouseenter", () => {
+        cancelBtn.style.background = "#e0e0e0";
+      });
+
+      cancelBtn.addEventListener("mouseleave", () => {
+        cancelBtn.style.background = "#f5f5f5";
+      });
+
       cancelBtn.addEventListener("click", () => {
         overlay.remove();
+        onCancel();
         resolve(false);
       });
+
       buttonsContainer.appendChild(cancelBtn);
     }
 
@@ -230,52 +534,634 @@ function showPopup(options) {
       font-family: 'Poppins', sans-serif;
     `;
 
+    confirmBtn.addEventListener("mouseenter", () => {
+      confirmBtn.style.opacity = "0.9";
+      confirmBtn.style.transform = "translateY(-2px)";
+    });
+
+    confirmBtn.addEventListener("mouseleave", () => {
+      confirmBtn.style.opacity = "1";
+      confirmBtn.style.transform = "translateY(0)";
+    });
+
     confirmBtn.addEventListener("click", () => {
       overlay.remove();
+      onConfirm();
       resolve(true);
     });
+
     buttonsContainer.appendChild(confirmBtn);
     popup.appendChild(buttonsContainer);
     overlay.appendChild(popup);
     document.body.appendChild(overlay);
 
-    // Close on overlay click
+    // Add animations
+    if (!document.querySelector("#popup-animations")) {
+      const style = document.createElement("style");
+      style.id = "popup-animations";
+      style.textContent = `
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        @keyframes slideIn {
+          from {
+            opacity: 0;
+            transform: translateY(-20px) scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        #custom-popup-overlay button:active {
+          transform: scale(0.98);
+        }
+
+        @media (max-width: 480px) {
+          #custom-popup-overlay > div {
+            width: 90%;
+            min-width: auto;
+            margin: 20px;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    // Close on overlay click (outside popup)
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) {
-        overlay.remove();
-        resolve(false);
+        if (showCancel) {
+          overlay.remove();
+          onCancel();
+          resolve(false);
+        }
       }
     });
   });
 }
 
-/* ================== NOTIFICATION SYSTEM ================== */
-function showNotification(message, type = "success") {
-  // Remove existing notification
-  const existing = document.getElementById("admin-notification");
-  if (existing) existing.remove();
+/* ================== PASSWORD HASHING ================== */
 
-  const themes = {
-    success: { background: "#4CAF50", icon: "✅" },
-    error: { background: "#F44336", icon: "❌" },
-    warning: { background: "#FF9800", icon: "⚠️" },
-    info: { background: "#2196F3", icon: "ℹ️" },
+// Enhanced password hashing
+async function hashPassword(password) {
+  try {
+    // Use SHA-256 for consistency with your existing hash
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch (error) {
+    console.error("Password hashing failed:", error);
+    // Simple fallback for very old browsers
+    return password; // This is just a fallback - modern browsers support crypto
+  }
+}
+
+/* ================== PASSWORD SYNC FUNCTIONS ================== */
+
+// Load password from database on startup
+async function loadPasswordFromDatabase() {
+  try {
+    console.log("Loading admin password from database...");
+
+    const response = await fetch(
+      `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.admin&select=password_hash`,
+      {
+        method: "GET",
+        headers: {
+          apikey: SUPABASE_CONFIG.ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+        },
+      }
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.length > 0 && data[0].password_hash) {
+        const dbHash = data[0].password_hash;
+
+        // Update local hash to match database
+        ADMIN_CREDENTIALS.passwordHash = dbHash;
+
+        console.log(
+          "✅ Loaded password hash from database:",
+          dbHash.substring(0, 20) + "..."
+        );
+
+        return true;
+      }
+    }
+
+    console.log("⚠️ Using local password hash");
+    return false;
+  } catch (error) {
+    console.error("Failed to load password from database:", error);
+    return false;
+  }
+}
+
+// Check password sync status
+async function checkPasswordSync() {
+  try {
+    const response = await fetch(
+      `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.admin&select=password_hash`,
+      {
+        method: "GET",
+        headers: {
+          apikey: SUPABASE_CONFIG.ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+        },
+      }
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.length > 0) {
+        const dbHash = data[0].password_hash;
+        const localHash = ADMIN_CREDENTIALS.passwordHash;
+
+        const isSynced = dbHash === localHash;
+
+        if (!isSynced) {
+          console.warn("⚠️ Password NOT synced!");
+          console.log("Database hash:", dbHash.substring(0, 20) + "...");
+          console.log("Local hash:", localHash.substring(0, 20) + "...");
+
+          // Auto-sync with database
+          ADMIN_CREDENTIALS.passwordHash = dbHash;
+          console.log("✅ Password synced with database");
+        } else {
+          console.log("✅ Passwords are synced");
+        }
+
+        return isSynced;
+      }
+    }
+    return false;
+  } catch (error) {
+    console.error("Password sync check error:", error);
+    return false;
+  }
+}
+
+// Update password in database
+async function updatePasswordInDatabase(newHash) {
+  try {
+    const response = await fetch(
+      `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.admin`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_CONFIG.ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+          Prefer: "return=representation",
+        },
+        body: JSON.stringify({
+          password_hash: newHash,
+          last_login: new Date().toISOString(),
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Password update failed:", errorText);
+      return {
+        success: false,
+        message: `Database update failed: ${response.status}`,
+      };
+    }
+
+    const result = await response.json();
+
+    if (result && result.length > 0) {
+      console.log("✅ Password updated in database successfully");
+      return {
+        success: true,
+        message: "Password updated in database",
+        data: result[0],
+      };
+    } else {
+      return {
+        success: false,
+        message: "No rows were updated",
+      };
+    }
+  } catch (error) {
+    console.error("Update password error:", error);
+    return {
+      success: false,
+      message: `Network error: ${error.message}`,
+    };
+  }
+}
+
+/* ================== ENHANCED UTILITY FUNCTIONS ================== */
+
+/**
+ * ULTRA-OPTIMIZED IMAGE COMPRESSION WITH POPUP NOTIFICATIONS
+ * Features:
+ * - WebP-first compression (25-35% smaller than JPEG)
+ * - User-friendly popup errors and progress
+ * - Smart quality adjustment for food images
+ * - Performance-optimized processing
+ * - Fallback to JPEG for old browsers
+ */
+
+// ================== IMAGE COMPRESSION ==================
+
+async function compressImage(file, maxSizeKB = 300) {
+  return new Promise((resolve, reject) => {
+    // 1. VALIDATION WITH USER-FRIENDLY ERRORS
+    if (!file.type.startsWith("image/")) {
+      showNotification(
+        "❌ Please select an image file (JPEG, PNG, WebP, etc.)",
+        "error"
+      );
+      reject(new Error("File is not an image"));
+      return;
+    }
+
+    // Check for unsupported formats
+    const unsupportedFormats = [
+      "image/heic",
+      "image/heif",
+      "image/raw",
+      "image/tiff",
+    ];
+    if (unsupportedFormats.includes(file.type.toLowerCase())) {
+      showNotification(
+        "❌ Please convert HEIC/TIFF/RAW images to JPEG or PNG first",
+        "error"
+      );
+      reject(new Error("Unsupported image format"));
+      return;
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      // Increased to 10MB for food photography
+      showNotification("❌ Image is too large! Maximum size is 10MB", "error");
+      reject(new Error("Image must be less than 10MB"));
+      return;
+    }
+
+    // Show compression started notification
+    showNotification("🔄 Optimizing your image...", "info");
+
+    const reader = new FileReader();
+
+    reader.onload = function (event) {
+      const img = new Image();
+
+      img.onload = function () {
+        // Use requestAnimationFrame for smoother UI
+        requestAnimationFrame(() => {
+          try {
+            // 2. SMART DIMENSION CALCULATION FOR FOOD IMAGES
+            const canvas = document.createElement("canvas");
+            const maxDimension = 1200; // Higher for food detail
+
+            // Preserve aspect ratio with food-optimized sizing
+            let width = img.width;
+            let height = img.height;
+            const aspectRatio = width / height;
+
+            if (width > height && width > maxDimension) {
+              width = maxDimension;
+              height = Math.round(maxDimension / aspectRatio);
+            } else if (height > maxDimension) {
+              height = maxDimension;
+              width = Math.round(maxDimension * aspectRatio);
+            }
+
+            // Ensure minimum size for food detail
+            if (width < 500) width = 500;
+            if (height < 500) height = 500;
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d", { alpha: false }); // Disable alpha for speed
+
+            // Optimized drawing settings
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "medium"; // Balance of quality and speed
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // 3. WEBP-OPTIMIZED COMPRESSION WITH SMART QUALITY ADJUSTMENT
+            showNotification(
+              "🔧 Adjusting quality for optimal file size...",
+              "info"
+            );
+
+            const compressionResult = optimizeImage(canvas, maxSizeKB);
+
+            // 4. SUCCESS NOTIFICATION WITH DETAILED STATS
+            const originalKB = (file.size / 1024).toFixed(1);
+            const compressedKB = (compressionResult.data.length / 1024).toFixed(
+              1
+            );
+            const savings = (
+              (1 - compressionResult.data.length / file.size) *
+              100
+            ).toFixed(1);
+
+            let successMessage;
+            if (savings > 75) {
+              successMessage = `✅ Amazing compression! ${originalKB}KB → ${compressedKB}KB (${savings}% saved)`;
+            } else if (savings > 50) {
+              successMessage = `✅ Great optimization! ${originalKB}KB → ${compressedKB}KB`;
+            } else if (savings > 20) {
+              successMessage = `✅ Image optimized to ${compressedKB}KB`;
+            } else {
+              successMessage = `✅ Image ready at ${compressedKB}KB (high quality preserved)`;
+            }
+
+            // Add format info
+            successMessage += ` • ${compressionResult.format.toUpperCase()}`;
+
+            showNotification(successMessage, "success");
+
+            // 5. RETURN COMPRESSED DATA
+            const result = {
+              data: compressionResult.data,
+              format: compressionResult.format,
+              size: compressionResult.data.length,
+              dimensions: { width, height },
+              originalSize: file.size,
+              qualityUsed: compressionResult.quality,
+            };
+
+            console.log(
+              `🍰 Food Image Compressed: ${originalKB}KB → ${compressedKB}KB (${savings}% saved) ` +
+                `as ${compressionResult.format.toUpperCase()} at ${(
+                  compressionResult.quality * 100
+                ).toFixed(0)}% quality`
+            );
+
+            resolve(result);
+          } catch (error) {
+            // 6. PROCESSING ERROR WITH HELPFUL GUIDANCE
+            showNotification(
+              "❌ Failed to process image. Try a different format or smaller size.",
+              "error"
+            );
+            console.error("Image processing failed:", error);
+            reject(new Error(`Image processing failed: ${error.message}`));
+          }
+        });
+      };
+
+      img.onerror = () => {
+        showNotification(
+          "❌ Could not load image. The file may be corrupted.",
+          "error"
+        );
+        reject(new Error("Failed to load image"));
+      };
+
+      img.src = event.target.result;
+    };
+
+    reader.onerror = () => {
+      showNotification(
+        "❌ Error reading file. Please try selecting the image again.",
+        "error"
+      );
+      reject(new Error("Failed to read file"));
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Optimize image to target size with WebP priority
+ */
+function optimizeImage(canvas, maxSizeKB) {
+  const TARGET_SIZE = maxSizeKB * 1024;
+  let quality = 0.85; // Start high for food quality
+  let base64;
+  let format = "webp";
+
+  try {
+    // Primary: Try WebP (95% of users)
+    base64 = canvas.toDataURL("image/webp", quality);
+
+    // Smart size optimization (fewer iterations = faster)
+    if (base64.length > TARGET_SIZE) {
+      // Calculate needed reduction
+      const oversizeRatio = base64.length / TARGET_SIZE;
+
+      if (oversizeRatio > 2) {
+        // Very oversized - bigger quality drop
+        quality = 0.7;
+        base64 = canvas.toDataURL("image/webp", quality);
+      } else if (oversizeRatio > 1.3) {
+        // Moderately oversized
+        quality = 0.78;
+        base64 = canvas.toDataURL("image/webp", quality);
+      }
+
+      // One final check
+      if (base64.length > TARGET_SIZE * 1.1 && quality > 0.65) {
+        quality = 0.65;
+        base64 = canvas.toDataURL("image/webp", quality);
+      }
+    }
+
+    // If still too large after optimization
+    if (base64.length > TARGET_SIZE * 1.2) {
+      console.warn("Food image remains large - prioritizing quality over size");
+    }
+  } catch (error) {
+    // Secondary: WebP failed, use JPEG fallback (5% of users)
+    showNotification(
+      "ℹ️ Using standard format for maximum compatibility",
+      "info"
+    );
+    quality = 0.82;
+    base64 = canvas.toDataURL("image/jpeg", quality);
+    format = "jpeg";
+
+    // JPEG size adjustment
+    if (base64.length > TARGET_SIZE && quality > 0.7) {
+      quality = 0.75;
+      base64 = canvas.toDataURL("image/jpeg", quality);
+    }
+  }
+
+  return { data: base64, format, quality };
+}
+
+// ================== ENHANCED NOTIFICATION SYSTEM ==================
+
+const notificationQueue = [];
+let isShowingNotification = false;
+let notificationTimeout = null;
+
+/**
+ * Advanced notification system with queuing, theming, and animations
+ */
+function showNotification(message, type = "success") {
+  const notification = {
+    id: Date.now() + Math.random(),
+    message,
+    type,
+    timestamp: new Date(),
+    priority: getNotificationPriority(type),
   };
 
-  const theme = themes[type] || themes.success;
+  // Add to queue (sorted by priority)
+  notificationQueue.push(notification);
+  notificationQueue.sort((a, b) => b.priority - a.priority);
 
-  const notification = document.createElement("div");
-  notification.id = "admin-notification";
-  notification.className = `admin-notification admin-notification-${type}`;
-  notification.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 12px;">
-      <div style="font-size: 1.2rem;">${theme.icon}</div>
-      <div style="flex: 1; font-family: 'Poppins', sans-serif; font-size: 0.95rem;">${message}</div>
-      <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: white; font-size: 1.2rem; cursor: pointer; padding: 4px;">×</button>
-    </div>
+  if (!isShowingNotification) {
+    processNextNotification();
+  }
+}
+
+/**
+ * Priority system: error > warning > info > success
+ */
+function getNotificationPriority(type) {
+  const priorities = {
+    error: 40,
+    warning: 30,
+    info: 20,
+    success: 10,
+  };
+  return priorities[type] || 10;
+}
+
+function processNextNotification() {
+  if (notificationQueue.length === 0) {
+    isShowingNotification = false;
+    return;
+  }
+
+  isShowingNotification = true;
+  const notification = notificationQueue.shift();
+
+  // Remove existing notification
+  const existing = document.getElementById("admin-notification");
+  if (existing) {
+    existing.style.animation = "slideOutRight 0.3s ease-out forwards";
+    setTimeout(() => existing.remove(), 300);
+
+    // Small delay before showing next
+    setTimeout(() => createNotification(notification), 350);
+  } else {
+    createNotification(notification);
+  }
+}
+
+function createNotification(notification) {
+  // Notification styling themes
+  const themes = {
+    success: {
+      background: "linear-gradient(135deg, #4caf50, #2e7d32)",
+      icon: "✅",
+      border: "2px solid #2e7d32",
+      iconBg: "rgba(76, 175, 80, 0.2)",
+    },
+    error: {
+      background: "linear-gradient(135deg, #e64a4a, #c62828)",
+      icon: "❌",
+      border: "2px solid #c62828",
+      iconBg: "rgba(230, 74, 74, 0.2)",
+    },
+    warning: {
+      background: "linear-gradient(135deg, #ff9800, #ef6c00)",
+      icon: "⚠️",
+      border: "2px solid #ef6c00",
+      iconBg: "rgba(255, 152, 0, 0.2)",
+    },
+    info: {
+      background: "linear-gradient(135deg, #2196f3, #1565c0)",
+      icon: "ℹ️",
+      border: "2px solid #1565c0",
+      iconBg: "rgba(33, 150, 243, 0.2)",
+    },
+  };
+
+  const theme = themes[notification.type] || themes.success;
+
+  // Create notification element
+  const notificationEl = document.createElement("div");
+  notificationEl.id = "admin-notification";
+  notificationEl.className = `admin-notification admin-notification-${notification.type}`;
+
+  // Icon container
+  const iconEl = document.createElement("div");
+  iconEl.className = "notification-icon";
+  iconEl.textContent = theme.icon;
+  iconEl.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: ${theme.iconBg};
+    font-size: 1.2rem;
+    flex-shrink: 0;
   `;
 
-  notification.style.cssText = `
+  // Message container
+  const messageEl = document.createElement("div");
+  messageEl.className = "notification-message";
+  messageEl.textContent = notification.message;
+  messageEl.style.cssText = `
+    flex: 1;
+    font-family: 'Poppins', sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.4;
+  `;
+
+  // Close button
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "notification-close";
+  closeBtn.innerHTML = "&times;";
+  closeBtn.setAttribute("aria-label", "Close notification");
+  closeBtn.style.cssText = `
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    color: white;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+    font-size: 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    margin-left: 10px;
+  `;
+
+  // Container
+  const container = document.createElement("div");
+  container.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  `;
+
+  container.appendChild(iconEl);
+  container.appendChild(messageEl);
+  container.appendChild(closeBtn);
+  notificationEl.appendChild(container);
+
+  // Main notification styles
+  notificationEl.style.cssText = `
     position: fixed;
     top: 25px;
     right: 25px;
@@ -285,295 +1171,440 @@ function showNotification(message, type = "success") {
     border-radius: 14px;
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
     z-index: 10000;
+    animation: notificationSlideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     max-width: 380px;
     min-width: 300px;
+    cursor: pointer;
     font-family: 'Poppins', sans-serif;
-    animation: slideIn 0.3s ease-out;
+    border: ${theme.border};
+    backdrop-filter: blur(20px);
+    transition: all 0.3s ease;
   `;
 
-  document.body.appendChild(notification);
+  // Add hover effect
+  notificationEl.addEventListener("mouseenter", () => {
+    notificationEl.style.transform = "translateY(-3px)";
+    notificationEl.style.boxShadow = "0 12px 40px rgba(0, 0, 0, 0.25)";
+    closeBtn.style.background = "rgba(255, 255, 255, 0.25)";
+  });
 
-  // Auto remove after 3 seconds
-  setTimeout(() => {
-    if (notification.parentElement) {
-      notification.style.animation = "slideOut 0.3s ease-out forwards";
-      setTimeout(() => notification.remove(), 300);
+  notificationEl.addEventListener("mouseleave", () => {
+    notificationEl.style.transform = "translateY(0)";
+    notificationEl.style.boxShadow = "0 8px 30px rgba(0, 0, 0, 0.2)";
+    closeBtn.style.background = "rgba(255, 255, 255, 0.15)";
+  });
+
+  // Close button hover
+  closeBtn.addEventListener("mouseenter", () => {
+    closeBtn.style.transform = "scale(1.1)";
+    closeBtn.style.background = "rgba(255, 255, 255, 0.3)";
+  });
+
+  closeBtn.addEventListener("mouseleave", () => {
+    closeBtn.style.transform = "scale(1)";
+    closeBtn.style.background = "rgba(255, 255, 255, 0.15)";
+  });
+
+  // Close button click
+  closeBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dismissNotification(notificationEl);
+  });
+
+  // Click anywhere to dismiss
+  notificationEl.addEventListener("click", (e) => {
+    if (!e.target.closest(".notification-close")) {
+      dismissNotification(notificationEl);
     }
-  }, 3000);
+  });
+
+  document.body.appendChild(notificationEl);
+
+  // Auto-dismiss based on type
+  const dismissTimes = {
+    error: 6000, // Longer for errors (users need to read)
+    warning: 5000, // Medium for warnings
+    info: 4000, // Shorter for info
+    success: 3000, // Shortest for success
+  };
+
+  notificationTimeout = setTimeout(() => {
+    if (document.body.contains(notificationEl)) {
+      dismissNotification(notificationEl);
+    }
+  }, dismissTimes[notification.type] || 3000);
 }
 
-// Add CSS animations (only once)
+function dismissNotification(notificationEl) {
+  if (notificationTimeout) {
+    clearTimeout(notificationTimeout);
+    notificationTimeout = null;
+  }
+
+  notificationEl.style.animation =
+    "notificationSlideOut 0.3s ease-out forwards";
+
+  setTimeout(() => {
+    if (document.body.contains(notificationEl)) {
+      notificationEl.remove();
+    }
+    isShowingNotification = false;
+    processNextNotification();
+  }, 300);
+}
+
+// Add notification animations to the page
 if (!document.querySelector("#notification-animations")) {
   const style = document.createElement("style");
   style.id = "notification-animations";
   style.textContent = `
-    @keyframes slideIn {
+    @keyframes notificationSlideIn {
       from {
         opacity: 0;
-        transform: translateX(100%);
+        transform: translateX(100%) translateY(-20px);
       }
       to {
         opacity: 1;
-        transform: translateX(0);
+        transform: translateX(0) translateY(0);
       }
     }
-    @keyframes slideOut {
+
+    @keyframes notificationSlideOut {
       from {
         opacity: 1;
-        transform: translateX(0);
+        transform: translateX(0) translateY(0);
       }
       to {
         opacity: 0;
-        transform: translateX(100%);
+        transform: translateX(100%) translateY(-20px);
+      }
+    }
+
+    /* Mobile responsiveness */
+    @media (max-width: 768px) {
+      #admin-notification {
+        top: 15px !important;
+        right: 15px !important;
+        left: 15px !important;
+        max-width: none !important;
+        min-width: auto !important;
       }
     }
   `;
   document.head.appendChild(style);
 }
 
-/* ================== SECURITY FUNCTIONS ================== */
-function sanitizeInput(input) {
-  if (typeof input !== "string") return input;
-  return input
-    .replace(/[<>]/g, "")
-    .replace(/javascript:/gi, "")
-    .replace(/on\w+=/gi, "")
-    .trim();
-}
+/* ================== FIXED SECURE API FUNCTIONS ================== */
 
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
-}
+async function secureRequest(
+  endpoint,
+  method = "GET",
+  data = null,
+  options = {}
+) {
+  const { retries = 3, timeout = 10000 } = options;
 
-async function hashPassword(password) {
-  try {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-  } catch (error) {
-    console.error("Password hashing failed:", error);
-    return password;
+  // Check if Supabase is configured
+  if (!SUPABASE_CONFIG || !SUPABASE_CONFIG.URL || !SUPABASE_CONFIG.ANON_KEY) {
+    throw new Error("Supabase configuration missing. Check config.js");
   }
-}
 
-/* ================== API FUNCTIONS ================== */
-async function secureRequest(endpoint, method = "GET", data = null) {
-  try {
-    if (!SUPABASE_CONFIG || !SUPABASE_CONFIG.URL || !SUPABASE_CONFIG.ANON_KEY) {
-      throw new Error("Supabase configuration missing");
-    }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-    const headers = {
-      "Content-Type": "application/json",
-      apikey: SUPABASE_CONFIG.ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-      Prefer: "return=representation",
-    };
+  const headers = {
+    "Content-Type": "application/json",
+    apikey: SUPABASE_CONFIG.ANON_KEY,
+    Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+    Prefer: "return=representation",
+  };
 
-    const config = {
-      method: method,
-      headers: headers,
-    };
+  const session = secureStorage.getItem("session");
+  if (session && session.token) {
+    headers["X-Session-Token"] = session.token;
+  }
 
-    if (data && (method === "POST" || method === "PATCH" || method === "PUT")) {
-      config.body = JSON.stringify(data);
-    }
+  const config = {
+    method: method,
+    headers: headers,
+    signal: controller.signal,
+  };
 
-    const response = await fetch(`${SUPABASE_CONFIG.URL}${endpoint}`, config);
+  if (data && (method === "POST" || method === "PATCH" || method === "PUT")) {
+    config.body = JSON.stringify(data);
+  }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `HTTP ${response.status}: ${errorText.substring(0, 200)}`
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      console.log(
+        `API request ${method} ${endpoint} (attempt ${attempt}/${retries})`
+      );
+
+      const response = await fetch(`${SUPABASE_CONFIG.URL}${endpoint}`, config);
+      clearTimeout(timeoutId);
+
+      // Handle rate limiting
+      if (response.status === 429) {
+        const retryAfter = response.headers.get("Retry-After") || 1;
+        await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
+        continue;
+      }
+
+      if (!response.ok) {
+        const errorData = await response.text();
+
+        // Handle specific error cases
+        if (response.status === 401) {
+          showNotification(
+            "Authentication failed. Please login again.",
+            "error"
+          );
+          logoutAdmin();
+          throw new Error("Authentication failed");
+        }
+
+        if (response.status === 403) {
+          showNotification(
+            "Permission denied. Please contact administrator.",
+            "error"
+          );
+          throw new Error("Permission denied");
+        }
+
+        if (response.status === 413) {
+          showNotification(
+            "Image file is too large. Please use a smaller image.",
+            "error"
+          );
+          throw new Error("File too large");
+        }
+
+        throw new Error(
+          `HTTP ${response.status}: ${errorData.substring(0, 200)}`
+        );
+      }
+
+      // For DELETE requests that return 204 No Content
+      if (method === "DELETE" && response.status === 204) {
+        return { success: true, message: "Item deleted successfully" };
+      }
+
+      // For successful requests with content
+      if (response.status !== 204) {
+        const result = await response.json();
+
+        // Cache image data for faster editing
+        if (Array.isArray(result)) {
+          result.forEach((item) => {
+            if (item.image && item.id && tempImageCache.size < 50) {
+              tempImageCache.set(item.id, item.image);
+            }
+          });
+        } else if (result.image && result.id && tempImageCache.size < 50) {
+          tempImageCache.set(result.id, result.image);
+        }
+
+        return result;
+      }
+
+      return { success: true };
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      if (attempt === retries) {
+        console.error("API request failed after retries:", error);
+
+        // User-friendly error messages
+        if (error.name === "AbortError") {
+          showNotification("Request timeout. Please try again.", "error");
+        } else if (error.message.includes("Failed to fetch")) {
+          showNotification(
+            "Network error. Please check your connection.",
+            "error"
+          );
+        } else if (error.message.includes("CORS")) {
+          showNotification(
+            "Cross-origin request blocked. Please check configuration.",
+            "error"
+          );
+        } else {
+          showNotification(`Operation failed: ${error.message}`, "error");
+        }
+
+        throw error;
+      }
+
+      // Exponential backoff
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.pow(2, attempt) * 1000)
       );
     }
-
-    if (method === "DELETE" && response.status === 204) {
-      return { success: true };
-    }
-
-    if (response.status !== 204) {
-      return await response.json();
-    }
-
-    return { success: true };
-  } catch (error) {
-    console.error("API request failed:", error);
-    throw error;
   }
 }
 
-async function loadDataFromSupabase(endpoint) {
+// Load data with caching
+const dataCache = new Map();
+const CACHE_TTL = 60000; // 1 minute
+
+async function loadDataFromSupabase(endpoint, id = null, forceRefresh = false) {
+  const cacheKey = id ? `${endpoint}_${id}` : endpoint;
+
+  // Check cache if not forcing refresh
+  if (!forceRefresh && dataCache.has(cacheKey)) {
+    const cached = dataCache.get(cacheKey);
+    if (Date.now() - cached.timestamp < CACHE_TTL) {
+      return cached.data;
+    }
+  }
+
   try {
-    const result = await secureRequest(
-      `${endpoint}?select=*&order=created_at.desc`
-    );
-    return result || [];
+    const url = id
+      ? `${endpoint}?id=eq.${id}&select=*`
+      : `${endpoint}?select=*&order=created_at.desc`;
+
+    const result = await secureRequest(url, "GET");
+
+    // Handle Supabase response format
+    let data;
+    if (id) {
+      // For single item queries, result is an array
+      data = Array.isArray(result) && result.length > 0 ? result[0] : null;
+    } else {
+      // For list queries, result is the array
+      data = result || [];
+    }
+
+    // Cache the result
+    dataCache.set(cacheKey, {
+      data,
+      timestamp: Date.now(),
+    });
+
+    return data;
   } catch (error) {
     console.error(`Error loading from ${endpoint}:`, error);
-    return [];
+
+    // Return cached data if available (even if stale)
+    if (dataCache.has(cacheKey)) {
+      console.log("Using cached data. Some information may be outdated.");
+      return dataCache.get(cacheKey).data;
+    }
+
+    console.error("Failed to load data from cloud");
+    return id ? null : [];
   }
 }
 
-/* ================== IMAGE COMPRESSION ================== */
-async function compressImage(file, maxSizeKB = 300) {
-  return new Promise((resolve, reject) => {
-    if (!file.type.startsWith("image/")) {
-      showNotification("❌ Please select an image file", "error");
-      reject(new Error("File is not an image"));
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      showNotification("❌ Image is too large! Maximum size is 10MB", "error");
-      reject(new Error("Image must be less than 10MB"));
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = function (event) {
-      const img = new Image();
-      img.onload = function () {
-        const canvas = document.createElement("canvas");
-        const maxDimension = 1200;
-        let width = img.width;
-        let height = img.height;
-        const aspectRatio = width / height;
-
-        if (width > height && width > maxDimension) {
-          width = maxDimension;
-          height = Math.round(maxDimension / aspectRatio);
-        } else if (height > maxDimension) {
-          height = maxDimension;
-          width = Math.round(maxDimension * aspectRatio);
-        }
-
-        if (width < 500) width = 500;
-        if (height < 500) height = 500;
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Try WebP first, fallback to JPEG
-        let quality = 0.85;
-        let base64;
-        let format = "webp";
-
-        try {
-          base64 = canvas.toDataURL("image/webp", quality);
-        } catch (error) {
-          base64 = canvas.toDataURL("image/jpeg", quality);
-          format = "jpeg";
-        }
-
-        const result = {
-          data: base64,
-          format: format,
-          size: base64.length,
-          dimensions: { width, height },
-          originalSize: file.size,
-          qualityUsed: quality,
-        };
-
-        const originalKB = (file.size / 1024).toFixed(1);
-        const compressedKB = (result.data.length / 1024).toFixed(1);
-        showNotification(`✅ Image optimized to ${compressedKB}KB`, "success");
-
-        resolve(result);
-      };
-      img.onerror = () => {
-        showNotification("❌ Could not load image", "error");
-        reject(new Error("Failed to load image"));
-      };
-      img.src = event.target.result;
-    };
-    reader.onerror = () => {
-      showNotification("❌ Error reading file", "error");
-      reject(new Error("Failed to read file"));
-    };
-    reader.readAsDataURL(file);
-  });
+// Clear cache function
+function clearDataCache() {
+  dataCache.clear();
+  tempImageCache.clear();
 }
 
-/* ================== AUTHENTICATION ================== */
+/* ================== FIXED AUTHENTICATION - KEY CHANGES ================== */
+
+// Fixed login attempts storage
+let loginAttempts = {
+  count: 0,
+  timestamp: Date.now(),
+  ipKey: "login_attempts",
+};
+
+// Enhanced login with rate limiting
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_TIME = 15 * 60 * 1000; // 15 minutes
+
 async function checkLogin(username, password) {
   try {
-    // First try to check against database
-    try {
-      const response = await secureRequest(
-        `/rest/v1/admin_users?username=eq.${username}&select=password_hash`
-      );
+    console.log("🔐 Login attempt for:", username);
 
-      if (response && response.length > 0) {
-        const dbHash = response[0].password_hash;
-        const hashedPassword = await hashPassword(password);
+    // Check if locked out
+    const storedAttempts = JSON.parse(
+      sessionStorage.getItem("login_attempts") || '{"count":0,"timestamp":0}'
+    );
 
-        if (hashedPassword === dbHash) {
-          createSession(username);
-          return true;
-        }
+    if (storedAttempts.count >= MAX_LOGIN_ATTEMPTS) {
+      const timeSinceFirstAttempt = Date.now() - storedAttempts.timestamp;
+      if (timeSinceFirstAttempt < LOCKOUT_TIME) {
+        const remainingMinutes = Math.ceil(
+          (LOCKOUT_TIME - timeSinceFirstAttempt) / 60000
+        );
+        showNotification(
+          `Too many login attempts. Try again in ${remainingMinutes} minutes.`,
+          "error"
+        );
+        return false;
+      } else {
+        // Reset after lockout period
+        sessionStorage.removeItem("login_attempts");
       }
-    } catch (dbError) {
-      console.log("Database check failed, using local credentials");
     }
 
-    // Fallback to local credentials
+    // Validate username
     const sanitizedUsername = sanitizeInput(username);
     if (sanitizedUsername !== ADMIN_CREDENTIALS.username) {
+      console.log("❌ Username mismatch");
+      storedAttempts.count++;
+      storedAttempts.timestamp =
+        storedAttempts.count === 1 ? Date.now() : storedAttempts.timestamp;
+      sessionStorage.setItem("login_attempts", JSON.stringify(storedAttempts));
       return false;
     }
 
-    const hashedPassword = await hashPassword(password);
-    if (hashedPassword === ADMIN_CREDENTIALS.passwordHash) {
-      createSession(username);
-      return true;
-    }
+    console.log("✅ Username matches");
 
-    return false;
+    // Hash password and compare
+    const hashedPassword = await hashPassword(password);
+    console.log("Generated hash:", hashedPassword.substring(0, 20) + "...");
+    console.log(
+      "Stored hash:",
+      ADMIN_CREDENTIALS.passwordHash.substring(0, 20) + "..."
+    );
+
+    const isValid = hashedPassword === ADMIN_CREDENTIALS.passwordHash;
+    console.log("Hash match?", isValid);
+
+    if (isValid) {
+      // Clear login attempts on success
+      sessionStorage.removeItem("login_attempts");
+
+      // Create secure session
+      const session = {
+        token: generateSessionToken(),
+        username: username,
+        loginTime: new Date().toISOString(),
+        expiresAt: new Date(
+          Date.now() + SESSION_TIMEOUT_MINUTES * 60 * 1000
+        ).toISOString(),
+      };
+
+      secureStorage.setItem("session", session);
+      startSessionTimeout();
+      setupActivityMonitoring();
+
+      console.log("✅ Login successful!");
+      return true;
+    } else {
+      // Increment failed attempts
+      storedAttempts.count++;
+      storedAttempts.timestamp =
+        storedAttempts.count === 1 ? Date.now() : storedAttempts.timestamp;
+      sessionStorage.setItem("login_attempts", JSON.stringify(storedAttempts));
+
+      console.log("❌ Password incorrect");
+      return false;
+    }
   } catch (error) {
     console.error("Login error:", error);
     return false;
   }
 }
 
-function createSession(username) {
-  const session = {
-    username: username,
-    loginTime: new Date().toISOString(),
-    expiresAt: new Date(
-      Date.now() + SESSION_TIMEOUT_MINUTES * 60 * 1000
-    ).toISOString(),
-  };
-
-  sessionStorage.setItem("admin_session", JSON.stringify(session));
-  startSessionTimeout();
-}
-
-function checkSession() {
-  const sessionData = sessionStorage.getItem("admin_session");
-  if (!sessionData) return false;
-
-  const session = JSON.parse(sessionData);
-  const expiresAt = new Date(session.expiresAt);
-
-  if (expiresAt > new Date()) {
-    currentAdmin = session.username;
-    startSessionTimeout();
-    return true;
-  }
-
-  sessionStorage.removeItem("admin_session");
-  return false;
-}
-
+// Session timeout functions
 function startSessionTimeout() {
-  if (sessionTimeout) clearTimeout(sessionTimeout);
+  if (sessionTimeout) {
+    clearTimeout(sessionTimeout);
+  }
 
   sessionTimeout = setTimeout(() => {
     showNotification("Session expired. Please log in again.", "warning");
@@ -581,288 +1612,239 @@ function startSessionTimeout() {
   }, SESSION_TIMEOUT_MINUTES * 60 * 1000);
 }
 
-function logoutAdmin() {
-  currentAdmin = null;
-  isEditing = false;
-  currentEditId = null;
-
+function clearSessionTimeout() {
   if (sessionTimeout) {
     clearTimeout(sessionTimeout);
     sessionTimeout = null;
   }
-
-  sessionStorage.removeItem("admin_session");
-
-  document.getElementById("login-screen").style.display = "block";
-  document.getElementById("admin-dashboard").style.display = "none";
-
-  resetAllForms();
-  showNotification("Logged out successfully", "success");
 }
 
-/* ================== HOLIDAY THEME MANAGEMENT ================== */
-// Update theme UI
-function updateThemeUI(activeThemeFile) {
-  const themeCards = document.querySelectorAll(".theme-card");
-
-  themeCards.forEach((card) => {
-    const isActive = card.dataset.themeFile === activeThemeFile;
-
-    // Update active class
-    card.classList.toggle("active", isActive);
-
-    // Update status badge
-    const statusBadge = card.querySelector(".theme-status");
-    if (statusBadge) {
-      if (isActive) {
-        statusBadge.innerHTML = '<i class="fas fa-check-circle"></i> ACTIVE';
-        statusBadge.classList.add("active");
-      } else {
-        // Restore original status
-        const themeFile = card.dataset.themeFile;
-        const themeInfo = AVAILABLE_THEMES.find((t) => t.file === themeFile);
-        if (themeInfo) {
-          const icon = themeInfo.icon;
-          const name = themeInfo.name.split(" ")[0];
-          statusBadge.innerHTML = `${icon} ${name}`;
-        }
-        statusBadge.classList.remove("active");
-      }
+function setupActivityMonitoring() {
+  const resetSessionTimer = () => {
+    if (sessionTimeout) {
+      clearTimeout(sessionTimeout);
+      startSessionTimeout();
     }
+  };
 
-    // Update button
-    const actionButton = card.querySelector(".theme-actions button");
-    if (actionButton) {
-      if (isActive) {
-        actionButton.innerHTML = '<i class="fas fa-check"></i> Active';
-        actionButton.classList.remove("btn-activate-theme");
-        actionButton.classList.add("btn-active-theme");
-        actionButton.disabled = true;
-      } else {
-        actionButton.innerHTML = '<i class="fas fa-play"></i> Activate';
-        actionButton.classList.remove("btn-active-theme");
-        actionButton.classList.add("btn-activate-theme");
-        actionButton.disabled = false;
-      }
-    }
+  ["click", "keypress", "mousemove", "scroll"].forEach((event) => {
+    document.addEventListener(event, resetSessionTimer, { passive: true });
   });
 }
 
-// Load current theme from database
-async function loadCurrentTheme() {
+// Enhanced logout
+function logoutAdmin() {
+  console.log("Logging out admin...");
+
+  // Clear all sensitive data
+  currentAdmin = null;
+  isEditing = false;
+  currentEditId = null;
+  clearSessionTimeout();
+  clearDataCache();
+  secureStorage.removeItem("session");
+
+  // Reset UI
+  const loginScreen = document.getElementById("login-screen");
+  const adminDashboard = document.getElementById("admin-dashboard");
+
+  if (loginScreen) loginScreen.style.display = "block";
+  if (adminDashboard) adminDashboard.style.display = "none";
+
+  // Clear forms
+  resetFeaturedForm();
+  resetMenuForm();
+  resetGalleryForm();
+
+  console.log("✅ Logged out successfully");
+}
+
+// FIXED: Password change with enhanced validation
+async function changePassword(currentPass, newPass, confirmPass) {
   try {
-    const themesLoading = document.getElementById("themes-loading");
-    const themesEmptyState = document.getElementById("themes-empty-state");
-    const themesGrid = document.getElementById("themes-grid");
+    // Step 1: Validate current password
+    console.log("Verifying current password...");
 
-    // Show loading
-    if (themesLoading) themesLoading.style.display = "block";
-    if (themesGrid) themesGrid.style.display = "none";
+    // Check current password
+    const currentValid = await checkLogin("admin", currentPass);
+    if (!currentValid) {
+      return { success: false, message: "Current password is incorrect" };
+    }
 
-    // Try database first
-    try {
-      const response = await fetch(
-        `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?is_active=eq.true&select=css_file&limit=1`,
-        {
-          headers: {
-            apikey: SUPABASE_CONFIG.ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-          },
-        }
+    // Step 2: Validate new password
+    if (newPass !== confirmPass) {
+      return { success: false, message: "New passwords do not match" };
+    }
+
+    if (newPass.length < 8) {
+      return {
+        success: false,
+        message: "Password must be at least 8 characters",
+      };
+    }
+
+    // Check for common passwords
+    const commonPasswords = [
+      "password",
+      "12345678",
+      "qwerty",
+      "admin123",
+      "tokebakes",
+      "toke123",
+      "password123",
+      "adminadmin",
+    ];
+    if (commonPasswords.includes(newPass.toLowerCase())) {
+      return {
+        success: false,
+        message: "Password is too common. Please choose a stronger password.",
+      };
+    }
+
+    // Step 3: Generate new hash
+    console.log("Generating secure hash...");
+    const newHash = await hashPassword(newPass);
+
+    // Step 4: Update database
+    console.log("Updating password in database...");
+    const dbResult = await updatePasswordInDatabase(newHash);
+
+    if (!dbResult.success) {
+      console.error("Database update failed:", dbResult.message);
+
+      // Use custom popup instead of confirm
+      const continueLocal = await showPopup({
+        title: "Database Update Failed",
+        message: `Failed to update database: ${dbResult.message}\n\nDo you want to update the password locally only?\nYou will need to manually update the database later.`,
+        type: "warning",
+        showCancel: true,
+        cancelText: "Cancel",
+        confirmText: "Update Locally",
+      });
+
+      if (!continueLocal) {
+        return { success: false, message: "Password change cancelled" };
+      }
+
+      // Update local only
+      ADMIN_CREDENTIALS.passwordHash = newHash;
+
+      console.log(
+        "✅ Password updated locally only. Manual database update required."
       );
 
-      if (response.ok) {
-        const [theme] = await response.json();
-        if (theme?.css_file) {
-          updateThemeUI(theme.css_file);
-
-          // Hide loading, show grid
-          if (themesLoading) themesLoading.style.display = "none";
-          if (themesGrid) themesGrid.style.display = "grid";
-
-          console.log("✅ Current theme loaded from database:", theme.css_file);
-          return theme.css_file;
-        }
-      }
-    } catch (dbError) {
-      console.log("Database theme load failed:", dbError.message);
+      return {
+        success: true,
+        message:
+          "Password updated locally only. Manual database update required.",
+        requiresManualUpdate: true,
+      };
     }
 
-    // Fallback: Default theme
-    updateThemeUI("style.css");
+    // Step 5: Update local credentials AFTER successful database update
+    ADMIN_CREDENTIALS.passwordHash = newHash;
 
-    // Hide loading, show grid
-    if (themesLoading) themesLoading.style.display = "none";
-    if (themesGrid) themesGrid.style.display = "grid";
+    // Step 6: Update session
+    const session = secureStorage.getItem("session");
+    if (session) {
+      session.passwordUpdated = new Date().toISOString();
+      secureStorage.setItem("session", session);
+    }
 
-    console.log("✅ Using default theme");
-    return "style.css";
+    // Step 7: Verify sync
+    await checkPasswordSync();
+
+    // Step 8: Log success
+    console.log(
+      `🔒 Password changed successfully at ${new Date().toISOString()}`
+    );
+
+    return {
+      success: true,
+      message: "Password updated successfully in both local and database",
+      timestamp: new Date().toISOString(),
+    };
   } catch (error) {
-    console.error("Error loading current theme:", error);
+    console.error("Password change error:", error);
 
-    // Show error state
-    const themesLoading = document.getElementById("themes-loading");
-    const themesEmptyState = document.getElementById("themes-empty-state");
-    const themesGrid = document.getElementById("themes-grid");
-
-    if (themesLoading) themesLoading.style.display = "none";
-    if (themesEmptyState) {
-      themesEmptyState.style.display = "block";
-      themesEmptyState.innerHTML = `
-        <i class="fas fa-exclamation-triangle"></i>
-        <p>Couldn't load themes. Using default.</p>
-        <button class="btn-admin" onclick="location.reload()">
-          <i class="fas fa-redo"></i> Retry
-        </button>
-      `;
+    let userMessage = "Error changing password";
+    if (error.message.includes("Failed to fetch")) {
+      userMessage = "Network error. Cannot connect to database.";
+    } else if (error.message.includes("crypto.subtle")) {
+      userMessage = "Browser security error. Try using a modern browser.";
     }
-    if (themesGrid) themesGrid.style.display = "grid";
 
-    return "style.css";
+    return { success: false, message: userMessage };
   }
 }
 
-// Activate holiday theme
-async function activateTheme(themeFile) {
+/* ================== ENHANCED CONTENT MANAGEMENT ================== */
+
+// Common save function with validation
+async function saveItem(itemType, formData) {
   try {
-    showNotification("🔄 Activating theme...", "info");
+    const endpoints = {
+      featured: API_ENDPOINTS.FEATURED,
+      menu: API_ENDPOINTS.MENU,
+      gallery: API_ENDPOINTS.GALLERY,
+    };
 
-    const themeName =
-      AVAILABLE_THEMES.find((t) => t.file === themeFile)?.name || themeFile;
-
-    const confirmed = await showPopup({
-      title: "Activate Theme",
-      message: `Are you sure you want to activate "${themeName}"?\n\nThis will change the appearance of your website for ALL visitors.`,
-      type: "question",
-      showCancel: true,
-      cancelText: "Cancel",
-      confirmText: "Activate Now",
-    });
-
-    if (!confirmed) {
-      showNotification("Theme activation cancelled", "info");
-      return false;
+    const endpoint = endpoints[itemType];
+    if (!endpoint) {
+      throw new Error(`Invalid item type: ${itemType}`);
     }
 
-    // Check if table exists
-    try {
-      const testResponse = await fetch(
-        `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?limit=1`,
-        {
-          headers: {
-            apikey: SUPABASE_CONFIG.ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-          },
-        }
-      );
+    // Validate required fields
+    const requiredFields = {
+      featured: ["title", "description", "image"],
+      menu: ["title", "description", "price", "image"],
+      gallery: ["alt", "image"],
+    };
 
-      if (!testResponse.ok) {
-        throw new Error("Theme table not accessible");
-      }
-    } catch (error) {
-      console.error("Theme system error:", error);
-      showNotification(
-        "Theme system not set up. Please check database.",
-        "error"
-      );
-      return false;
-    }
-
-    // 1. Deactivate all themes
-    await fetch(`${SUPABASE_CONFIG.URL}/rest/v1/website_themes`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_CONFIG.ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify({
-        is_active: false,
-        updated_at: new Date().toISOString(),
-      }),
-    });
-
-    // 2. Activate selected theme
-    const activateResponse = await fetch(
-      `${
-        SUPABASE_CONFIG.URL
-      }/rest/v1/website_themes?css_file=eq.${encodeURIComponent(themeFile)}`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SUPABASE_CONFIG.ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-          Prefer: "return=minimal",
-        },
-        body: JSON.stringify({
-          is_active: true,
-          activated_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }),
-      }
+    const missingFields = requiredFields[itemType].filter(
+      (field) => !formData[field]
     );
-
-    if (!activateResponse.ok) {
-      // Theme might not exist in database yet
-      console.log("Theme not found, inserting...");
-
-      const insertResponse = await fetch(
-        `${SUPABASE_CONFIG.URL}/rest/v1/website_themes`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: SUPABASE_CONFIG.ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-            Prefer: "return=minimal",
-          },
-          body: JSON.stringify({
-            css_file: themeFile,
-            theme_name: themeName,
-            is_active: true,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            activated_at: new Date().toISOString(),
-          }),
-        }
-      );
-
-      if (!insertResponse.ok) {
-        throw new Error(
-          `Failed to insert theme: HTTP ${insertResponse.status}`
-        );
-      }
+    if (missingFields.length > 0) {
+      throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
     }
 
-    // 3. Update UI immediately
-    updateThemeUI(themeFile);
-
-    // 4. Notify all website instances
-    dataSync.notifyDataChanged("theme_activated", "website_theme", {
-      css_file: themeFile,
-      theme_name: themeName,
-      timestamp: Date.now(),
+    // Sanitize text fields
+    Object.keys(formData).forEach((key) => {
+      if (typeof formData[key] === "string") {
+        formData[key] = sanitizeInput(formData[key]);
+      }
     });
 
-    // 5. Show success notification
-    showNotification(
-      `🎨 "${themeName}" theme activated for all visitors!`,
-      "success"
-    );
+    // Send to API
+    if (isEditing && currentEditId) {
+      await secureRequest(
+        `${endpoint}?id=eq.${currentEditId}`,
+        "PATCH",
+        formData
+      );
+      console.log(`${itemType} item updated successfully!`);
+    } else {
+      await secureRequest(endpoint, "POST", formData);
+      console.log(`${itemType} item added successfully!`);
+    }
 
-    console.log(`✅ Theme "${themeName}" activated successfully`);
+    // Clear cache for this endpoint
+    dataCache.forEach((value, key) => {
+      if (key.startsWith(endpoint)) {
+        dataCache.delete(key);
+      }
+    });
+
     return true;
   } catch (error) {
-    console.error("Theme activation failed:", error);
-    showNotification("Failed to activate theme: " + error.message, "error");
+    console.error(`Error saving ${itemType} item:`, error);
     return false;
   }
 }
 
-/* ================== CONTENT MANAGEMENT ================== */
-// Featured Items
+/* ================== SPECIFIC CONTENT MANAGEMENT FUNCTIONS ================== */
+
+// Featured Items Management
 async function renderFeaturedItems() {
   const container = document.getElementById("featured-items-list");
   if (!container) return;
@@ -884,19 +1866,15 @@ async function renderFeaturedItems() {
       .map(
         (item) => `
       <div class="item-card" data-id="${item.id}">
-        <img src="${item.image}" alt="${
-          item.title
-        }" class="item-card-img" loading="lazy">
+        <img src="${item.image}" alt="${item.title}" class="item-card-img" loading="lazy">
         <div class="item-card-content">
-          <h3 class="item-card-title">${escapeHtml(item.title)}</h3>
-          <p class="item-card-desc">${escapeHtml(item.description)}</p>
+          <h3 class="item-card-title">${item.title}</h3>
+          <p class="item-card-desc">${item.description}</p>
           <div class="item-card-actions">
             <button class="btn-edit" onclick="editFeaturedItem('${item.id}')">
               <i class="fas fa-edit"></i> Edit
             </button>
-            <button class="btn-delete" onclick="deleteFeaturedItem('${
-              item.id
-            }')">
+            <button class="btn-delete" onclick="deleteFeaturedItem('${item.id}')">
               <i class="fas fa-trash"></i> Delete
             </button>
           </div>
@@ -906,7 +1884,7 @@ async function renderFeaturedItems() {
       )
       .join("");
   } catch (error) {
-    console.error("Error rendering featured items:", error);
+    console.error(`Error rendering featured items:`, error);
     container.innerHTML = `
       <div class="empty-state error">
         <i class="fas fa-exclamation-triangle"></i>
@@ -926,11 +1904,6 @@ async function saveFeaturedItem(e) {
   const imageFile = document.getElementById("featured-image").files[0];
   const itemId = document.getElementById("featured-id").value;
 
-  if (!title || !description) {
-    showNotification("Please fill in all required fields", "error");
-    return;
-  }
-
   try {
     let imageBase64 = "";
 
@@ -940,33 +1913,30 @@ async function saveFeaturedItem(e) {
     } else if (isEditing && itemId && tempImageCache.has(itemId)) {
       imageBase64 = tempImageCache.get(itemId);
     } else {
-      showNotification("Please select an image", "error");
+      showPopup({
+        title: "Image Required",
+        message: "Please select an image",
+        type: "error",
+        confirmText: "OK",
+      });
       return;
     }
 
     const formData = {
-      title: sanitizeInput(title),
-      description: sanitizeInput(description),
+      title,
+      description,
       image: imageBase64,
     };
 
-    if (isEditing && itemId) {
-      await secureRequest(
-        `${API_ENDPOINTS.FEATURED}?id=eq.${itemId}`,
-        "PATCH",
-        formData
-      );
-      showNotification("Featured item updated!", "success");
-      dataSync.notifyDataChanged("update", "featured");
-    } else {
-      await secureRequest(API_ENDPOINTS.FEATURED, "POST", formData);
-      showNotification("Featured item added!", "success");
-      dataSync.notifyDataChanged("create", "featured");
-    }
+    const success = await saveItem("featured", formData);
 
-    resetFeaturedForm();
-    await renderFeaturedItems();
-    await updateItemCounts();
+    if (success) {
+      resetFeaturedForm();
+      await renderFeaturedItems();
+      await updateItemCounts();
+      showNotification("Featured item saved successfully!", "success");
+      dataSync.notifyDataChanged(isEditing ? "update" : "create", "featured");
+    }
   } catch (error) {
     console.error("Error saving featured item:", error);
     showNotification("Failed to save item", "error");
@@ -975,8 +1945,7 @@ async function saveFeaturedItem(e) {
 
 async function editFeaturedItem(id) {
   try {
-    const items = await loadDataFromSupabase(API_ENDPOINTS.FEATURED);
-    const item = items.find((i) => i.id === id);
+    const item = await loadDataFromSupabase(API_ENDPOINTS.FEATURED, id);
 
     if (!item) {
       showNotification("Item not found", "error");
@@ -994,9 +1963,6 @@ async function editFeaturedItem(id) {
     isEditing = true;
     currentEditId = id;
 
-    // Cache image
-    tempImageCache.set(id, item.image);
-
     document
       .getElementById("featured-form-container")
       .scrollIntoView({ behavior: "smooth" });
@@ -1006,37 +1972,7 @@ async function editFeaturedItem(id) {
   }
 }
 
-async function deleteFeaturedItem(id) {
-  const confirmed = await showPopup({
-    title: "Delete Featured Item",
-    message:
-      "Are you sure you want to delete this featured item? This action cannot be undone.",
-    type: "warning",
-    showCancel: true,
-    cancelText: "Cancel",
-    confirmText: "Delete",
-  });
-
-  if (!confirmed) {
-    showNotification("Deletion cancelled", "info");
-    return;
-  }
-
-  try {
-    await secureRequest(`${API_ENDPOINTS.FEATURED}?id=eq.${id}`, "DELETE");
-    showNotification("Featured item deleted!", "success");
-
-    tempImageCache.delete(id);
-    await renderFeaturedItems();
-    await updateItemCounts();
-    dataSync.notifyDataChanged("delete", "featured");
-  } catch (error) {
-    console.error("Error deleting featured item:", error);
-    showNotification("Failed to delete item", "error");
-  }
-}
-
-// Menu Items
+// Menu Items Management - FIXED: Price removed from visible display
 async function renderMenuItems() {
   const container = document.getElementById("menu-items-list");
   if (!container) return;
@@ -1064,8 +2000,9 @@ async function renderMenuItems() {
           item.title
         }" class="item-card-img" loading="lazy">
         <div class="item-card-content">
-          <h3 class="item-card-title">${escapeHtml(item.title)}</h3>
-          <p class="item-card-desc">${escapeHtml(item.description)}</p>
+          <h3 class="item-card-title">${item.title}</h3>
+          <p class="item-card-desc">${item.description}</p>
+          <!-- Price is NOT displayed here, only stored in data attributes -->
           <div class="item-card-actions">
             <button class="btn-edit" onclick="editMenuItem('${item.id}')">
               <i class="fas fa-edit"></i> Edit
@@ -1080,7 +2017,7 @@ async function renderMenuItems() {
       )
       .join("");
   } catch (error) {
-    console.error("Error rendering menu items:", error);
+    console.error(`Error rendering menu items:`, error);
     container.innerHTML = `
       <div class="empty-state error">
         <i class="fas fa-exclamation-triangle"></i>
@@ -1099,11 +2036,7 @@ async function saveMenuItem(e) {
   const imageFile = document.getElementById("menu-image").files[0];
   const itemId = document.getElementById("menu-id").value;
 
-  if (!title || !description || !price) {
-    showNotification("Please fill in all required fields", "error");
-    return;
-  }
-
+  // Validation
   if (price < 0) {
     showNotification("Price must be a positive number", "error");
     return;
@@ -1123,29 +2056,21 @@ async function saveMenuItem(e) {
     }
 
     const formData = {
-      title: sanitizeInput(title),
-      description: sanitizeInput(description),
+      title,
+      description,
       price: Number(price),
       image: imageBase64,
     };
 
-    if (isEditing && itemId) {
-      await secureRequest(
-        `${API_ENDPOINTS.MENU}?id=eq.${itemId}`,
-        "PATCH",
-        formData
-      );
-      showNotification("Menu item updated!", "success");
-      dataSync.notifyDataChanged("update", "menu");
-    } else {
-      await secureRequest(API_ENDPOINTS.MENU, "POST", formData);
-      showNotification("Menu item added!", "success");
-      dataSync.notifyDataChanged("create", "menu");
-    }
+    const success = await saveItem("menu", formData);
 
-    resetMenuForm();
-    await renderMenuItems();
-    await updateItemCounts();
+    if (success) {
+      resetMenuForm();
+      await renderMenuItems();
+      await updateItemCounts();
+      showNotification("Menu item saved successfully!", "success");
+      dataSync.notifyDataChanged(isEditing ? "update" : "create", "menu");
+    }
   } catch (error) {
     console.error("Error saving menu item:", error);
     showNotification("Failed to save menu item", "error");
@@ -1154,8 +2079,7 @@ async function saveMenuItem(e) {
 
 async function editMenuItem(id) {
   try {
-    const items = await loadDataFromSupabase(API_ENDPOINTS.MENU);
-    const item = items.find((i) => i.id === id);
+    const item = await loadDataFromSupabase(API_ENDPOINTS.MENU, id);
 
     if (!item) {
       showNotification("Menu item not found", "error");
@@ -1174,8 +2098,6 @@ async function editMenuItem(id) {
     isEditing = true;
     currentEditId = id;
 
-    tempImageCache.set(id, item.image);
-
     document
       .getElementById("menu-form-container")
       .scrollIntoView({ behavior: "smooth" });
@@ -1185,37 +2107,7 @@ async function editMenuItem(id) {
   }
 }
 
-async function deleteMenuItem(id) {
-  const confirmed = await showPopup({
-    title: "Delete Menu Item",
-    message:
-      "Are you sure you want to delete this menu item? This action cannot be undone.",
-    type: "warning",
-    showCancel: true,
-    cancelText: "Cancel",
-    confirmText: "Delete",
-  });
-
-  if (!confirmed) {
-    showNotification("Deletion cancelled", "info");
-    return;
-  }
-
-  try {
-    await secureRequest(`${API_ENDPOINTS.MENU}?id=eq.${id}`, "DELETE");
-    showNotification("Menu item deleted!", "success");
-
-    tempImageCache.delete(id);
-    await renderMenuItems();
-    await updateItemCounts();
-    dataSync.notifyDataChanged("delete", "menu");
-  } catch (error) {
-    console.error("Error deleting menu item:", error);
-    showNotification("Failed to delete menu item", "error");
-  }
-}
-
-// Gallery Items
+// Gallery Management
 async function renderGalleryItems() {
   const container = document.getElementById("gallery-admin-grid");
   if (!container) return;
@@ -1239,14 +2131,12 @@ async function renderGalleryItems() {
       <div class="gallery-admin-item" data-id="${item.id}">
         <img src="${item.image}" alt="${item.alt}" loading="lazy">
         <div class="gallery-admin-overlay">
-          <p><strong>Alt Text:</strong> ${escapeHtml(item.alt)}</p>
+          <p><strong>Alt Text:</strong> ${item.alt}</p>
           <div class="gallery-admin-actions">
             <button class="btn-edit" onclick="editGalleryItem('${item.id}')">
               <i class="fas fa-edit"></i> Edit
             </button>
-            <button class="btn-delete" onclick="deleteGalleryItem('${
-              item.id
-            }')">
+            <button class="btn-delete" onclick="deleteGalleryItem('${item.id}')">
               <i class="fas fa-trash"></i> Delete
             </button>
           </div>
@@ -1256,7 +2146,7 @@ async function renderGalleryItems() {
       )
       .join("");
   } catch (error) {
-    console.error("Error rendering gallery items:", error);
+    console.error(`Error rendering gallery items:`, error);
     container.innerHTML = `
       <div class="empty-state error">
         <i class="fas fa-exclamation-triangle"></i>
@@ -1273,11 +2163,6 @@ async function saveGalleryItem(e) {
   const imageFile = document.getElementById("gallery-image").files[0];
   const itemId = document.getElementById("gallery-id").value;
 
-  if (!alt) {
-    showNotification("Please enter alt text", "error");
-    return;
-  }
-
   try {
     let imageBase64 = "";
 
@@ -1292,27 +2177,19 @@ async function saveGalleryItem(e) {
     }
 
     const formData = {
-      alt: sanitizeInput(alt),
+      alt,
       image: imageBase64,
     };
 
-    if (isEditing && itemId) {
-      await secureRequest(
-        `${API_ENDPOINTS.GALLERY}?id=eq.${itemId}`,
-        "PATCH",
-        formData
-      );
-      showNotification("Gallery image updated!", "success");
-      dataSync.notifyDataChanged("update", "gallery");
-    } else {
-      await secureRequest(API_ENDPOINTS.GALLERY, "POST", formData);
-      showNotification("Gallery image added!", "success");
-      dataSync.notifyDataChanged("create", "gallery");
-    }
+    const success = await saveItem("gallery", formData);
 
-    resetGalleryForm();
-    await renderGalleryItems();
-    await updateItemCounts();
+    if (success) {
+      resetGalleryForm();
+      await renderGalleryItems();
+      await updateItemCounts();
+      showNotification("Gallery image saved successfully!", "success");
+      dataSync.notifyDataChanged(isEditing ? "update" : "create", "gallery");
+    }
   } catch (error) {
     console.error("Error saving gallery item:", error);
     showNotification("Failed to save gallery item", "error");
@@ -1321,8 +2198,7 @@ async function saveGalleryItem(e) {
 
 async function editGalleryItem(id) {
   try {
-    const items = await loadDataFromSupabase(API_ENDPOINTS.GALLERY);
-    const item = items.find((i) => i.id === id);
+    const item = await loadDataFromSupabase(API_ENDPOINTS.GALLERY, id);
 
     if (!item) {
       showNotification("Gallery item not found", "error");
@@ -1339,8 +2215,6 @@ async function editGalleryItem(id) {
     isEditing = true;
     currentEditId = id;
 
-    tempImageCache.set(id, item.image);
-
     document
       .getElementById("gallery-form-container")
       .scrollIntoView({ behavior: "smooth" });
@@ -1350,71 +2224,8 @@ async function editGalleryItem(id) {
   }
 }
 
-async function deleteGalleryItem(id) {
-  const confirmed = await showPopup({
-    title: "Delete Gallery Image",
-    message:
-      "Are you sure you want to delete this gallery image? This action cannot be undone.",
-    type: "warning",
-    showCancel: true,
-    cancelText: "Cancel",
-    confirmText: "Delete",
-  });
+/* ================== ENHANCED STORAGE MANAGEMENT ================== */
 
-  if (!confirmed) {
-    showNotification("Deletion cancelled", "info");
-    return;
-  }
-
-  try {
-    await secureRequest(`${API_ENDPOINTS.GALLERY}?id=eq.${id}`, "DELETE");
-    showNotification("Gallery image deleted!", "success");
-
-    tempImageCache.delete(id);
-    await renderGalleryItems();
-    await updateItemCounts();
-    dataSync.notifyDataChanged("delete", "gallery");
-  } catch (error) {
-    console.error("Error deleting gallery item:", error);
-    showNotification("Failed to delete gallery item", "error");
-  }
-}
-
-/* ================== FORM FUNCTIONS ================== */
-function resetFeaturedForm() {
-  document.getElementById("featured-form").reset();
-  document.getElementById("featured-id").value = "";
-  document.getElementById("featured-image-preview").innerHTML = "";
-  document.getElementById("featured-form-container").style.display = "none";
-  isEditing = false;
-  currentEditId = null;
-}
-
-function resetMenuForm() {
-  document.getElementById("menu-form").reset();
-  document.getElementById("menu-id").value = "";
-  document.getElementById("menu-image-preview").innerHTML = "";
-  document.getElementById("menu-form-container").style.display = "none";
-  isEditing = false;
-  currentEditId = null;
-}
-
-function resetGalleryForm() {
-  document.getElementById("gallery-form").reset();
-  document.getElementById("gallery-id").value = "";
-  document.getElementById("gallery-image-preview").innerHTML = "";
-  document.getElementById("gallery-form-container").style.display = "none";
-  isEditing = false;
-  currentEditId = null;
-}
-
-function resetAllForms() {
-  resetFeaturedForm();
-  resetMenuForm();
-  resetGalleryForm();
-}
-
-/* ================== STORAGE & COUNTS ================== */
 async function updateStorageUsage() {
   try {
     const [featured, menu, gallery] = await Promise.all([
@@ -1428,6 +2239,7 @@ async function updateStorageUsage() {
 
     allItems.forEach((item) => {
       if (item.image) {
+        // Base64 size calculation
         const base64Length = item.image.length;
         const padding = item.image.endsWith("==")
           ? 2
@@ -1441,6 +2253,7 @@ async function updateStorageUsage() {
     const mbUsed = (totalBytes / (1024 * 1024)).toFixed(2);
     const percentage = Math.min((mbUsed / 500) * 100, 100).toFixed(1);
 
+    // Update UI
     const storageUsedEl = document.getElementById("storage-used");
     const storageFillEl = document.getElementById("storage-fill");
     const storageInfoEl = document.getElementById("storage-info");
@@ -1448,6 +2261,16 @@ async function updateStorageUsage() {
     if (storageUsedEl) storageUsedEl.textContent = mbUsed;
     if (storageFillEl) storageFillEl.style.width = `${percentage}%`;
     if (storageInfoEl) storageInfoEl.textContent = `${mbUsed} MB / 500 MB`;
+
+    // Add warnings
+    if (mbUsed > 450) {
+      showNotification("CRITICAL: Storage usage is at 90%+!", "error");
+    } else if (mbUsed > 400) {
+      showNotification(
+        `Warning: Storage usage is high (${mbUsed}MB).`,
+        "warning"
+      );
+    }
 
     return { mbUsed, itemCount: allItems.length };
   } catch (error) {
@@ -1478,60 +2301,8 @@ async function updateItemCounts() {
   }
 }
 
-/* ================== PASSWORD CHANGE ================== */
-async function changePassword(currentPass, newPass, confirmPass) {
-  try {
-    // Verify current password
-    const currentValid = await checkLogin("admin", currentPass);
-    if (!currentValid) {
-      return { success: false, message: "Current password is incorrect" };
-    }
+/* ================== ENHANCED DATA BACKUP/RESTORE ================== */
 
-    if (newPass !== confirmPass) {
-      return { success: false, message: "New passwords do not match" };
-    }
-
-    if (newPass.length < 8) {
-      return {
-        success: false,
-        message: "Password must be at least 8 characters",
-      };
-    }
-
-    // Generate new hash
-    const newHash = await hashPassword(newPass);
-
-    // Update database
-    try {
-      await secureRequest(`/rest/v1/admin_users?username=eq.admin`, "PATCH", {
-        password_hash: newHash,
-        last_login: new Date().toISOString(),
-      });
-
-      // Update local credentials
-      ADMIN_CREDENTIALS.passwordHash = newHash;
-
-      return {
-        success: true,
-        message: "Password updated successfully",
-      };
-    } catch (dbError) {
-      // Update local only if database fails
-      ADMIN_CREDENTIALS.passwordHash = newHash;
-
-      return {
-        success: true,
-        message: "Password updated locally. Database update failed.",
-        requiresManualUpdate: true,
-      };
-    }
-  } catch (error) {
-    console.error("Password change error:", error);
-    return { success: false, message: "Error changing password" };
-  }
-}
-
-/* ================== DATA EXPORT/IMPORT ================== */
 async function exportData() {
   try {
     showNotification("Preparing export...", "info");
@@ -1549,8 +2320,14 @@ async function exportData() {
       exportDate: new Date().toISOString(),
       version: "2.0.0",
       source: "Toke Bakes CMS",
+      itemCount: {
+        featured: featured.length,
+        menu: menu.length,
+        gallery: gallery.length,
+      },
     };
 
+    // Create and download file
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: "application/json",
     });
@@ -1577,6 +2354,7 @@ async function importData(file) {
     const text = await file.text();
     const data = JSON.parse(text);
 
+    // Validate backup file
     if (!data.featured || !data.menu || !data.gallery) {
       showNotification("Invalid backup file format", "error");
       return;
@@ -1592,7 +2370,9 @@ async function importData(file) {
       confirmText: "Import",
     });
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     showNotification("Starting import...", "info");
 
@@ -1604,13 +2384,18 @@ async function importData(file) {
     ]);
 
     // Import new data
+    const totalItems =
+      data.featured.length + data.menu.length + data.gallery.length;
     let imported = 0;
 
+    // Import batches
     const importBatch = async (items, endpoint) => {
       for (const item of items) {
         await secureRequest(endpoint, "POST", item);
         imported++;
-        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Small delay to prevent rate limiting
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
     };
 
@@ -1618,14 +2403,19 @@ async function importData(file) {
     await importBatch(data.menu, API_ENDPOINTS.MENU);
     await importBatch(data.gallery, API_ENDPOINTS.GALLERY);
 
+    // Cleanup
+    clearDataCache();
+
     showNotification(`Successfully imported ${imported} items!`, "success");
 
+    // Refresh displays
     await Promise.all([
       renderFeaturedItems(),
       renderMenuItems(),
       renderGalleryItems(),
     ]);
     await updateItemCounts();
+
     dataSync.notifyDataChanged("import", "all");
   } catch (error) {
     console.error("Error importing data:", error);
@@ -1633,7 +2423,122 @@ async function importData(file) {
   }
 }
 
-/* ================== EVENT LISTENERS ================== */
+/* ================== RESET FORM FUNCTIONS ================== */
+
+function resetFeaturedForm() {
+  const form = document.getElementById("featured-form");
+  if (form) form.reset();
+  document.getElementById("featured-id").value = "";
+  document.getElementById("featured-image-preview").innerHTML = "";
+  document.getElementById("featured-form-container").style.display = "none";
+  isEditing = false;
+  currentEditId = null;
+}
+
+function resetMenuForm() {
+  const form = document.getElementById("menu-form");
+  if (form) form.reset();
+  document.getElementById("menu-id").value = "";
+  document.getElementById("menu-image-preview").innerHTML = "";
+  document.getElementById("menu-form-container").style.display = "none";
+  isEditing = false;
+  currentEditId = null;
+}
+
+function resetGalleryForm() {
+  const form = document.getElementById("gallery-form");
+  if (form) form.reset();
+  document.getElementById("gallery-id").value = "";
+  document.getElementById("gallery-image-preview").innerHTML = "";
+  document.getElementById("gallery-form-container").style.display = "none";
+  isEditing = false;
+  currentEditId = null;
+}
+
+/* ================== FIXED INITIALIZATION ================== */
+
+async function initAdminPanel() {
+  console.log("🔧 Initializing Admin Panel v2.0 (MODERN CONFIRMATION)...");
+
+  // 🔒 Initialize admin credentials from database
+  try {
+    await loadPasswordFromDatabase();
+
+    // Check password sync status
+    setTimeout(async () => {
+      await checkPasswordSync();
+    }, 1000);
+  } catch (error) {
+    console.error("Failed to initialize credentials:", error);
+  }
+
+  // Check session
+  const session = secureStorage.getItem("session");
+  console.log("Session check:", session);
+
+  if (session && session.token) {
+    // Check if session is still valid
+    const expiresAt = new Date(session.expiresAt);
+    if (expiresAt > new Date()) {
+      // Valid session, show dashboard
+      currentAdmin = session.username;
+      document.getElementById("login-screen").style.display = "none";
+      document.getElementById("admin-dashboard").style.display = "block";
+      startSessionTimeout();
+      setupActivityMonitoring();
+      console.log("✅ Restored existing session");
+    } else {
+      // Session expired
+      secureStorage.removeItem("session");
+      console.log("❌ Session expired");
+    }
+  }
+
+  // Check Supabase configuration
+  if (!SUPABASE_CONFIG || !SUPABASE_CONFIG.URL || !SUPABASE_CONFIG.ANON_KEY) {
+    const warning = document.createElement("div");
+    warning.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: #ff6b6b;
+      color: white;
+      padding: 10px;
+      text-align: center;
+      z-index: 10000;
+      font-weight: bold;
+    `;
+    warning.textContent =
+      "WARNING: Supabase not configured. Please check config.js";
+    document.body.appendChild(warning);
+    return;
+  }
+
+  // Set current year
+  const yearElement = document.getElementById("admin-year");
+  if (yearElement) {
+    yearElement.textContent = new Date().getFullYear();
+  }
+
+  // Load initial data if logged in
+  if (currentAdmin) {
+    try {
+      await Promise.all([
+        renderFeaturedItems(),
+        renderMenuItems(),
+        renderGalleryItems(),
+      ]);
+      await updateItemCounts();
+    } catch (error) {
+      console.error("Error loading initial data:", error);
+    }
+  }
+
+  // Setup event listeners
+  setupEventListeners();
+}
+
 function setupEventListeners() {
   console.log("Setting up event listeners...");
 
@@ -1656,19 +2561,16 @@ function setupEventListeners() {
       if (targetTab) {
         targetTab.classList.add("active");
 
-        // Load themes when themes tab is opened
-        if (tabId === "themes") {
-          loadCurrentTheme();
-        }
-
-        // Refresh counts when settings tab is opened
+        // Refresh storage analysis when settings tab is opened
         if (tabId === "settings") {
           updateItemCounts();
         }
       }
 
       // Reset any open forms
-      resetAllForms();
+      resetFeaturedForm();
+      resetMenuForm();
+      resetGalleryForm();
     });
   });
 
@@ -1677,11 +2579,14 @@ function setupEventListeners() {
   if (loginForm) {
     loginForm.addEventListener("submit", async function (e) {
       e.preventDefault();
+      console.log("Login form submitted");
 
       const username = sanitizeInput(
         document.getElementById("admin-username").value
       );
       const password = document.getElementById("admin-password").value;
+
+      console.log("Attempting login with:", username);
 
       const isValid = await checkLogin(username, password);
       if (isValid) {
@@ -1690,6 +2595,7 @@ function setupEventListeners() {
         document.getElementById("admin-dashboard").style.display = "block";
         showNotification(`Welcome back, ${username}!`, "success");
 
+        // Load data after successful login
         await Promise.all([
           renderFeaturedItems(),
           renderMenuItems(),
@@ -1716,9 +2622,15 @@ function setupEventListeners() {
   const menuForm = document.getElementById("menu-form");
   const galleryForm = document.getElementById("gallery-form");
 
-  if (featuredForm) featuredForm.addEventListener("submit", saveFeaturedItem);
-  if (menuForm) menuForm.addEventListener("submit", saveMenuItem);
-  if (galleryForm) galleryForm.addEventListener("submit", saveGalleryItem);
+  if (featuredForm) {
+    featuredForm.addEventListener("submit", saveFeaturedItem);
+  }
+  if (menuForm) {
+    menuForm.addEventListener("submit", saveMenuItem);
+  }
+  if (galleryForm) {
+    galleryForm.addEventListener("submit", saveGalleryItem);
+  }
 
   // Change password form
   const passwordForm = document.getElementById("change-password-form");
@@ -1780,10 +2692,15 @@ function setupEventListeners() {
   const cancelMenu = document.getElementById("cancel-menu");
   const cancelGallery = document.getElementById("cancel-gallery");
 
-  if (cancelFeatured)
+  if (cancelFeatured) {
     cancelFeatured.addEventListener("click", resetFeaturedForm);
-  if (cancelMenu) cancelMenu.addEventListener("click", resetMenuForm);
-  if (cancelGallery) cancelGallery.addEventListener("click", resetGalleryForm);
+  }
+  if (cancelMenu) {
+    cancelMenu.addEventListener("click", resetMenuForm);
+  }
+  if (cancelGallery) {
+    cancelGallery.addEventListener("click", resetGalleryForm);
+  }
 
   // Data management buttons
   const exportDataBtn = document.getElementById("export-data");
@@ -1791,7 +2708,9 @@ function setupEventListeners() {
   const resetDataBtn = document.getElementById("reset-data");
   const importFileInput = document.getElementById("import-file");
 
-  if (exportDataBtn) exportDataBtn.addEventListener("click", exportData);
+  if (exportDataBtn) {
+    exportDataBtn.addEventListener("click", exportData);
+  }
 
   if (importDataBtn) {
     importDataBtn.addEventListener("click", () => {
@@ -1802,8 +2721,10 @@ function setupEventListeners() {
   if (importFileInput) {
     importFileInput.addEventListener("change", (e) => {
       const file = e.target.files[0];
-      if (file) importData(file);
-      e.target.value = "";
+      if (file) {
+        importData(file);
+      }
+      e.target.value = ""; // Reset file input
     });
   }
 
@@ -1819,12 +2740,16 @@ function setupEventListeners() {
         confirmText: "Continue",
       });
 
-      if (!confirmed) return;
+      if (!confirmed) {
+        return;
+      }
 
       const confirmation = await showPopup({
         title: "Type Confirmation",
         message: 'Please type "DELETE ALL" to confirm deletion:',
         type: "warning",
+        showInput: true,
+        inputPlaceholder: "Type DELETE ALL here",
         showCancel: true,
         cancelText: "Cancel",
         confirmText: "Delete All",
@@ -1844,6 +2769,7 @@ function setupEventListeners() {
           secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE"),
         ]);
 
+        clearDataCache();
         showNotification("All data has been reset!", "success");
 
         await Promise.all([
@@ -1852,6 +2778,7 @@ function setupEventListeners() {
           renderGalleryItems(),
         ]);
         await updateItemCounts();
+
         dataSync.notifyDataChanged("reset", "all");
       } catch (error) {
         console.error("Error resetting data:", error);
@@ -1859,130 +2786,6 @@ function setupEventListeners() {
       }
     });
   }
-
-  // Theme activation buttons (event delegation)
-  document.addEventListener("click", (e) => {
-    const themeBtn = e.target.closest(".btn-activate-theme");
-    if (themeBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const themeCard = themeBtn.closest(".theme-card");
-      const themeFile = themeCard?.dataset.themeFile;
-      const isActive = themeCard?.classList.contains("active");
-
-      if (themeFile && !isActive) {
-        activateTheme(themeFile);
-      }
-    }
-  });
-
-  // Dark/light theme toggle (user preference)
-  const themeToggle = document.getElementById("themeToggle");
-  if (themeToggle) {
-    themeToggle.addEventListener("click", () => {
-      const current = document.documentElement.getAttribute("data-theme");
-      const newTheme = current === "dark" ? "light" : "dark";
-
-      document.documentElement.setAttribute("data-theme", newTheme);
-
-      // Update icons
-      const sunIcon = themeToggle.querySelector(".sun");
-      const moonIcon = themeToggle.querySelector(".moon");
-
-      if (newTheme === "dark") {
-        if (sunIcon) sunIcon.style.display = "none";
-        if (moonIcon) moonIcon.style.display = "inline-block";
-        themeToggle.classList.add("dark");
-      } else {
-        if (sunIcon) sunIcon.style.display = "inline-block";
-        if (moonIcon) moonIcon.style.display = "none";
-        themeToggle.classList.remove("dark");
-      }
-
-      localStorage.setItem("toke_bakes_theme", newTheme);
-      updateFooterTheme(newTheme);
-    });
-  }
-}
-
-/* ================== INITIALIZATION ================== */
-async function initAdminPanel() {
-  console.log("🔧 Initializing Admin Panel v2.0");
-
-  // Apply dark/light theme immediately
-  const savedTheme = localStorage.getItem("toke_bakes_theme");
-  if (savedTheme) {
-    document.documentElement.setAttribute("data-theme", savedTheme);
-    const themeToggle = document.getElementById("themeToggle");
-    if (themeToggle) {
-      const sunIcon = themeToggle.querySelector(".sun");
-      const moonIcon = themeToggle.querySelector(".moon");
-
-      if (savedTheme === "dark") {
-        if (sunIcon) sunIcon.style.display = "none";
-        if (moonIcon) moonIcon.style.display = "inline-block";
-        themeToggle.classList.add("dark");
-      } else {
-        if (sunIcon) sunIcon.style.display = "inline-block";
-        if (moonIcon) moonIcon.style.display = "none";
-        themeToggle.classList.remove("dark");
-      }
-    }
-  }
-
-  // Check session
-  if (checkSession()) {
-    document.getElementById("login-screen").style.display = "none";
-    document.getElementById("admin-dashboard").style.display = "block";
-    console.log("✅ Restored existing session");
-  }
-
-  // Check Supabase configuration
-  if (!SUPABASE_CONFIG || !SUPABASE_CONFIG.URL || !SUPABASE_CONFIG.ANON_KEY) {
-    const warning = document.createElement("div");
-    warning.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      background: #ff6b6b;
-      color: white;
-      padding: 10px;
-      text-align: center;
-      z-index: 10000;
-      font-weight: bold;
-    `;
-    warning.textContent =
-      "WARNING: Supabase not configured. Please check config.js";
-    document.body.appendChild(warning);
-    return;
-  }
-
-  // Set current year
-  const yearElement = document.getElementById("admin-year");
-  if (yearElement) {
-    yearElement.textContent = new Date().getFullYear();
-  }
-
-  // Load initial data if logged in
-  if (currentAdmin) {
-    try {
-      await Promise.all([
-        renderFeaturedItems(),
-        renderMenuItems(),
-        renderGalleryItems(),
-      ]);
-      await updateItemCounts();
-    } catch (error) {
-      console.error("Error loading initial data:", error);
-    }
-  }
-
-  // Setup event listeners
-  setupEventListeners();
-
-  console.log("✅ Admin Panel initialized");
 }
 
 // Make functions available globally
@@ -2000,4 +2803,20 @@ if (document.readyState === "loading") {
   initAdminPanel();
 }
 
-console.log("✅ Toke Bakes Admin Panel v2.0 - NO DUPLICATE DECLARATIONS");
+/* ================== FINAL OPTIMIZATIONS ================== */
+
+// Add connection status indicator
+function setupConnectionMonitor() {
+  window.addEventListener("online", () => {
+    showNotification("✅ Back online - Sync active", "success");
+  });
+
+  window.addEventListener("offline", () => {
+    showNotification("⚠️ Offline - Working locally", "warning");
+  });
+}
+
+// Add to initAdminPanel
+setupConnectionMonitor();
+
+console.log("✅ Toke Bakes Admin Panel v2.0 - MODERN CONFIRMATION SYSTEM");
