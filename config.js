@@ -9,6 +9,7 @@ const API_ENDPOINTS = {
   GALLERY: "/rest/v1/gallery",
   FEATURED: "/rest/v1/featured_items",
   MENU: "/rest/v1/menu_items",
+  THEMES: "/rest/v1/website_themes",
 };
 
 window.SUPABASE_CONFIG = SUPABASE_CONFIG;
