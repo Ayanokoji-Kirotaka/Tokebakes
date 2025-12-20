@@ -1,5 +1,5 @@
 /* ================== spa-manager.js ================== */
-/* SIMPLIFIED - No theme conflicts */
+/* Fixed version with proper theme toggle reinitialization */
 
 class SPAManager {
   constructor() {
@@ -9,7 +9,7 @@ class SPAManager {
   }
 
   init() {
-    console.log("🚀 Initializing SPA Manager...");
+    console.log("🚀 Initializing Fixed SPA Manager...");
 
     // Setup link interception
     setTimeout(() => this.setupLinkInterception(), 500);
@@ -62,7 +62,6 @@ class SPAManager {
       const parser = new DOMParser();
       const newDoc = parser.parseFromString(html, "text/html");
 
-      // ✅ SIMPLIFIED: Only extract content, NO THEME
       const newContent = {
         header: newDoc.getElementById("site-header")?.innerHTML,
         main: newDoc.getElementById("main-content")?.innerHTML,
@@ -83,7 +82,7 @@ class SPAManager {
         document.title = newContent.title;
       }
 
-      // Reinitialize
+      // Reinitialize - CRITICAL FIX
       this.reinitializePage();
     } catch (error) {
       console.error("SPA failed:", error);
@@ -143,32 +142,96 @@ class SPAManager {
           initMenuInteractions();
         }
 
+        // CRITICAL FIX: Reinitialize theme toggle
+        this.reinitThemeToggle();
+
         // Re-run navigation highlighting
-        const navLinks = document.querySelectorAll("nav a");
-        const currentPage =
-          window.location.pathname.split("/").pop() || "index";
+        this.reinitNavHighlight();
 
-        navLinks.forEach((link) => {
-          const href = link.getAttribute("href");
-          if (!href) return;
-
-          const linkPage = href.split("/").pop() || "index";
-
-          link.classList.remove("active");
-
-          if (
-            (linkPage === "index" && currentPage === "index") ||
-            linkPage === currentPage
-          ) {
-            link.classList.add("active");
-          }
-        });
-
-        console.log("✅ SPA reinitialized");
+        console.log("✅ SPA reinitialized with theme toggle fix");
       } catch (error) {
         console.warn("SPA reinit failed:", error);
       }
     }, 100);
+  }
+
+  // NEW: Proper theme toggle reinitialization
+  reinitThemeToggle() {
+    const themeToggle = document.getElementById("themeToggle");
+    if (!themeToggle) return;
+
+    // Clone and replace to remove old event listeners
+    const newToggle = themeToggle.cloneNode(true);
+    themeToggle.parentNode.replaceChild(newToggle, themeToggle);
+
+    // Reinitialize theme toggle function
+    this.initThemeToggleFunction(newToggle);
+  }
+
+  initThemeToggleFunction(themeToggle) {
+    if (!themeToggle) return;
+
+    const sunIcon = themeToggle.querySelector(".sun");
+    const moonIcon = themeToggle.querySelector(".moon");
+
+    // Function to update icons based on theme
+    const updateIcons = (theme) => {
+      if (theme === "dark") {
+        if (sunIcon) sunIcon.style.display = "none";
+        if (moonIcon) moonIcon.style.display = "inline-block";
+        themeToggle.classList.add("dark");
+      } else {
+        if (sunIcon) sunIcon.style.display = "inline-block";
+        if (moonIcon) moonIcon.style.display = "none";
+        themeToggle.classList.remove("dark");
+      }
+    };
+
+    // Initial icon setup
+    const currentTheme =
+      document.documentElement.getAttribute("data-theme") || "light";
+    updateIcons(currentTheme);
+
+    // Update footer theme (if function exists)
+    if (typeof updateFooterTheme === "function") {
+      updateFooterTheme(currentTheme);
+    }
+
+    // Click handler
+    themeToggle.addEventListener("click", () => {
+      const current = document.documentElement.getAttribute("data-theme");
+      const newTheme = current === "dark" ? "light" : "dark";
+
+      document.documentElement.setAttribute("data-theme", newTheme);
+      updateIcons(newTheme);
+
+      localStorage.setItem("toke_bakes_theme", newTheme);
+
+      if (typeof updateFooterTheme === "function") {
+        updateFooterTheme(newTheme);
+      }
+    });
+  }
+
+  reinitNavHighlight() {
+    const navLinks = document.querySelectorAll("nav a");
+    const currentPage = window.location.pathname.split("/").pop() || "index";
+
+    navLinks.forEach((link) => {
+      const href = link.getAttribute("href");
+      if (!href) return;
+
+      const linkPage = href.split("/").pop() || "index";
+
+      link.classList.remove("active");
+
+      if (
+        (linkPage === "index" && currentPage === "index") ||
+        linkPage === currentPage
+      ) {
+        link.classList.add("active");
+      }
+    });
   }
 }
 

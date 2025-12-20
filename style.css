@@ -4520,6 +4520,48 @@ html {
   }
 }
 
+/* ================== THEME LOADING FIXES ================== */
+
+/* Hide loading state by default, show only when needed */
+#themes-loading {
+  display: none;
+}
+
+/* Show loading only when explicitly added */
+#themes-loading.loading-active {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  color: var(--text-light);
+}
+
+/* Ensure theme grid is always visible */
+#themes-grid {
+  display: grid !important;
+}
+
+/* Fix for when loading might overlap */
+.themes-grid:has(#themes-loading:not(.loading-active)) {
+  display: grid !important;
+}
+
+/* Hide empty state unless explicitly shown */
+#themes-empty-state {
+  display: none;
+}
+
+#themes-empty-state.empty-active {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  grid-column: 1 / -1;
+  text-align: center;
+}
+
 /* ================== SPA TRANSITIONS ================== */
 /* All CSS lives here, not in JS */
 

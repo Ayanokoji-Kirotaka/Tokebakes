@@ -1,9 +1,11 @@
 /* ================== theme-manager.js ================== */
-/* SIMPLE Theme System */
+/* Fixed version with proper loading states */
 
 const ThemeManager = {
+  isLoading: false,
+
   init() {
-    console.log("🎨 Initializing Simple Theme Manager");
+    console.log("🎨 Initializing Fixed Theme Manager");
 
     // Load saved theme
     const savedTheme =
@@ -13,6 +15,8 @@ const ThemeManager = {
     // Setup admin listeners
     if (window.location.pathname.includes("admin")) {
       this.setupAdminListeners();
+      // FIX: Hide loading state immediately since we're using local data
+      this.hideThemeLoading();
     }
   },
 
@@ -39,9 +43,19 @@ const ThemeManager = {
   },
 
   updateAdminUI(cssFile) {
+    // Hide loading states first
+    this.hideThemeLoading();
+
     // Update theme cards
     document.querySelectorAll(".theme-card").forEach((card) => {
       card.classList.remove("active");
+
+      // Make sure all buttons are visible correctly
+      const activateBtn = card.querySelector(".btn-activate-theme");
+      const activeBtn = card.querySelector(".btn-active-theme");
+
+      if (activateBtn) activateBtn.style.display = "block";
+      if (activeBtn) activeBtn.style.display = "none";
     });
 
     const activeCard = document.querySelector(
@@ -49,10 +63,17 @@ const ThemeManager = {
     );
     if (activeCard) {
       activeCard.classList.add("active");
+      const activateBtn = activeCard.querySelector(".btn-activate-theme");
+      const activeBtn = activeCard.querySelector(".btn-active-theme");
+      if (activateBtn) activateBtn.style.display = "none";
+      if (activeBtn) activeBtn.style.display = "block";
     }
   },
 
   setupAdminListeners() {
+    // FIX: Hide loading immediately
+    this.hideThemeLoading();
+
     document.addEventListener("click", async (e) => {
       const activateBtn = e.target.closest(".btn-activate-theme");
       if (!activateBtn) return;
@@ -74,6 +95,25 @@ const ThemeManager = {
         );
       }
     });
+  },
+
+  // NEW: Function to hide loading states
+  hideThemeLoading() {
+    const loadingEl = document.getElementById("themes-loading");
+    const emptyStateEl = document.getElementById("themes-empty-state");
+    const themesGridEl = document.getElementById("themes-grid");
+
+    if (loadingEl) {
+      loadingEl.style.display = "none";
+    }
+
+    if (emptyStateEl) {
+      emptyStateEl.style.display = "none";
+    }
+
+    if (themesGridEl) {
+      themesGridEl.style.display = "grid"; // Ensure grid is visible
+    }
   },
 
   getThemeName(cssFile) {
