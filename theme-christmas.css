@@ -2684,7 +2684,10 @@ html {
   animation: jingle 0.5s ease;
 }
 
-/* ================== THEMES TAB STYLES ================== */
+/* ================== THEME MANAGER CSS - CLEAN VERSION ================== */
+/* Theme Manager Tab Styles - Working with Simplified JS */
+
+/* Themes Grid */
 .themes-grid {
   display: grid;
   gap: 2rem;
@@ -2692,14 +2695,15 @@ html {
   margin-top: 2rem;
 }
 
+/* Theme Card */
 .theme-card {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 8px 24px rgba(198, 40, 40, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  border: 2px solid rgba(198, 40, 40, 0.2);
+  border: 1px solid rgba(230, 122, 0, 0.1);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -2707,20 +2711,27 @@ html {
 
 [data-theme="dark"] .theme-card {
   background: rgba(45, 45, 45, 0.95);
-  border: 2px solid rgba(198, 40, 40, 0.3);
+  border: 1px solid rgba(230, 122, 0, 0.2);
 }
 
 .theme-card:hover {
   transform: translateY(-6px);
-  box-shadow: 0 16px 32px rgba(198, 40, 40, 0.2);
-  border-color: rgba(198, 40, 40, 0.4);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.12);
+  border-color: rgba(230, 122, 0, 0.3);
 }
 
+/* Active Theme */
 .theme-card.active {
-  border: 3px solid #2e7d32;
-  box-shadow: 0 8px 24px rgba(46, 125, 50, 0.3);
+  border: 2px solid #4caf50;
+  box-shadow: 0 8px 24px rgba(76, 175, 80, 0.2);
 }
 
+.theme-card.active:hover {
+  border-color: #2e7d32;
+  box-shadow: 0 16px 32px rgba(76, 175, 80, 0.25);
+}
+
+/* Theme Preview */
 .theme-preview {
   height: 200px;
   overflow: hidden;
@@ -2729,7 +2740,6 @@ html {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-bottom: 3px solid #c62828;
 }
 
 .theme-preview img {
@@ -2743,6 +2753,12 @@ html {
   transform: scale(1.05);
 }
 
+/* Theme Info */
+.theme-info {
+  padding: 1.5rem 1.5rem 1rem;
+  flex-grow: 1;
+}
+
 .theme-status {
   display: inline-flex;
   align-items: center;
@@ -2752,28 +2768,35 @@ html {
   padding: 0.35rem 0.75rem;
   border-radius: 20px;
   margin-bottom: 1rem;
-  background: linear-gradient(
-    135deg,
-    rgba(198, 40, 40, 0.1),
-    rgba(46, 125, 50, 0.1)
-  );
-  color: #c62828;
+  background: rgba(108, 117, 125, 0.1);
+  color: #6c757d;
 }
 
 .theme-status.active {
-  background: linear-gradient(
-    135deg,
-    rgba(46, 125, 50, 0.15),
-    rgba(46, 125, 50, 0.1)
-  );
+  background: rgba(76, 175, 80, 0.15);
   color: #2e7d32;
+}
+
+.theme-status i {
+  font-size: 0.9rem;
 }
 
 .theme-title {
   font-size: 1.3rem;
   margin-bottom: 0.5rem;
-  color: #c62828;
+  color: var(--text);
   font-weight: 600;
+}
+
+.theme-filename {
+  font-family: "Courier New", monospace;
+  font-size: 0.9rem;
+  color: var(--text-light);
+  background: rgba(230, 122, 0, 0.05);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  display: inline-block;
+  margin-bottom: 0.75rem;
 }
 
 .theme-description {
@@ -2783,14 +2806,18 @@ html {
   margin-bottom: 0;
 }
 
+/* ========== BUTTON SYSTEM - CLEAN VERSION ========== */
+/* Theme Actions Container */
 .theme-actions {
   padding: 0 1.5rem 1.5rem;
+  position: relative;
+  min-height: 50px; /* Reserve space for buttons */
 }
 
-.btn-activate-theme {
+/* COMMON BUTTON STYLES */
+.theme-actions button {
   width: 100%;
   padding: 0.75rem;
-  background: linear-gradient(135deg, #c62828, #ef5350);
   color: white;
   border: none;
   border-radius: 10px;
@@ -2802,24 +2829,121 @@ html {
   justify-content: center;
   gap: 0.5rem;
   font-size: 1rem;
-  box-shadow: 0 4px 10px rgba(198, 40, 40, 0.2);
+  text-align: center;
+}
+
+/* ACTIVATE BUTTON STYLES */
+.btn-activate-theme {
+  background: linear-gradient(135deg, var(--primary), #ff8c42);
 }
 
 .btn-activate-theme:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 15px rgba(198, 40, 40, 0.3);
-  background: linear-gradient(135deg, #ef5350, #c62828);
+  box-shadow: 0 6px 15px rgba(230, 122, 0, 0.3);
 }
 
+/* ACTIVE BUTTON STYLES */
 .btn-active-theme {
-  background: linear-gradient(135deg, #2e7d32, #4caf50);
+  background: linear-gradient(135deg, #4caf50, #2e7d32);
   cursor: default;
-  opacity: 0.8;
 }
 
 .btn-active-theme:hover {
   transform: none;
   box-shadow: none;
+}
+
+/* ===== BUTTON VISIBILITY SYSTEM ===== */
+/* Default state: Activate button visible, Active button hidden */
+.theme-card .btn-activate-theme {
+  display: flex;
+  visibility: visible;
+  opacity: 1;
+}
+
+.theme-card .btn-active-theme {
+  display: none;
+  visibility: hidden;
+  opacity: 0;
+}
+
+/* Active state: Activate button hidden, Active button visible */
+.theme-card.active .btn-activate-theme {
+  display: none;
+  visibility: hidden;
+  opacity: 0;
+}
+
+.theme-card.active .btn-active-theme {
+  display: flex;
+  visibility: visible;
+  opacity: 1;
+}
+
+/* Loading State */
+#themes-loading {
+  text-align: center;
+  padding: 3rem;
+  color: var(--text-light);
+  display: none;
+}
+
+#themes-loading.loading-active {
+  display: block;
+}
+
+#themes-loading .loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 1.5rem;
+}
+
+/* Empty State */
+#themes-empty-state {
+  display: none;
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 4rem 2rem;
+}
+
+#themes-empty-state.empty-active {
+  display: block;
+}
+
+/* Animation */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .themes-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .theme-preview {
+    height: 160px;
+  }
+
+  .theme-info {
+    padding: 1.25rem;
+  }
+
+  .theme-actions {
+    padding: 0 1.25rem 1.25rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .themes-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ================== SNOWFLAKES ANIMATION (Optional Add-on) ================== */

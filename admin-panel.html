@@ -405,7 +405,7 @@
 
             <!-- Themes Grid -->
             <div class="themes-grid" id="themes-grid">
-              <!-- DEFAULT THEME (ACTIVE) -->
+              <!-- DEFAULT THEME -->
               <div class="theme-card active" data-theme-file="style.css">
                 <div class="theme-preview">
                   <img
@@ -425,7 +425,10 @@
                 </div>
 
                 <div class="theme-actions">
-                  <button class="btn-admin btn-active-theme" disabled>
+                  <button class="btn-activate-theme">
+                    <i class="fas fa-play"></i> Activate
+                  </button>
+                  <button class="btn-active-theme">
                     <i class="fas fa-check"></i> Active
                   </button>
                 </div>
@@ -437,13 +440,13 @@
                   <img
                     src="images/theme-preview-valentine.jpg"
                     alt="Valentine Theme Preview"
-                    onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjhjY2NjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlZBTEVOVElORSBUSEVNRTwvdGV4dD48L3N2Zz4='"
+                    onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjhjY2NjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFmaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlZBTEVOVElORSBUSEVNRTwvdGV4dD48L3N2Zz4='"
                   />
                 </div>
 
                 <div class="theme-info">
                   <div class="theme-status">
-                    <i class="fas fa-heart"></i> Valentine
+                    <i class="fas fa-heart"></i> VALENTINE
                   </div>
                   <h3 class="theme-title">Valentine's Day</h3>
                   <p class="theme-filename">theme-valentine.css</p>
@@ -451,8 +454,11 @@
                 </div>
 
                 <div class="theme-actions">
-                  <button class="btn-admin btn-activate-theme">
+                  <button class="btn-activate-theme">
                     <i class="fas fa-play"></i> Activate
+                  </button>
+                  <button class="btn-active-theme">
+                    <i class="fas fa-check"></i> Active
                   </button>
                 </div>
               </div>
@@ -469,7 +475,7 @@
 
                 <div class="theme-info">
                   <div class="theme-status">
-                    <i class="fas fa-moon"></i> Ramadan
+                    <i class="fas fa-moon"></i> RAMADAN
                   </div>
                   <h3 class="theme-title">Ramadan</h3>
                   <p class="theme-filename">theme-ramadan.css</p>
@@ -477,63 +483,11 @@
                 </div>
 
                 <div class="theme-actions">
-                  <button class="btn-admin btn-activate-theme">
+                  <button class="btn-activate-theme">
                     <i class="fas fa-play"></i> Activate
                   </button>
-                </div>
-              </div>
-
-              <!-- INDEPENDENCE DAY THEME (NIGERIAN) -->
-              <div
-                class="theme-card"
-                data-theme-file="theme-independenceday.css"
-              >
-                <div class="theme-preview">
-                  <img
-                    src="images/theme-preview-independenceday.jpg"
-                    alt="Independence Day Theme Preview"
-                    onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMDA4NzUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPklOREVQRU5ERU5DRSBEQVk8L3RleHQ+PC9zdmc+'"
-                  />
-                </div>
-
-                <div class="theme-info">
-                  <div class="theme-status">
-                    <i class="fas fa-flag"></i> Independence
-                  </div>
-                  <h3 class="theme-title">Independence Day</h3>
-                  <p class="theme-filename">theme-independenceday.css</p>
-                  <p class="theme-description">Green & white Nigerian theme</p>
-                </div>
-
-                <div class="theme-actions">
-                  <button class="btn-admin btn-activate-theme">
-                    <i class="fas fa-play"></i> Activate
-                  </button>
-                </div>
-              </div>
-
-              <!-- HALLOWEEN THEME -->
-              <div class="theme-card" data-theme-file="theme-halloween.css">
-                <div class="theme-preview">
-                  <img
-                    src="images/theme-preview-halloween.jpg"
-                    alt="Halloween Theme Preview"
-                    onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmY2ZjAwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkhBTExPV0VFTiBUSEVNRTwvdGV4dD48L3N2Zz4='"
-                  />
-                </div>
-
-                <div class="theme-info">
-                  <div class="theme-status">
-                    <i class="fas fa-ghost"></i> Halloween
-                  </div>
-                  <h3 class="theme-title">Halloween</h3>
-                  <p class="theme-filename">theme-halloween.css</p>
-                  <p class="theme-description">Spooky orange & purple theme</p>
-                </div>
-
-                <div class="theme-actions">
-                  <button class="btn-admin btn-activate-theme">
-                    <i class="fas fa-play"></i> Activate
+                  <button class="btn-active-theme">
+                    <i class="fas fa-check"></i> Active
                   </button>
                 </div>
               </div>
@@ -550,7 +504,7 @@
 
                 <div class="theme-info">
                   <div class="theme-status">
-                    <i class="fas fa-tree"></i> Christmas
+                    <i class="fas fa-tree"></i> CHRISTMAS
                   </div>
                   <h3 class="theme-title">Christmas</h3>
                   <p class="theme-filename">theme-christmas.css</p>
@@ -558,8 +512,72 @@
                 </div>
 
                 <div class="theme-actions">
-                  <button class="btn-admin btn-activate-theme">
+                  <button class="btn-activate-theme">
                     <i class="fas fa-play"></i> Activate
+                  </button>
+                  <button class="btn-active-theme">
+                    <i class="fas fa-check"></i> Active
+                  </button>
+                </div>
+              </div>
+
+              <!-- HALLOWEEN THEME -->
+              <div class="theme-card" data-theme-file="theme-halloween.css">
+                <div class="theme-preview">
+                  <img
+                    src="images/theme-preview-halloween.jpg"
+                    alt="Halloween Theme Preview"
+                    onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmY2ZjAwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkhBTExPV0VFTiBUSEVNRTwvdGV4dD48L3N2Zz4='"
+                  />
+                </div>
+
+                <div class="theme-info">
+                  <div class="theme-status">
+                    <i class="fas fa-ghost"></i> HALLOWEEN
+                  </div>
+                  <h3 class="theme-title">Halloween</h3>
+                  <p class="theme-filename">theme-halloween.css</p>
+                  <p class="theme-description">Spooky orange & purple theme</p>
+                </div>
+
+                <div class="theme-actions">
+                  <button class="btn-activate-theme">
+                    <i class="fas fa-play"></i> Activate
+                  </button>
+                  <button class="btn-active-theme">
+                    <i class="fas fa-check"></i> Active
+                  </button>
+                </div>
+              </div>
+
+              <!-- INDEPENDENCE DAY THEME -->
+              <div
+                class="theme-card"
+                data-theme-file="theme-independenceday.css"
+              >
+                <div class="theme-preview">
+                  <img
+                    src="images/theme-preview-independenceday.jpg"
+                    alt="Independence Day Theme Preview"
+                    onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMDA4NzUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPklOREVQRU5ERU5DRSBEQVk8L3RleHQ+PC9zdmc+'"
+                  />
+                </div>
+
+                <div class="theme-info">
+                  <div class="theme-status">
+                    <i class="fas fa-flag"></i> INDEPENDENCE
+                  </div>
+                  <h3 class="theme-title">Independence Day</h3>
+                  <p class="theme-filename">theme-independenceday.css</p>
+                  <p class="theme-description">Green & white Nigerian theme</p>
+                </div>
+
+                <div class="theme-actions">
+                  <button class="btn-activate-theme">
+                    <i class="fas fa-play"></i> Activate
+                  </button>
+                  <button class="btn-active-theme">
+                    <i class="fas fa-check"></i> Active
                   </button>
                 </div>
               </div>

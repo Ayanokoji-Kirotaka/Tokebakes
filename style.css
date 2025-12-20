@@ -4315,10 +4315,10 @@ html {
   }
 }
 
-/* ================== THEMES TAB STYLES ================== */
-/* Matching your Gallery/Featured Items aesthetics */
+/* ================== THEME MANAGER CSS - CLEAN VERSION ================== */
+/* Theme Manager Tab Styles - Working with Simplified JS */
 
-/* Themes Grid - Matching Gallery Grid */
+/* Themes Grid */
 .themes-grid {
   display: grid;
   gap: 2rem;
@@ -4326,7 +4326,7 @@ html {
   margin-top: 2rem;
 }
 
-/* Theme Card - Matching Item Card/Gallery Item aesthetics */
+/* Theme Card */
 .theme-card {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
@@ -4351,7 +4351,7 @@ html {
   border-color: rgba(230, 122, 0, 0.3);
 }
 
-/* Active Theme Styling */
+/* Active Theme */
 .theme-card.active {
   border: 2px solid #4caf50;
   box-shadow: 0 8px 24px rgba(76, 175, 80, 0.2);
@@ -4362,7 +4362,7 @@ html {
   box-shadow: 0 16px 32px rgba(76, 175, 80, 0.25);
 }
 
-/* Theme Preview Image Area */
+/* Theme Preview */
 .theme-preview {
   height: 200px;
   overflow: hidden;
@@ -4384,14 +4384,7 @@ html {
   transform: scale(1.05);
 }
 
-/* Fallback for missing images */
-.theme-preview img[src*="svg+xml"] {
-  object-fit: contain;
-  padding: 2rem;
-  background: var(--background);
-}
-
-/* Theme Info Section */
+/* Theme Info */
 .theme-info {
   padding: 1.5rem 1.5rem 1rem;
   flex-grow: 1;
@@ -4444,15 +4437,18 @@ html {
   margin-bottom: 0;
 }
 
-/* Theme Actions */
+/* ========== BUTTON SYSTEM - CLEAN VERSION ========== */
+/* Theme Actions Container */
 .theme-actions {
   padding: 0 1.5rem 1.5rem;
+  position: relative;
+  min-height: 50px; /* Reserve space for buttons */
 }
 
-.btn-activate-theme {
+/* COMMON BUTTON STYLES */
+.theme-actions button {
   width: 100%;
   padding: 0.75rem;
-  background: linear-gradient(135deg, var(--primary), #ff8c42);
   color: white;
   border: none;
   border-radius: 10px;
@@ -4464,6 +4460,12 @@ html {
   justify-content: center;
   gap: 0.5rem;
   font-size: 1rem;
+  text-align: center;
+}
+
+/* ACTIVATE BUTTON STYLES */
+.btn-activate-theme {
+  background: linear-gradient(135deg, var(--primary), #ff8c42);
 }
 
 .btn-activate-theme:hover:not(:disabled) {
@@ -4471,10 +4473,10 @@ html {
   box-shadow: 0 6px 15px rgba(230, 122, 0, 0.3);
 }
 
+/* ACTIVE BUTTON STYLES */
 .btn-active-theme {
   background: linear-gradient(135deg, #4caf50, #2e7d32);
   cursor: default;
-  opacity: 0.8;
 }
 
 .btn-active-theme:hover {
@@ -4482,11 +4484,43 @@ html {
   box-shadow: none;
 }
 
+/* ===== BUTTON VISIBILITY SYSTEM ===== */
+/* Default state: Activate button visible, Active button hidden */
+.theme-card .btn-activate-theme {
+  display: flex;
+  visibility: visible;
+  opacity: 1;
+}
+
+.theme-card .btn-active-theme {
+  display: none;
+  visibility: hidden;
+  opacity: 0;
+}
+
+/* Active state: Activate button hidden, Active button visible */
+.theme-card.active .btn-activate-theme {
+  display: none;
+  visibility: hidden;
+  opacity: 0;
+}
+
+.theme-card.active .btn-active-theme {
+  display: flex;
+  visibility: visible;
+  opacity: 1;
+}
+
 /* Loading State */
 #themes-loading {
   text-align: center;
   padding: 3rem;
   color: var(--text-light);
+  display: none;
+}
+
+#themes-loading.loading-active {
+  display: block;
 }
 
 #themes-loading .loading-spinner {
@@ -4501,12 +4535,27 @@ html {
 
 /* Empty State */
 #themes-empty-state {
+  display: none;
   grid-column: 1 / -1;
   text-align: center;
   padding: 4rem 2rem;
 }
 
-/* Responsive Design */
+#themes-empty-state.empty-active {
+  display: block;
+}
+
+/* Animation */
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Responsive */
 @media (max-width: 768px) {
   .themes-grid {
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -4532,46 +4581,27 @@ html {
   }
 }
 
-/* ================== THEME LOADING FIXES ================== */
-
-/* Hide loading state by default, show only when needed */
-#themes-loading {
-  display: none;
+/* Theme update notification animations */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
-/* Show loading only when explicitly added */
-#themes-loading.loading-active {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem;
-  color: var(--text-light);
-}
-
-/* Ensure theme grid is always visible */
-#themes-grid {
-  display: grid !important;
-}
-
-/* Fix for when loading might overlap */
-.themes-grid:has(#themes-loading:not(.loading-active)) {
-  display: grid !important;
-}
-
-/* Hide empty state unless explicitly shown */
-#themes-empty-state {
-  display: none;
-}
-
-#themes-empty-state.empty-active {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem 2rem;
-  grid-column: 1 / -1;
-  text-align: center;
+@keyframes slideOutRight {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
 }
 
 /* ================== SPA TRANSITIONS ================== */
@@ -4640,12 +4670,11 @@ body.spa-navigating button {
   }
 }
 
-
 /* ========== CART FLASH FIX ========== */
-#cart-count:empty { 
-  opacity: 0; 
-  transition: opacity 0.2s ease; 
+#cart-count:empty {
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
-#cart-count:not(:empty) { 
-  opacity: 1; 
+#cart-count:not(:empty) {
+  opacity: 1;
 }

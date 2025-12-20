@@ -1,1 +1,14 @@
-/bin /cmd /dev /etc /git-bash.exe /git-cmd.exe /LICENSE.txt /mingw64 /proc /ReleaseNotes.html /tmp /unins000.dat /unins000.exe /unins000.msg /usr theme-ramadan.css images/
+﻿/* theme-ramadan.css - Minimal Theme */
+:root {
+  --primary: #007bff;
+  --secondary: #6c757d;
+  --text: #212529;
+  --background: #ffffff;
+}
+
+[data-theme="dark"] {
+  --primary: #0d6efd;
+  --secondary: #5a6268;
+  --text: #f8f9fa;
+  --background: #212529;
+}
