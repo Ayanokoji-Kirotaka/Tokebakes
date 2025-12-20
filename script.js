@@ -1,59 +1,4 @@
-/* ================== script.js - TOKE BAKES WEBSITE ================== */
-/* ================== CRITICAL: PREVENT THEME FLASH & TOGGLE FIX ================== */
-// This runs IMMEDIATELY when script loads, before any rendering
-(function preventThemeFlash() {
-  // 1. Check localStorage for saved theme
-  const savedTheme = localStorage.getItem("toke_bakes_theme");
-
-  // 2. Determine which theme to use
-  let theme;
-  if (savedTheme) {
-    theme = savedTheme;
-  } else {
-    const prefersDark = window.matchMedia(
-      "(prefers-color-scheme: dark)"
-    ).matches;
-    theme = prefersDark ? "dark" : "light";
-  }
-
-  // 3. Apply theme IMMEDIATELY to HTML element
-  document.documentElement.setAttribute("data-theme", theme);
-
-  // 4. Update footer IMMEDIATELY too (CRITICAL FIX!)
-  updateFooterTheme(theme);
-
-  // 5. FIX THEME TOGGLE ICON IMMEDIATELY - CRITICAL!
-  // Set the correct icon BEFORE the page renders
-  setTimeout(() => {
-    const themeToggle = document.getElementById("themeToggle");
-    if (themeToggle) {
-      const sunIcon = themeToggle.querySelector(".sun");
-      const moonIcon = themeToggle.querySelector(".moon");
-
-      if (theme === "dark") {
-        if (sunIcon) sunIcon.style.display = "none";
-        if (moonIcon) moonIcon.style.display = "inline-block";
-        themeToggle.classList.add("dark");
-      } else {
-        if (sunIcon) sunIcon.style.display = "inline-block";
-        if (moonIcon) moonIcon.style.display = "none";
-        themeToggle.classList.remove("dark");
-      }
-    }
-  }, 0);
-
-  // 6. Disable CSS transitions during initial page load
-  document.documentElement.style.transition = "none";
-  document.body.style.transition = "none";
-
-  // 7. Re-enable transitions after page is fully loaded
-  window.addEventListener("load", function () {
-    setTimeout(function () {
-      document.documentElement.style.transition = "";
-      document.body.style.transition = "";
-    }, 10);
-  });
-})();
+﻿/* ================== script.js - TOKE BAKES WEBSITE ================== */
 
 /* ================== ENHANCED AUTO-UPDATE SYSTEM ================== */
 class WebsiteAutoUpdater {
@@ -937,86 +882,6 @@ function initMobileMenu() {
   }
 }
 
-/* ================== FIXED THEME TOGGLE ================== */
-function initThemeToggle() {
-  const themeToggle = document.getElementById("themeToggle");
-  if (!themeToggle) return;
-
-  // Get icon elements once
-  const sunIcon = themeToggle.querySelector(".sun");
-  const moonIcon = themeToggle.querySelector(".moon");
-
-  // Function to update icons based on theme
-  const updateIcons = (theme) => {
-    if (theme === "dark") {
-      if (sunIcon) sunIcon.style.display = "none";
-      if (moonIcon) moonIcon.style.display = "inline-block";
-      themeToggle.classList.add("dark");
-    } else {
-      if (sunIcon) sunIcon.style.display = "inline-block";
-      if (moonIcon) moonIcon.style.display = "none";
-      themeToggle.classList.remove("dark");
-    }
-  };
-
-  // Initial icon setup
-  const currentTheme =
-    document.documentElement.getAttribute("data-theme") || "light";
-  updateIcons(currentTheme);
-  updateFooterTheme(currentTheme); // ← This line should exist
-
-  // Click handler - ONLY HANDLES DARK/LIGHT MODE
-  themeToggle.addEventListener("click", () => {
-    const current = document.documentElement.getAttribute("data-theme");
-    const newTheme = current === "dark" ? "light" : "dark";
-
-    document.documentElement.setAttribute("data-theme", newTheme);
-
-    // Update icons immediately
-    updateIcons(newTheme);
-
-    localStorage.setItem("toke_bakes_theme", newTheme);
-    updateFooterTheme(newTheme); // ← This line should exist
-  });
-}
-
-/* ================== FOOTER THEME ================== */
-function updateFooterTheme(theme) {
-  const footer = document.querySelector(".bakes-footer");
-  if (!footer) return;
-
-  // If no theme provided, get it from HTML attribute
-  if (!theme) {
-    theme = document.documentElement.getAttribute("data-theme") || "light";
-  }
-
-  if (theme === "dark") {
-    footer.classList.add("dark-theme");
-    footer.classList.remove("light-theme");
-  } else {
-    footer.classList.add("light-theme");
-    footer.classList.remove("dark-theme");
-  }
-}
-
-function initFooterTheme() {
-  // Initialize footer with current theme
-  updateFooterTheme();
-
-  // Optional: Listen for system preference changes
-  window.matchMedia("(prefers-color-scheme: dark)").addListener(() => {
-    const savedTheme = localStorage.getItem("toke_bakes_theme");
-    if (!savedTheme) {
-      const prefersDark = window.matchMedia(
-        "(prefers-color-scheme: dark)"
-      ).matches;
-      const theme = prefersDark ? "dark" : "light";
-      document.documentElement.setAttribute("data-theme", theme);
-      updateFooterTheme(theme);
-    }
-  });
-}
-
 /* ================== FIXED MENU INTERACTIONS ================== */
 function initMenuInteractions() {
   // Close popups when clicking outside
@@ -1568,6 +1433,8 @@ function initRipple(selector) {
 // Initialize when DOM is loaded
 document.addEventListener("DOMContentLoaded", async () => {
   console.log("🚀 Initializing Toke Bakes with Enhanced Sync...");
+  // Load cart first to prevent flash
+  refreshCartCount();
 
   // STEP 2: Initialize sync system FIRST (IMPORTANT!)
   window.websiteUpdater = new WebsiteAutoUpdater();
@@ -1587,7 +1454,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // STEP 6: Initialize everything else
   initMobileMenu();
-  initThemeToggle();
   initFooterTheme();
   initMenuInteractions();
   initOrderFunctionality();
@@ -1618,3 +1484,4 @@ document.addEventListener("click", (e) => {
     showNotification("Cart cleared successfully", "success");
   }
 });
+

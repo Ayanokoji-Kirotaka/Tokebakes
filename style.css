@@ -4639,3 +4639,13 @@ body.spa-navigating button {
     transform: translateX(100%);
   }
 }
+
+
+/* ========== CART FLASH FIX ========== */
+#cart-count:empty { 
+  opacity: 0; 
+  transition: opacity 0.2s ease; 
+}
+#cart-count:not(:empty) { 
+  opacity: 1; 
+}
