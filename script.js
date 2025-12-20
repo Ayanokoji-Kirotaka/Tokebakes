@@ -899,7 +899,7 @@ function updateFooterTheme(theme) {
   }
 }
 
-/* ================== THEME TOGGLE ================== */
+/* ================== FIXED THEME TOGGLE ================== */
 function initThemeToggle() {
   const themeToggle = document.getElementById("themeToggle");
   if (!themeToggle) return;
@@ -927,7 +927,7 @@ function initThemeToggle() {
   updateIcons(currentTheme);
   updateFooterTheme(currentTheme);
 
-  // Click handler
+  // Click handler - ONLY HANDLES DARK/LIGHT MODE
   themeToggle.addEventListener("click", () => {
     const current = document.documentElement.getAttribute("data-theme");
     const newTheme = current === "dark" ? "light" : "dark";
@@ -937,25 +937,8 @@ function initThemeToggle() {
     // Update icons immediately
     updateIcons(newTheme);
 
-    localStorage.setItem(THEME_KEY, newTheme);
+    localStorage.setItem("toke_bakes_theme", newTheme);
     updateFooterTheme(newTheme);
-  });
-}
-
-function initFooterTheme() {
-  // Footer theme is already set by preventThemeFlash(),
-  // just listen for system preference changes
-  window.matchMedia("(prefers-color-scheme: dark)").addListener(() => {
-    // Only update if user hasn't set a preference
-    const savedTheme = localStorage.getItem(THEME_KEY);
-    if (!savedTheme) {
-      const prefersDark = window.matchMedia(
-        "(prefers-color-scheme: dark)"
-      ).matches;
-      const theme = prefersDark ? "dark" : "light";
-      document.documentElement.setAttribute("data-theme", theme);
-      updateFooterTheme(theme);
-    }
   });
 }
 

@@ -1,5 +1,5 @@
 /* ================== spa-manager.js ================== */
-/* CSS-Free SPA Manager for Toke Bakes */
+/* SIMPLIFIED - No theme conflicts */
 
 class SPAManager {
   constructor() {
@@ -9,9 +9,9 @@ class SPAManager {
   }
 
   init() {
-    console.log("🚀 Initializing CSS-Free SPA Manager...");
+    console.log("🚀 Initializing SPA Manager...");
 
-    // Safe delayed start
+    // Setup link interception
     setTimeout(() => this.setupLinkInterception(), 500);
 
     // Handle browser back/forward
@@ -20,8 +20,6 @@ class SPAManager {
         this.loadPage(window.location.pathname);
       }
     });
-
-    console.log("✅ SPA Manager ready (CSS-free)");
   }
 
   setupLinkInterception() {
@@ -32,20 +30,18 @@ class SPAManager {
       if (!link) return;
 
       const href = link.getAttribute("href");
-      const url = new URL(href, window.location.origin);
 
       // Skip conditions
-      const skip = [
-        url.origin !== window.location.origin, // External
-        href.startsWith("#"), // Anchors
-        href.includes("admin"), // Admin
-        href.startsWith("mailto:"), // Email
-        href.startsWith("tel:"), // Phone
-        link.target === "_blank", // New tab
-        link.hasAttribute("download"), // Downloads
-      ].some(Boolean);
-
-      if (skip) return;
+      if (
+        href.startsWith("#") ||
+        href.includes("admin") ||
+        href.startsWith("mailto:") ||
+        href.startsWith("tel:") ||
+        link.target === "_blank" ||
+        link.hasAttribute("download")
+      ) {
+        return;
+      }
 
       e.preventDefault();
       this.navigateTo(href);
@@ -56,10 +52,7 @@ class SPAManager {
     if (this.isTransitioning || url === this.currentPage) return;
 
     this.isTransitioning = true;
-    console.log(`🔀 SPA navigating: ${url}`);
-
-    // Add CSS class for transition
-    document.body.classList.add("spa-navigating");
+    console.log(`🔀 Navigating to: ${url}`);
 
     try {
       const response = await fetch(url);
@@ -69,7 +62,7 @@ class SPAManager {
       const parser = new DOMParser();
       const newDoc = parser.parseFromString(html, "text/html");
 
-      // Extract content using your IDs
+      // ✅ SIMPLIFIED: Only extract content, NO THEME
       const newContent = {
         header: newDoc.getElementById("site-header")?.innerHTML,
         main: newDoc.getElementById("main-content")?.innerHTML,
@@ -80,9 +73,9 @@ class SPAManager {
       if (!newContent.main) throw new Error("No main content found");
 
       // Update page
-      this.updatePage(newContent);
+      await this.updatePage(newContent);
 
-      // Update URL and history
+      // Update URL
       window.history.pushState({}, "", url);
       this.currentPage = url;
 
@@ -90,102 +83,100 @@ class SPAManager {
         document.title = newContent.title;
       }
 
-      // Reinitialize your functions
+      // Reinitialize
       this.reinitializePage();
     } catch (error) {
-      console.error("SPA failed, falling back:", error);
+      console.error("SPA failed:", error);
       window.location.href = url;
       return;
     } finally {
       this.isTransitioning = false;
-      document.body.classList.remove("spa-navigating");
     }
   }
 
-  updatePage(content) {
-    // Add fade-out class (defined in your CSS)
+  async updatePage(content) {
     const mainEl = document.getElementById("main-content");
-    if (mainEl) mainEl.classList.add("spa-fade-out");
 
-    // Brief delay for fade-out
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        // Update content
-        if (content.header) {
-          const headerEl = document.getElementById("site-header");
-          if (headerEl) headerEl.innerHTML = content.header;
-        }
+    if (!mainEl) return;
 
-        if (content.main && mainEl) {
-          mainEl.innerHTML = content.main;
-        }
+    // 1. Fade out
+    mainEl.classList.add("spa-fade-out");
 
-        if (content.footer) {
-          const footerEl = document.getElementById("site-footer");
-          if (footerEl) footerEl.innerHTML = content.footer;
-        }
+    // Wait for fade out
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
-        // Add fade-in class
-        if (mainEl) {
-          mainEl.classList.remove("spa-fade-out");
-          mainEl.classList.add("spa-fade-in");
+    // 2. Update content
+    const headerEl = document.getElementById("site-header");
+    const footerEl = document.getElementById("site-footer");
 
-          // Remove fade-in after animation
-          setTimeout(() => {
-            mainEl.classList.remove("spa-fade-in");
-          }, 300);
-        }
+    if (content.header && headerEl) {
+      headerEl.innerHTML = content.header;
+    }
 
-        resolve();
-      }, 150);
-    });
+    if (content.main && mainEl) {
+      mainEl.innerHTML = content.main;
+    }
+
+    if (content.footer && footerEl) {
+      footerEl.innerHTML = content.footer;
+    }
+
+    // 3. Fade in
+    mainEl.classList.remove("spa-fade-out");
+    mainEl.classList.add("spa-fade-in");
+
+    // Remove fade-in class after animation
+    setTimeout(() => {
+      mainEl.classList.remove("spa-fade-in");
+    }, 400);
   }
 
   reinitializePage() {
-    // Small delay for DOM to update
     setTimeout(() => {
       try {
-        // Re-run your essential functions
-        const functions = [
-          "highlightNav",
-          "loadDynamicContent",
-          "refreshCartCount",
-          "initMenuInteractions",
-          "initMobileMenu",
-          "initOrderFunctionality",
-        ];
+        // Re-run essential functions
+        if (typeof refreshCartCount === "function") {
+          refreshCartCount();
+        }
 
-        functions.forEach((funcName) => {
-          if (typeof window[funcName] === "function") {
-            window[funcName]();
-            console.log(`✅ Re-ran ${funcName}()`);
+        if (typeof initMenuInteractions === "function") {
+          initMenuInteractions();
+        }
+
+        // Re-run navigation highlighting
+        const navLinks = document.querySelectorAll("nav a");
+        const currentPage =
+          window.location.pathname.split("/").pop() || "index";
+
+        navLinks.forEach((link) => {
+          const href = link.getAttribute("href");
+          if (!href) return;
+
+          const linkPage = href.split("/").pop() || "index";
+
+          link.classList.remove("active");
+
+          if (
+            (linkPage === "index" && currentPage === "index") ||
+            linkPage === currentPage
+          ) {
+            link.classList.add("active");
           }
         });
 
-        // Check theme sync
-        if (window.ThemeManager?.getActiveTheme) {
-          ThemeManager.getActiveTheme().then((current) => {
-            if (current !== ThemeManager.currentTheme()) {
-              ThemeManager.applyTheme(current);
-            }
-          });
-        }
+        console.log("✅ SPA reinitialized");
       } catch (error) {
-        console.warn("Some reinitializations failed:", error);
+        console.warn("SPA reinit failed:", error);
       }
     }, 100);
   }
 }
 
-// Initialize when ready
+// Initialize
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(() => {
-      window.spaManager = new SPAManager();
-    }, 1000);
+    window.spaManager = new SPAManager();
   });
 } else {
-  setTimeout(() => {
-    window.spaManager = new SPAManager();
-  }, 1000);
+  window.spaManager = new SPAManager();
 }
