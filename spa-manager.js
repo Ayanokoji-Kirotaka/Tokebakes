@@ -138,6 +138,11 @@ class SPAManager {
           refreshCartCount();
         }
 
+        // CRITICAL: Reload CMS content for the new page
+        if (typeof loadDynamicContent === "function") {
+          loadDynamicContent();
+        }
+
         if (typeof initMenuInteractions === "function") {
           initMenuInteractions();
         }
@@ -148,7 +153,7 @@ class SPAManager {
         // Re-run navigation highlighting
         this.reinitNavHighlight();
 
-        console.log("✅ SPA reinitialized with theme toggle fix");
+        console.log("✅ SPA reinitialized with content reload");
       } catch (error) {
         console.warn("SPA reinit failed:", error);
       }

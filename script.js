@@ -289,10 +289,18 @@ async function getMenuItems() {
   return cachedMenuItems;
 }
 
-// Load featured items - FIXED VERSION
+// ================== LOAD FEATURED ITEMS - IMPROVED VERSION ==================
 async function loadFeaturedItems() {
   const container = document.getElementById("featured-container");
   if (!container) return;
+
+  // Show loading state immediately
+  container.innerHTML = `
+    <div class="loading-message">
+      <div class="loading-spinner"></div>
+      <p>Loading featured creations...</p>
+    </div>
+  `;
 
   try {
     const items = await loadFromSupabase(API_ENDPOINTS.FEATURED);
@@ -313,9 +321,8 @@ async function loadFeaturedItems() {
       .map(
         (item) => `
           <article class="featured-item">
-            <img src="${item.image}" alt="${
-          item.title
-        }" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkZlYXR1cmVkPC90ZXh0Pjwvc3ZnPg=='">
+            <img src="${item.image}" alt="${item.title}" loading="lazy"
+                 onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkZlYXR1cmVkPC90ZXh0Pjwvc3ZnPg==';">
             <h4>${escapeHtml(item.title)}</h4>
             <p>${escapeHtml(item.description)}</p>
           </article>
@@ -334,10 +341,18 @@ async function loadFeaturedItems() {
   }
 }
 
-// Load menu items - FIXED VERSION
+// ================== LOAD MENU ITEMS - IMPROVED VERSION ==================
 async function loadMenuItems() {
   const container = document.getElementById("menu-container");
   if (!container) return;
+
+  // Show loading state immediately
+  container.innerHTML = `
+    <div class="loading-message">
+      <div class="loading-spinner"></div>
+      <p>Loading menu items...</p>
+    </div>
+  `;
 
   try {
     const items = await getMenuItems();
@@ -385,10 +400,18 @@ async function loadMenuItems() {
   }
 }
 
-// Load gallery images - FIXED VERSION
+// ================== LOAD GALLERY IMAGES - IMPROVED VERSION ==================
 async function loadGalleryImages() {
   const container = document.getElementById("gallery-container");
   if (!container) return;
+
+  // Show loading state immediately
+  container.innerHTML = `
+    <div class="loading-message">
+      <div class="loading-spinner"></div>
+      <p>Loading gallery images...</p>
+    </div>
+  `;
 
   try {
     const items = await loadFromSupabase(API_ENDPOINTS.GALLERY);
@@ -408,7 +431,7 @@ async function loadGalleryImages() {
     container.innerHTML = items
       .map(
         (item) => `
-          <img src="${item.image}" alt="${item.alt}" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcrialCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+='">
+          <img src="${item.image}" alt="${item.alt}" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+='">
         `
       )
       .join("");
@@ -424,11 +447,14 @@ async function loadGalleryImages() {
   }
 }
 
-// Load dynamic content based on page
-async function loadDynamicContent() {
+// ================== LOAD DYNAMIC CONTENT - IMPROVED VERSION ==================
+async function loadDynamicContent(forceReload = false) {
   const currentPage = window.location.pathname.split("/").pop() || "index.html";
 
-  console.log("Loading content for page:", currentPage);
+  console.log("📱 Loading content for page:", currentPage);
+
+  // Clear any existing loading states FIRST
+  clearLoadingStates();
 
   // Check if Supabase config exists
   if (!window.SUPABASE_CONFIG || !window.API_ENDPOINTS) {
@@ -440,14 +466,39 @@ async function loadDynamicContent() {
   if (
     currentPage.includes("index") ||
     currentPage === "" ||
-    currentPage === "/"
+    currentPage === "/" ||
+    currentPage === "index.html"
   ) {
+    console.log("🔍 Loading featured items for homepage");
     await loadFeaturedItems();
   } else if (currentPage.includes("menu")) {
+    console.log("🔍 Loading menu items");
     await loadMenuItems();
   } else if (currentPage.includes("gallery")) {
+    console.log("🔍 Loading gallery images");
     await loadGalleryImages();
   }
+
+  console.log("✅ Content loading complete for:", currentPage);
+}
+
+// ================== HELPER FUNCTIONS ==================
+function clearLoadingStates() {
+  console.log("🧹 Clearing loading states");
+
+  const containers = [
+    "featured-container",
+    "menu-container",
+    "gallery-container",
+  ];
+
+  containers.forEach((containerId) => {
+    const container = document.getElementById(containerId);
+    if (container) {
+      // Only clear if it exists on this page
+      console.log(`Found container: ${containerId}`);
+    }
+  });
 }
 
 function showConfigError() {
@@ -459,7 +510,8 @@ function showConfigError() {
       container.innerHTML = `
         <div class="empty-state error">
           <i class="fas fa-exclamation-triangle"></i>
-          <p>Website configuration error. Please check config.js file.</p>
+          <p>Website configuration error.</p>
+          <p class="small">Please check config.js file.</p>
         </div>
       `;
     }
@@ -1527,7 +1579,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   refreshCartCount();
 
   // STEP 5: Load dynamic content
-  await loadDynamicContent();
+  try {
+    await loadDynamicContent();
+  } catch (error) {
+    console.error("Failed to load initial content:", error);
+  }
 
   // STEP 6: Initialize everything else
   initMobileMenu();
