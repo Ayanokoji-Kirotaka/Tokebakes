@@ -289,7 +289,7 @@ async function getMenuItems() {
   return cachedMenuItems;
 }
 
-// Load featured items
+// Load featured items - FIXED VERSION
 async function loadFeaturedItems() {
   const container = document.getElementById("featured-container");
   if (!container) return;
@@ -301,7 +301,8 @@ async function loadFeaturedItems() {
       container.innerHTML = `
         <div class="empty-state">
           <i class="fas fa-star"></i>
-          <p>Featured items coming soon! Check back later.</p>
+          <p>No featured items yet. Check back soon!</p>
+          <p class="small">Admin can add items in the admin panel</p>
         </div>
       `;
       return;
@@ -326,13 +327,14 @@ async function loadFeaturedItems() {
     container.innerHTML = `
       <div class="empty-state error">
         <i class="fas fa-exclamation-triangle"></i>
-        <p>Unable to load featured items. Please try again later.</p>
+        <p>Unable to load featured items.</p>
+        <p class="small">Please check your connection</p>
       </div>
     `;
   }
 }
 
-// Load menu items - FIXED: Price removed from visible display
+// Load menu items - FIXED VERSION
 async function loadMenuItems() {
   const container = document.getElementById("menu-container");
   if (!container) return;
@@ -344,13 +346,14 @@ async function loadMenuItems() {
       container.innerHTML = `
         <div class="empty-state">
           <i class="fas fa-utensils"></i>
-          <p>Our menu is being updated. Please check back soon!</p>
+          <p>Our menu is being prepared.</p>
+          <p class="small">Delicious items coming soon!</p>
         </div>
       `;
       return;
     }
 
-    // Generate HTML from data - Price is NOT displayed directly
+    // Generate HTML from data
     container.innerHTML = items
       .map(
         (item) => `
@@ -362,7 +365,6 @@ async function loadMenuItems() {
         }" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4='">
             <h3>${escapeHtml(item.title)}</h3>
             <p>${escapeHtml(item.description)}</p>
-            <!-- Price is NOT displayed here - only in data attributes and popup -->
             <div class="popup">
               <button class="add-cart">Add to Cart</button>
               <a class="order-now" href="#">Order Now</a>
@@ -376,13 +378,14 @@ async function loadMenuItems() {
     container.innerHTML = `
       <div class="empty-state error">
         <i class="fas fa-exclamation-triangle"></i>
-        <p>Unable to load menu items. Please try again later.</p>
+        <p>Unable to load menu.</p>
+        <p class="small">Please try again later</p>
       </div>
     `;
   }
 }
 
-// Load gallery images
+// Load gallery images - FIXED VERSION
 async function loadGalleryImages() {
   const container = document.getElementById("gallery-container");
   if (!container) return;
@@ -394,7 +397,8 @@ async function loadGalleryImages() {
       container.innerHTML = `
         <div class="empty-state">
           <i class="fas fa-images"></i>
-          <p>Gallery coming soon! Check back later.</p>
+          <p>Gallery coming soon!</p>
+          <p class="small">Beautiful creations will be here shortly</p>
         </div>
       `;
       return;
@@ -413,7 +417,8 @@ async function loadGalleryImages() {
     container.innerHTML = `
       <div class="empty-state error">
         <i class="fas fa-exclamation-triangle"></i>
-        <p>Unable to load gallery. Please try again later.</p>
+        <p>Unable to load gallery.</p>
+        <p class="small">Please check your connection</p>
       </div>
     `;
   }
@@ -880,25 +885,6 @@ function initMobileMenu() {
   }
 }
 
-/* ================== FOOTER THEME ================== */
-function updateFooterTheme(theme) {
-  const footer = document.querySelector(".bakes-footer");
-  if (!footer) return;
-
-  // If no theme provided, get it from HTML attribute
-  if (!theme) {
-    theme = document.documentElement.getAttribute("data-theme") || "light";
-  }
-
-  if (theme === "dark") {
-    footer.classList.add("dark-theme");
-    footer.classList.remove("light-theme");
-  } else {
-    footer.classList.add("light-theme");
-    footer.classList.remove("dark-theme");
-  }
-}
-
 /* ================== FIXED THEME TOGGLE ================== */
 function initThemeToggle() {
   const themeToggle = document.getElementById("themeToggle");
@@ -925,7 +911,7 @@ function initThemeToggle() {
   const currentTheme =
     document.documentElement.getAttribute("data-theme") || "light";
   updateIcons(currentTheme);
-  updateFooterTheme(currentTheme);
+  updateFooterTheme(currentTheme); // ← This line should exist
 
   // Click handler - ONLY HANDLES DARK/LIGHT MODE
   themeToggle.addEventListener("click", () => {
@@ -938,7 +924,44 @@ function initThemeToggle() {
     updateIcons(newTheme);
 
     localStorage.setItem("toke_bakes_theme", newTheme);
-    updateFooterTheme(newTheme);
+    updateFooterTheme(newTheme); // ← This line should exist
+  });
+}
+
+/* ================== FOOTER THEME ================== */
+function updateFooterTheme(theme) {
+  const footer = document.querySelector(".bakes-footer");
+  if (!footer) return;
+
+  // If no theme provided, get it from HTML attribute
+  if (!theme) {
+    theme = document.documentElement.getAttribute("data-theme") || "light";
+  }
+
+  if (theme === "dark") {
+    footer.classList.add("dark-theme");
+    footer.classList.remove("light-theme");
+  } else {
+    footer.classList.add("light-theme");
+    footer.classList.remove("dark-theme");
+  }
+}
+
+function initFooterTheme() {
+  // Initialize footer with current theme
+  updateFooterTheme();
+
+  // Optional: Listen for system preference changes
+  window.matchMedia("(prefers-color-scheme: dark)").addListener(() => {
+    const savedTheme = localStorage.getItem("toke_bakes_theme");
+    if (!savedTheme) {
+      const prefersDark = window.matchMedia(
+        "(prefers-color-scheme: dark)"
+      ).matches;
+      const theme = prefersDark ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", theme);
+      updateFooterTheme(theme);
+    }
   });
 }
 
