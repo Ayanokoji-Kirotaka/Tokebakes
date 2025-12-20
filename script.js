@@ -1,4 +1,18 @@
-﻿/* ================== script.js - TOKE BAKES WEBSITE ================== */
+﻿/* ================== EMERGENCY PATCH - PREVENT ERRORS ================== */
+// These functions were removed but might still be called
+if (typeof initFooterTheme === 'undefined') {
+  window.initFooterTheme = function() { /* Function removed */ };
+}
+
+if (typeof updateFooterTheme === 'undefined') {
+  window.updateFooterTheme = function() { /* Function removed */ };
+}
+
+if (typeof initThemeToggle === 'undefined') {
+  window.initThemeToggle = function() { /* Function removed - handled by theme-manager.js */ };
+}
+/* ================== END PATCH ================== */
+/* ================== script.js - TOKE BAKES WEBSITE ================== */
 
 /* ================== ENHANCED AUTO-UPDATE SYSTEM ================== */
 class WebsiteAutoUpdater {
@@ -1453,9 +1467,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // STEP 6: Initialize everything else
-  initMobileMenu();
-  initFooterTheme();
-  initMenuInteractions();
+  initMobileMenu();initMenuInteractions();
   initOrderFunctionality();
   initBottomSheet();
   initRipple(
@@ -1484,4 +1496,6 @@ document.addEventListener("click", (e) => {
     showNotification("Cart cleared successfully", "success");
   }
 });
+
+
 

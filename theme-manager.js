@@ -1,4 +1,4 @@
-/* ================== theme-manager.js ================== */
+﻿/* ================== theme-manager.js ================== */
 /* HYBRID VERSION - Supports both holiday themes AND dark/light toggle */
 
 const ThemeManager = {
@@ -509,3 +509,4 @@ if (document.readyState === "loading") {
 window.ThemeManager = ThemeManager;
 
 console.log("✅ Hybrid Theme Manager loaded");
+
