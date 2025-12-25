@@ -1,11 +1,11 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Home | Toke Bakes</title>
     <link rel="icon" href="images/favicon.webp" type="image/webp" />
-    <link id="theme-stylesheet" rel="stylesheet" href="style.css" />
+    <link id="theme-stylesheet" rel="stylesheet" href="styles/style.css" />
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
@@ -54,13 +54,52 @@
 
     <main id="main-content">
       <section class="hero">
-        <img src="images/logo.webp" alt="Toke Bakes logo" class="hero-logo" />
-        <h2>Baking Love, One Slice at a Time</h2>
-        <p class="lead">
-          Artisan cakes, cupcakes & pastries baked with passion and precision.
-          Small-batch, handcrafted, unforgettable.
-        </p>
-        <a class="btn" href="menu.html">Explore Our Menu</a>
+        <!-- Carousel Layer -->
+        <div class="hero-carousel">
+          <div class="carousel-track">
+            <!-- Slides will be dynamically inserted here by carousel.js -->
+            <!-- Example of what gets inserted:
+        <div class="carousel-slide active" data-index="0">
+          <img src="image-from-database.jpg" alt="Carousel image" class="slide-image">
+        </div>
+      -->
+          </div>
+
+          <!-- Dark overlay gradient -->
+          <div class="carousel-overlay"></div>
+
+          <!-- Navigation dots -->
+          <div class="carousel-dots">
+            <!-- Dots will be dynamically inserted here by carousel.js -->
+            <!-- Example:
+        <button class="carousel-dot active" data-index="0" aria-label="Go to slide 1"></button>
+      -->
+          </div>
+
+          <!-- Navigation arrows -->
+          <div class="carousel-nav">
+            <!-- Arrows will be dynamically inserted here by carousel.js -->
+            <!-- Example:
+        <button class="carousel-prev" aria-label="Previous slide">
+          <svg>? arrow SVG</svg>
+        </button>
+        <button class="carousel-next" aria-label="Next slide">
+          <svg>? arrow SVG</svg>
+        </button>
+      -->
+          </div>
+        </div>
+
+        <!-- Hero Content (Your existing content - stays exactly as is) -->
+        <div class="hero-content">
+          <img src="images/logo.webp" alt="Toke Bakes logo" class="hero-logo" />
+          <h2>Baking Love, One Slice at a Time</h2>
+          <p class="lead">
+            Artisan cakes, cupcakes & pastries baked with passion and precision.
+            Small-batch, handcrafted, unforgettable.
+          </p>
+          <a class="btn" href="menu.html">Explore Our Menu</a>
+        </div>
       </section>
 
       <section class="about-preview">
@@ -139,9 +178,10 @@
       </div>
     </footer>
 
-    <script src="config.js"></script>
-    <script src="theme-manager.js"></script>
-    <script src="spa-manager.js"></script>
-    <script src="script.js"></script>
+    <script src="scripts/config.js"></script>
+    <script src="scripts/theme-manager.js"></script>
+    <script src="scripts/carousel.js"></script>
+    <script src="scripts/spa-manager.js"></script>
+    <script src="scripts/script.js"></script>
   </body>
 </html>

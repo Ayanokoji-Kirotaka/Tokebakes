@@ -1,5 +1,6 @@
 /* ================== admin.js ================== */
 /* Toke Bakes Admin Panel - MODERN CONFIRMATION DIALOG VERSION */
+/* UPDATED WITH CAROUSEL FUNCTIONALITY */
 
 /* ================== AUTO-UPDATE SYSTEM ================== */
 class DataSyncManager {
@@ -103,6 +104,7 @@ class ModernConfirmationDialog {
       if (itemDetails.type === "featured") itemType = "Featured Item";
       if (itemDetails.type === "menu") itemType = "Menu Item";
       if (itemDetails.type === "gallery") itemType = "Gallery Image";
+      if (itemDetails.type === "carousel") itemType = "Carousel Image"; // Added
 
       titleEl.textContent = `Delete ${itemType}`;
 
@@ -189,6 +191,7 @@ async function getItemDetails(itemId, itemType) {
       featured: API_ENDPOINTS.FEATURED,
       menu: API_ENDPOINTS.MENU,
       gallery: API_ENDPOINTS.GALLERY,
+      carousel: API_ENDPOINTS.CAROUSEL, // Added
     };
 
     const endpoint = endpoints[itemType] || API_ENDPOINTS.FEATURED;
@@ -207,7 +210,7 @@ async function getItemDetails(itemId, itemType) {
       const item = await response.json();
       return {
         id: item.id,
-        title: item.title || item.name || "Untitled Item",
+        title: item.title || item.alt || "Carousel Image", // Updated for carousel
         description: item.description || "",
         price: item.price || null,
         created: item.created_at || null,
@@ -220,7 +223,7 @@ async function getItemDetails(itemId, itemType) {
 
   return {
     id: itemId,
-    title: "Unknown Item",
+    title: itemType === "carousel" ? "Carousel Image" : "Unknown Item",
     description: "",
     type: itemType,
   };
@@ -313,6 +316,35 @@ async function deleteGalleryItem(id) {
   } catch (error) {
     console.error("Error deleting gallery item:", error);
     showNotification("Failed to delete gallery item", "error");
+  }
+}
+
+/* ================== CAROUSEL DELETE FUNCTION ================== */
+async function deleteCarouselItem(id) {
+  try {
+    const itemDetails = await getItemDetails(id, "carousel");
+
+    const confirmed = await confirmationDialog.show(itemDetails);
+
+    if (!confirmed) {
+      showNotification("Deletion cancelled", "info");
+      return;
+    }
+
+    await secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=eq.${id}`, "DELETE");
+    showNotification("Carousel image deleted!", "success");
+
+    // Clear from cache
+    tempImageCache.delete(id);
+    clearDataCache();
+
+    await renderCarouselItems();
+    await updateItemCounts();
+
+    dataSync.notifyDataChanged("delete", "carousel"); // Added sync
+  } catch (error) {
+    console.error("Error deleting carousel item:", error);
+    showNotification("Failed to delete carousel item", "error");
   }
 }
 
@@ -1655,6 +1687,7 @@ function logoutAdmin() {
   resetFeaturedForm();
   resetMenuForm();
   resetGalleryForm();
+  resetCarouselForm(); // Added
 
   console.log("✅ Logged out successfully");
 }
@@ -1780,13 +1813,14 @@ async function changePassword(currentPass, newPass, confirmPass) {
 
 /* ================== ENHANCED CONTENT MANAGEMENT ================== */
 
-// Common save function with validation
+// Common save function with validation - UPDATED WITH CAROUSEL
 async function saveItem(itemType, formData) {
   try {
     const endpoints = {
       featured: API_ENDPOINTS.FEATURED,
       menu: API_ENDPOINTS.MENU,
       gallery: API_ENDPOINTS.GALLERY,
+      carousel: API_ENDPOINTS.CAROUSEL, // Added
     };
 
     const endpoint = endpoints[itemType];
@@ -1794,11 +1828,12 @@ async function saveItem(itemType, formData) {
       throw new Error(`Invalid item type: ${itemType}`);
     }
 
-    // Validate required fields
+    // Validate required fields - UPDATED WITH CAROUSEL
     const requiredFields = {
       featured: ["title", "description", "image"],
       menu: ["title", "description", "price", "image"],
       gallery: ["alt", "image"],
+      carousel: ["alt", "image"], // Added
     };
 
     const missingFields = requiredFields[itemType].filter(
@@ -2224,17 +2259,158 @@ async function editGalleryItem(id) {
   }
 }
 
+/* ================== CAROUSEL MANAGEMENT FUNCTIONS ================== */
+
+async function renderCarouselItems() {
+  const container = document.getElementById("carousel-admin-grid");
+  if (!container) return;
+
+  try {
+    const items = await loadDataFromSupabase(API_ENDPOINTS.CAROUSEL);
+
+    if (!items || items.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-images"></i>
+          <p>No carousel images yet. Add your first background image!</p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = items
+      .map(
+        (item, index) => `
+      <div class="carousel-admin-item" data-id="${item.id}">
+        <div class="carousel-slide-badge ${
+          item.is_active ? "active" : "inactive"
+        }">
+          <i class="fas fa-${
+            item.is_active ? "check-circle" : "pause-circle"
+          }"></i>
+          ${item.is_active ? "Active" : "Inactive"}
+        </div>
+        <div class="carousel-slide-number">${index + 1}</div>
+        <img src="${item.image}" alt="${item.alt}" loading="lazy">
+        <div class="carousel-admin-overlay">
+          <p><strong>Alt Text:</strong> ${item.alt}</p>
+          <p><strong>Order:</strong> ${item.display_order || 0}</p>
+          <div class="carousel-admin-actions">
+            <button class="btn-edit" onclick="editCarouselItem('${item.id}')">
+              <i class="fas fa-edit"></i> Edit
+            </button>
+            <button class="btn-delete" onclick="deleteCarouselItem('${
+              item.id
+            }')">
+              <i class="fas fa-trash"></i> Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    `
+      )
+      .join("");
+  } catch (error) {
+    console.error(`Error rendering carousel items:`, error);
+    container.innerHTML = `
+      <div class="empty-state error">
+        <i class="fas fa-exclamation-triangle"></i>
+        <p>Failed to load carousel items. Please check your connection.</p>
+      </div>
+    `;
+  }
+}
+
+async function saveCarouselItem(e) {
+  e.preventDefault();
+
+  const alt = document.getElementById("carousel-alt").value.trim();
+  const displayOrder =
+    parseInt(document.getElementById("carousel-display-order").value) || 0;
+  const isActive = document.getElementById("carousel-active").value === "true";
+  const imageFile = document.getElementById("carousel-image").files[0];
+  const itemId = document.getElementById("carousel-id").value;
+
+  try {
+    let imageBase64 = "";
+
+    if (imageFile) {
+      const compressed = await compressImage(imageFile);
+      imageBase64 = compressed.data;
+    } else if (isEditing && itemId && tempImageCache.has(itemId)) {
+      imageBase64 = tempImageCache.get(itemId);
+    } else {
+      showNotification("Please select an image", "error");
+      return;
+    }
+
+    const formData = {
+      alt,
+      display_order: displayOrder,
+      is_active: isActive,
+      image: imageBase64,
+    };
+
+    const success = await saveItem("carousel", formData);
+
+    if (success) {
+      resetCarouselForm();
+      await renderCarouselItems();
+      await updateItemCounts();
+      showNotification("Carousel image saved successfully!", "success");
+      dataSync.notifyDataChanged(isEditing ? "update" : "create", "carousel");
+    }
+  } catch (error) {
+    console.error("Error saving carousel item:", error);
+    showNotification("Failed to save carousel item", "error");
+  }
+}
+
+async function editCarouselItem(id) {
+  try {
+    const item = await loadDataFromSupabase(API_ENDPOINTS.CAROUSEL, id);
+
+    if (!item) {
+      showNotification("Carousel item not found", "error");
+      return;
+    }
+
+    document.getElementById("carousel-id").value = item.id;
+    document.getElementById("carousel-alt").value = item.alt;
+    document.getElementById("carousel-display-order").value =
+      item.display_order || 0;
+    document.getElementById("carousel-active").value = item.is_active
+      ? "true"
+      : "false";
+
+    const preview = document.getElementById("carousel-image-preview");
+    preview.innerHTML = `<img src="${item.image}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
+
+    document.getElementById("carousel-form-container").style.display = "block";
+    isEditing = true;
+    currentEditId = id;
+
+    document
+      .getElementById("carousel-form-container")
+      .scrollIntoView({ behavior: "smooth" });
+  } catch (error) {
+    console.error("Error loading carousel item for edit:", error);
+    showNotification("Failed to load carousel item for editing", "error");
+  }
+}
+
 /* ================== ENHANCED STORAGE MANAGEMENT ================== */
 
 async function updateStorageUsage() {
   try {
-    const [featured, menu, gallery] = await Promise.all([
+    const [featured, menu, gallery, carousel] = await Promise.all([
       loadDataFromSupabase(API_ENDPOINTS.FEATURED),
       loadDataFromSupabase(API_ENDPOINTS.MENU),
       loadDataFromSupabase(API_ENDPOINTS.GALLERY),
+      loadDataFromSupabase(API_ENDPOINTS.CAROUSEL), // Added carousel
     ]);
 
-    const allItems = [...featured, ...menu, ...gallery];
+    const allItems = [...featured, ...menu, ...gallery, ...carousel]; // Added carousel
     let totalBytes = 0;
 
     allItems.forEach((item) => {
@@ -2281,19 +2457,22 @@ async function updateStorageUsage() {
 
 async function updateItemCounts() {
   try {
-    const [featured, menu, gallery] = await Promise.all([
+    const [featured, menu, gallery, carousel] = await Promise.all([
       loadDataFromSupabase(API_ENDPOINTS.FEATURED),
       loadDataFromSupabase(API_ENDPOINTS.MENU),
       loadDataFromSupabase(API_ENDPOINTS.GALLERY),
+      loadDataFromSupabase(API_ENDPOINTS.CAROUSEL), // Added carousel
     ]);
 
     const countFeatured = document.getElementById("count-featured");
     const countMenu = document.getElementById("count-menu");
     const countGallery = document.getElementById("count-gallery");
+    const countCarousel = document.getElementById("count-carousel");
 
     if (countFeatured) countFeatured.textContent = featured.length || 0;
     if (countMenu) countMenu.textContent = menu.length || 0;
     if (countGallery) countGallery.textContent = gallery.length || 0;
+    if (countCarousel) countCarousel.textContent = carousel.length || 0;
 
     await updateStorageUsage();
   } catch (error) {
@@ -2307,23 +2486,26 @@ async function exportData() {
   try {
     showNotification("Preparing export...", "info");
 
-    const [featured, menu, gallery] = await Promise.all([
+    const [featured, menu, gallery, carousel] = await Promise.all([
       loadDataFromSupabase(API_ENDPOINTS.FEATURED),
       loadDataFromSupabase(API_ENDPOINTS.MENU),
       loadDataFromSupabase(API_ENDPOINTS.GALLERY),
+      loadDataFromSupabase(API_ENDPOINTS.CAROUSEL), // Added carousel
     ]);
 
     const data = {
       featured,
       menu,
       gallery,
+      carousel, // Added carousel
       exportDate: new Date().toISOString(),
-      version: "2.0.0",
+      version: "2.1.0", // Updated version
       source: "Toke Bakes CMS",
       itemCount: {
         featured: featured.length,
         menu: menu.length,
         gallery: gallery.length,
+        carousel: carousel.length, // Added carousel
       },
     };
 
@@ -2354,8 +2536,8 @@ async function importData(file) {
     const text = await file.text();
     const data = JSON.parse(text);
 
-    // Validate backup file
-    if (!data.featured || !data.menu || !data.gallery) {
+    // Validate backup file - UPDATED WITH CAROUSEL
+    if (!data.featured || !data.menu || !data.gallery || !data.carousel) {
       showNotification("Invalid backup file format", "error");
       return;
     }
@@ -2376,16 +2558,20 @@ async function importData(file) {
 
     showNotification("Starting import...", "info");
 
-    // Clear existing data
+    // Clear existing data - UPDATED WITH CAROUSEL
     await Promise.all([
       secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE"),
       secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE"),
       secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE"),
+      secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=gt.0`, "DELETE"), // Added carousel
     ]);
 
     // Import new data
     const totalItems =
-      data.featured.length + data.menu.length + data.gallery.length;
+      data.featured.length +
+      data.menu.length +
+      data.gallery.length +
+      data.carousel.length; // Added carousel
     let imported = 0;
 
     // Import batches
@@ -2402,17 +2588,19 @@ async function importData(file) {
     await importBatch(data.featured, API_ENDPOINTS.FEATURED);
     await importBatch(data.menu, API_ENDPOINTS.MENU);
     await importBatch(data.gallery, API_ENDPOINTS.GALLERY);
+    await importBatch(data.carousel, API_ENDPOINTS.CAROUSEL); // Added carousel
 
     // Cleanup
     clearDataCache();
 
     showNotification(`Successfully imported ${imported} items!`, "success");
 
-    // Refresh displays
+    // Refresh displays - UPDATED WITH CAROUSEL
     await Promise.all([
       renderFeaturedItems(),
       renderMenuItems(),
       renderGalleryItems(),
+      renderCarouselItems(), // Added carousel
     ]);
     await updateItemCounts();
 
@@ -2455,10 +2643,22 @@ function resetGalleryForm() {
   currentEditId = null;
 }
 
+function resetCarouselForm() {
+  const form = document.getElementById("carousel-form");
+  if (form) form.reset();
+  document.getElementById("carousel-id").value = "";
+  document.getElementById("carousel-display-order").value = "0";
+  document.getElementById("carousel-active").value = "true";
+  document.getElementById("carousel-image-preview").innerHTML = "";
+  document.getElementById("carousel-form-container").style.display = "none";
+  isEditing = false;
+  currentEditId = null;
+}
+
 /* ================== FIXED INITIALIZATION ================== */
 
 async function initAdminPanel() {
-  console.log("🔧 Initializing Admin Panel v2.0 (MODERN CONFIRMATION)...");
+  console.log("🔧 Initializing Admin Panel v2.1 (WITH CAROUSEL)...");
 
   // 🔒 Initialize admin credentials from database
   try {
@@ -2521,13 +2721,14 @@ async function initAdminPanel() {
     yearElement.textContent = new Date().getFullYear();
   }
 
-  // Load initial data if logged in
+  // Load initial data if logged in - UPDATED WITH CAROUSEL
   if (currentAdmin) {
     try {
       await Promise.all([
         renderFeaturedItems(),
         renderMenuItems(),
         renderGalleryItems(),
+        renderCarouselItems(), // Added carousel
       ]);
       await updateItemCounts();
     } catch (error) {
@@ -2542,7 +2743,7 @@ async function initAdminPanel() {
 function setupEventListeners() {
   console.log("Setting up event listeners...");
 
-  // Tab switching
+  // Tab switching - UPDATED TO RESET CAROUSEL FORM
   document.querySelectorAll(".admin-tab").forEach((tab) => {
     tab.addEventListener("click", function () {
       const tabId = this.dataset.tab;
@@ -2567,10 +2768,11 @@ function setupEventListeners() {
         }
       }
 
-      // Reset any open forms
+      // Reset any open forms - ADDED CAROUSEL
       resetFeaturedForm();
       resetMenuForm();
       resetGalleryForm();
+      resetCarouselForm();
     });
   });
 
@@ -2595,11 +2797,12 @@ function setupEventListeners() {
         document.getElementById("admin-dashboard").style.display = "block";
         showNotification(`Welcome back, ${username}!`, "success");
 
-        // Load data after successful login
+        // Load data after successful login - UPDATED WITH CAROUSEL
         await Promise.all([
           renderFeaturedItems(),
           renderMenuItems(),
           renderGalleryItems(),
+          renderCarouselItems(), // Added carousel
         ]);
         await updateItemCounts();
       } else {
@@ -2617,10 +2820,11 @@ function setupEventListeners() {
     });
   }
 
-  // Form submissions
+  // Form submissions - ADDED CAROUSEL
   const featuredForm = document.getElementById("featured-form");
   const menuForm = document.getElementById("menu-form");
   const galleryForm = document.getElementById("gallery-form");
+  const carouselForm = document.getElementById("carousel-form"); // Added
 
   if (featuredForm) {
     featuredForm.addEventListener("submit", saveFeaturedItem);
@@ -2630,6 +2834,10 @@ function setupEventListeners() {
   }
   if (galleryForm) {
     galleryForm.addEventListener("submit", saveGalleryItem);
+  }
+  if (carouselForm) {
+    // Added
+    carouselForm.addEventListener("submit", saveCarouselItem);
   }
 
   // Change password form
@@ -2651,10 +2859,11 @@ function setupEventListeners() {
     });
   }
 
-  // Add buttons
+  // Add buttons - ADDED CAROUSEL
   const addFeaturedBtn = document.getElementById("add-featured-btn");
   const addMenuBtn = document.getElementById("add-menu-btn");
   const addGalleryBtn = document.getElementById("add-gallery-btn");
+  const addCarouselBtn = document.getElementById("add-carousel-btn"); // Added
 
   if (addFeaturedBtn) {
     addFeaturedBtn.addEventListener("click", () => {
@@ -2687,10 +2896,23 @@ function setupEventListeners() {
     });
   }
 
-  // Cancel buttons
+  if (addCarouselBtn) {
+    // Added
+    addCarouselBtn.addEventListener("click", () => {
+      resetCarouselForm();
+      document.getElementById("carousel-form-container").style.display =
+        "block";
+      document
+        .getElementById("carousel-form-container")
+        .scrollIntoView({ behavior: "smooth" });
+    });
+  }
+
+  // Cancel buttons - ADDED CAROUSEL
   const cancelFeatured = document.getElementById("cancel-featured");
   const cancelMenu = document.getElementById("cancel-menu");
   const cancelGallery = document.getElementById("cancel-gallery");
+  const cancelCarousel = document.getElementById("cancel-carousel"); // Added
 
   if (cancelFeatured) {
     cancelFeatured.addEventListener("click", resetFeaturedForm);
@@ -2700,6 +2922,10 @@ function setupEventListeners() {
   }
   if (cancelGallery) {
     cancelGallery.addEventListener("click", resetGalleryForm);
+  }
+  if (cancelCarousel) {
+    // Added
+    cancelCarousel.addEventListener("click", resetCarouselForm);
   }
 
   // Data management buttons
@@ -2763,19 +2989,23 @@ function setupEventListeners() {
       try {
         showNotification("Resetting data...", "info");
 
+        // UPDATED WITH CAROUSEL
         await Promise.all([
           secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE"),
           secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE"),
           secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE"),
+          secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=gt.0`, "DELETE"), // Added carousel
         ]);
 
         clearDataCache();
         showNotification("All data has been reset!", "success");
 
+        // UPDATED WITH CAROUSEL
         await Promise.all([
           renderFeaturedItems(),
           renderMenuItems(),
           renderGalleryItems(),
+          renderCarouselItems(), // Added carousel
         ]);
         await updateItemCounts();
 
@@ -2788,13 +3018,15 @@ function setupEventListeners() {
   }
 }
 
-// Make functions available globally
+// Make functions available globally - ADDED CAROUSEL
 window.editFeaturedItem = editFeaturedItem;
 window.deleteFeaturedItem = deleteFeaturedItem;
 window.editMenuItem = editMenuItem;
 window.deleteMenuItem = deleteMenuItem;
 window.editGalleryItem = editGalleryItem;
 window.deleteGalleryItem = deleteGalleryItem;
+window.editCarouselItem = editCarouselItem; // Added
+window.deleteCarouselItem = deleteCarouselItem; // Added
 
 // Initialize when DOM is loaded
 if (document.readyState === "loading") {
@@ -2819,4 +3051,4 @@ function setupConnectionMonitor() {
 // Add to initAdminPanel
 setupConnectionMonitor();
 
-console.log("✅ Toke Bakes Admin Panel v2.0 - MODERN CONFIRMATION SYSTEM");
+console.log("✅ Toke Bakes Admin Panel v2.1 - WITH CAROUSEL SUCCESS");

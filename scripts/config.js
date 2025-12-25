@@ -10,6 +10,7 @@ const API_ENDPOINTS = {
   FEATURED: "/rest/v1/featured_items",
   MENU: "/rest/v1/menu_items",
   THEMES: "/rest/v1/website_themes",
+  CAROUSEL: "/rest/v1/hero_carousel",
 };
 
 window.SUPABASE_CONFIG = SUPABASE_CONFIG;

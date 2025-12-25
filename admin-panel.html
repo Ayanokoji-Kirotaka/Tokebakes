@@ -1,11 +1,11 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Panel | Toke Bakes</title>
     <link rel="shortcut icon" href="images/favicon.webp" type="image/png" />
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="styles/style.css" />
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
@@ -113,6 +113,9 @@
           </button>
           <button class="admin-tab" data-tab="gallery">
             <i class="fas fa-images"></i> Gallery
+          </button>
+          <button class="admin-tab" data-tab="carousel">
+            <i class="fas fa-images"></i> Hero Carousel
           </button>
           <button class="admin-tab" data-tab="themes">
             <i class="fas fa-palette"></i> Themes
@@ -270,7 +273,7 @@
                 <div class="form-row">
                   <div class="form-group">
                     <label for="menu-price"
-                      ><i class="fas fa-tag"></i> Price (â‚¦)</label
+                      ><i class="fas fa-tag"></i> Price (₦)</label
                     >
                     <input
                       type="number"
@@ -392,7 +395,114 @@
               </div>
             </div>
           </div>
+          <!-- Carousel Tab -->
+          <div id="carousel-tab" class="tab-pane">
+            <div class="admin-section-header">
+              <h2><i class="fas fa-images"></i> Manage Hero Carousel</h2>
+              <p>Images that appear in the hero section background carousel</p>
+              <button class="btn btn-admin" id="add-carousel-btn">
+                <i class="fas fa-plus"></i> Add Carousel Image
+              </button>
+            </div>
 
+            <div
+              class="admin-form-container"
+              id="carousel-form-container"
+              style="display: none"
+            >
+              <form id="carousel-form" class="admin-form">
+                <input type="hidden" id="carousel-id" value="" />
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="carousel-alt"
+                      ><i class="fas fa-text-width"></i> Alt Text</label
+                    >
+                    <input
+                      type="text"
+                      id="carousel-alt"
+                      placeholder="Describe the image for accessibility"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="carousel-display-order"
+                      ><i class="fas fa-sort-numeric-down"></i> Display
+                      Order</label
+                    >
+                    <input
+                      type="number"
+                      id="carousel-display-order"
+                      placeholder="0"
+                      min="0"
+                      value="0"
+                    />
+                    <small class="form-help">Lower numbers appear first</small>
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="carousel-active"
+                      ><i class="fas fa-toggle-on"></i> Status</label
+                    >
+                    <select id="carousel-active">
+                      <option value="true">Active</option>
+                      <option value="false">Inactive</option>
+                    </select>
+                    <small class="form-help"
+                      >Inactive slides won't show in carousel</small
+                    >
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="carousel-image"
+                      ><i class="fas fa-image"></i> Image</label
+                    >
+                    <input
+                      type="file"
+                      id="carousel-image"
+                      accept="image/*"
+                      required
+                    />
+                    <small class="form-help"
+                      >Max 500KB. Images are stored in the cloud.</small
+                    >
+                    <div
+                      class="image-preview"
+                      id="carousel-image-preview"
+                    ></div>
+                  </div>
+                </div>
+
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-admin">
+                    <i class="fas fa-save"></i> Save Carousel Image
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    id="cancel-carousel"
+                  >
+                    <i class="fas fa-times"></i> Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div class="carousel-admin-grid" id="carousel-admin-grid">
+              <!-- Carousel images will be loaded here -->
+              <div class="empty-state">
+                <i class="fas fa-images"></i>
+                <p>No carousel images yet. Add your first background image!</p>
+              </div>
+            </div>
+          </div>
           <!-- ================== THEMES TAB ================== -->
           <div id="themes-tab" class="tab-pane">
             <div class="admin-section-header">
@@ -406,7 +516,7 @@
             <!-- Themes Grid -->
             <div class="themes-grid" id="themes-grid">
               <!-- DEFAULT THEME -->
-              <div class="theme-card active" data-theme-file="style.css">
+              <div class="theme-card active" data-theme-file="styles/style.css">
                 <div class="theme-preview">
                   <img
                     src="images/theme-preview-default.jpg"
@@ -420,7 +530,7 @@
                     <i class="fas fa-check-circle"></i> ACTIVE
                   </div>
                   <h3 class="theme-title">Default Theme</h3>
-                  <p class="theme-filename">style.css</p>
+                  <p class="theme-filename">styles/style.css</p>
                   <p class="theme-description">Orange bakery theme</p>
                 </div>
 
@@ -435,7 +545,10 @@
               </div>
 
               <!-- VALENTINE THEME -->
-              <div class="theme-card" data-theme-file="theme-valentine.css">
+              <div
+                class="theme-card"
+                data-theme-file="styles/theme-valentine.css"
+              >
                 <div class="theme-preview">
                   <img
                     src="images/theme-preview-valentine.jpg"
@@ -449,7 +562,7 @@
                     <i class="fas fa-heart"></i> VALENTINE
                   </div>
                   <h3 class="theme-title">Valentine's Day</h3>
-                  <p class="theme-filename">theme-valentine.css</p>
+                  <p class="theme-filename">styles/theme-valentine.css</p>
                   <p class="theme-description">Romantic pink & red theme</p>
                 </div>
 
@@ -464,7 +577,10 @@
               </div>
 
               <!-- RAMADAN THEME -->
-              <div class="theme-card" data-theme-file="theme-ramadan.css">
+              <div
+                class="theme-card"
+                data-theme-file="styles/theme-ramadan.css"
+              >
                 <div class="theme-preview">
                   <img
                     src="images/theme-preview-ramadan.jpg"
@@ -478,7 +594,7 @@
                     <i class="fas fa-moon"></i> RAMADAN
                   </div>
                   <h3 class="theme-title">Ramadan</h3>
-                  <p class="theme-filename">theme-ramadan.css</p>
+                  <p class="theme-filename">styles/theme-ramadan.css</p>
                   <p class="theme-description">Green & gold theme</p>
                 </div>
 
@@ -493,7 +609,10 @@
               </div>
 
               <!-- CHRISTMAS THEME -->
-              <div class="theme-card" data-theme-file="theme-christmas.css">
+              <div
+                class="theme-card"
+                data-theme-file="styles/theme-christmas.css"
+              >
                 <div class="theme-preview">
                   <img
                     src="images/theme-preview-christmas.jpg"
@@ -507,7 +626,7 @@
                     <i class="fas fa-tree"></i> CHRISTMAS
                   </div>
                   <h3 class="theme-title">Christmas</h3>
-                  <p class="theme-filename">theme-christmas.css</p>
+                  <p class="theme-filename">styles/theme-christmas.css</p>
                   <p class="theme-description">Festive red & green theme</p>
                 </div>
 
@@ -522,7 +641,10 @@
               </div>
 
               <!-- HALLOWEEN THEME -->
-              <div class="theme-card" data-theme-file="theme-halloween.css">
+              <div
+                class="theme-card"
+                data-theme-file="styles/theme-halloween.css"
+              >
                 <div class="theme-preview">
                   <img
                     src="images/theme-preview-halloween.jpg"
@@ -536,7 +658,7 @@
                     <i class="fas fa-ghost"></i> HALLOWEEN
                   </div>
                   <h3 class="theme-title">Halloween</h3>
-                  <p class="theme-filename">theme-halloween.css</p>
+                  <p class="theme-filename">styles/theme-halloween.css</p>
                   <p class="theme-description">Spooky orange & purple theme</p>
                 </div>
 
@@ -553,7 +675,7 @@
               <!-- INDEPENDENCE DAY THEME -->
               <div
                 class="theme-card"
-                data-theme-file="theme-independenceday.css"
+                data-theme-file="styles/theme-independenceday.css"
               >
                 <div class="theme-preview">
                   <img
@@ -568,7 +690,7 @@
                     <i class="fas fa-flag"></i> INDEPENDENCE
                   </div>
                   <h3 class="theme-title">Independence Day</h3>
-                  <p class="theme-filename">theme-independenceday.css</p>
+                  <p class="theme-filename">styles/theme-independenceday.css</p>
                   <p class="theme-description">Green & white Nigerian theme</p>
                 </div>
 
@@ -667,6 +789,7 @@
                     <li>Featured: <span id="count-featured">0</span></li>
                     <li>Menu: <span id="count-menu">0</span></li>
                     <li>Gallery: <span id="count-gallery">0</span></li>
+                    <li>Carousel: <span id="count-carousel">0</span></li>
                   </ul>
                 </div>
               </div>
@@ -725,9 +848,9 @@
     <!-- Hidden file input for import -->
     <input type="file" id="import-file" accept=".json" style="display: none" />
 
-    <script src="config.js"></script>
-    <script src="theme-manager.js"></script>
-    <script src="admin.js"></script>
-    <script src="script.js"></script>
+    <script src="scripts/config.js"></script>
+    <script src="scripts/theme-manager.js"></script>
+    <script src="scripts/admin.js"></script>
+    <script src="scripts/script.js"></script>
   </body>
 </html>

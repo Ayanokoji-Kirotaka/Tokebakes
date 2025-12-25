@@ -1,15 +1,21 @@
 ﻿/* ================== EMERGENCY PATCH - PREVENT ERRORS ================== */
 // These functions were removed but might still be called
-if (typeof initFooterTheme === 'undefined') {
-  window.initFooterTheme = function() { /* Function removed */ };
+if (typeof initFooterTheme === "undefined") {
+  window.initFooterTheme = function () {
+    /* Function removed */
+  };
 }
 
-if (typeof updateFooterTheme === 'undefined') {
-  window.updateFooterTheme = function() { /* Function removed */ };
+if (typeof updateFooterTheme === "undefined") {
+  window.updateFooterTheme = function () {
+    /* Function removed */
+  };
 }
 
-if (typeof initThemeToggle === 'undefined') {
-  window.initThemeToggle = function() { /* Function removed - handled by theme-manager.js */ };
+if (typeof initThemeToggle === "undefined") {
+  window.initThemeToggle = function () {
+    /* Function removed - handled by theme-manager.js */
+  };
 }
 /* ================== END PATCH ================== */
 /* ================== script.js - TOKE BAKES WEBSITE ================== */
@@ -518,29 +524,31 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-/* ================== CART VALIDATION FUNCTIONS ================== */
+/* ================== FIXED CART VALIDATION FUNCTIONS ================== */
 
-// NEW: Validate cart items against current menu
 async function validateCartItems() {
   try {
     const cart = readCart();
     if (cart.length === 0) return { valid: true, items: [] };
 
-    // Load current menu items using cache
     const currentMenu = await getMenuItems();
 
     const validationResults = [];
     let hasChanges = false;
     let hasRemovals = false;
 
-    // Check each item in cart
     cart.forEach((cartItem, index) => {
-      const currentItem = currentMenu.find(
-        (item) => item.title === cartItem.name || item.id === cartItem.id
-      );
+      let currentItem = null;
+
+      if (cartItem.id) {
+        currentItem = currentMenu.find((item) => item.id === cartItem.id);
+      }
 
       if (!currentItem) {
-        // Item no longer exists in menu
+        currentItem = currentMenu.find((item) => item.title === cartItem.name);
+      }
+
+      if (!currentItem) {
         validationResults.push({
           index,
           name: cartItem.name,
@@ -552,7 +560,6 @@ async function validateCartItems() {
         hasRemovals = true;
         hasChanges = true;
       } else if (currentItem.price !== cartItem.price) {
-        // Price has changed
         validationResults.push({
           index,
           name: cartItem.name,
@@ -564,19 +571,7 @@ async function validateCartItems() {
           newPrice: currentItem.price,
         });
         hasChanges = true;
-      } else if (currentItem.image !== cartItem.image) {
-        // Image has changed (optional check)
-        validationResults.push({
-          index,
-          name: cartItem.name,
-          status: "updated",
-          message: "This item has been updated",
-          oldPrice: cartItem.price,
-          newPrice: currentItem.price,
-        });
-        hasChanges = true;
       } else {
-        // Item is still valid
         validationResults.push({
           index,
           name: cartItem.name,
@@ -600,7 +595,6 @@ async function validateCartItems() {
   }
 }
 
-// NEW: Update cart with validated prices
 function updateCartWithValidation(validationResults) {
   const cart = readCart();
   let updatedCart = [...cart];
@@ -608,11 +602,9 @@ function updateCartWithValidation(validationResults) {
 
   validationResults.forEach((result) => {
     if (result.status === "price_changed" && result.newPrice !== null) {
-      // Update price in cart
       updatedCart[result.index].price = result.newPrice;
       changesMade = true;
     } else if (result.status === "removed") {
-      // Mark item as unavailable (we'll handle display separately)
       updatedCart[result.index].unavailable = true;
       changesMade = true;
     }
@@ -685,17 +677,6 @@ if (!document.querySelector("#notification-styles")) {
   document.head.appendChild(style);
 }
 
-/* ================== Old LOADER ================== */
-// window.addEventListener("load", () => {
-//   const loader = document.getElementById("loader");
-//   if (loader) {
-//     setTimeout(() => {
-//       loader.style.opacity = "0";
-//       setTimeout(() => (loader.style.display = "none"), 600);
-//     }, 600);
-//   }
-// });
-
 /* ================== ENHANCED SESSION AWARE LOADER ================== */
 (function () {
   const loader = document.getElementById("loader");
@@ -757,7 +738,7 @@ if (!document.querySelector("#notification-styles")) {
           localStorage.getItem(SESSION_KEY) || "{}"
         );
         updatedData.timestamp = Date.now();
-        localStorage.setItem(SESSION_KEY, JSON.stringify(updatedData)); // ✅ FIXED
+        localStorage.setItem(SESSION_KEY, JSON.stringify(updatedData));
       },
       { passive: true }
     );
@@ -844,7 +825,7 @@ if (!document.querySelector("#notification-styles")) {
   });
 
   console.log("--- Navigation Highlight Complete ---");
-})(); // ← MAKE SURE THIS CLOSING LINE EXISTS
+})();
 
 /* ================== FIXED CART COUNT - NO ZERO FLASH ================== */
 function refreshCartCount() {
@@ -921,7 +902,7 @@ function initMenuInteractions() {
     if (!isShown) menuItem.classList.add("show-popup");
   });
 
-  // Add to cart functionality - NOW WITH ITEM ID
+  // Add to cart functionality
   document.addEventListener("click", (e) => {
     const addBtn = e.target.closest(".add-cart");
     if (!addBtn) return;
@@ -941,7 +922,7 @@ function initMenuInteractions() {
     const existing = cart.find((it) => it.name === name);
     if (existing) {
       existing.quantity = (existing.quantity || 1) + 1;
-      existing.id = id; // Update ID if it exists
+      existing.id = id;
     } else {
       cart.push({ name, price, quantity: 1, image, id });
     }
@@ -977,7 +958,7 @@ function initOrderFunctionality() {
     showOrderOptions(orderData);
   });
 
-  // Proceed to order button - NOW WITH CART VALIDATION
+  // Proceed to order button
   document.addEventListener("click", async (e) => {
     if (!e.target || e.target.id !== "proceed-order") return;
 
@@ -1000,20 +981,6 @@ function initOrderFunctionality() {
         }
       }
       return;
-    }
-
-    // Validate cart before proceeding
-    const validation = await validateCartItems();
-    if (validation.hasChanges) {
-      // Show warning about changes
-      const continueOrder = confirm(
-        "Some items in your cart have changed. Please review your cart before proceeding.\n\nClick OK to review changes, or Cancel to continue anyway."
-      );
-
-      if (continueOrder) {
-        // User wants to review changes, don't proceed to order
-        return;
-      }
     }
 
     const orderData = {
@@ -1248,63 +1215,14 @@ async function renderCartOnOrderPage(shouldValidate = true) {
     };
   }
 
-  // Show validation warnings if needed
-  if (shouldValidate && validation && validation.hasChanges) {
-    const warningDiv = document.createElement("div");
-    warningDiv.className = "cart-validation-warning";
-    warningDiv.style.cssText = `
-      background: linear-gradient(135deg, #fff3cd, #ffeaa7);
-      color: #856404;
-      padding: 1rem;
-      border-radius: 10px;
-      margin-bottom: 1.5rem;
-      border-left: 4px solid #ffc107;
-      box-shadow: 0 4px 12px rgba(255, 193, 7, 0.15);
-    `;
-
-    let warningMessage = "⚠️ Some items in your cart have changed:";
-    validation.results.forEach((result) => {
-      if (result.status === "removed") {
-        warningMessage += `<br>• <strong>${escapeHtml(result.name)}</strong>: ${
-          result.message
-        }`;
-      } else if (result.status === "price_changed") {
-        warningMessage += `<br>• <strong>${escapeHtml(result.name)}</strong>: ${
-          result.message
-        }`;
-      }
-    });
-    warningMessage +=
-      "<br><br><em>Please review your cart before proceeding.</em>";
-    warningDiv.innerHTML = warningMessage;
-    cartContainer.appendChild(warningDiv);
-  }
-
-  // Render cart items with PROPER event handling
+  // Render cart items
   cart.forEach((item, index) => {
     const row = document.createElement("div");
     row.className = "cart-row";
-    row.dataset.index = index; // Store index on the row itself
+    row.dataset.index = index;
 
     // Check if item is unavailable
     const isUnavailable = item.unavailable;
-    const validationResult =
-      validation && validation.results.find((r) => r.index === index);
-    const isPriceChanged =
-      validationResult && validationResult.status === "price_changed";
-
-    if (isUnavailable) {
-      row.style.cssText = `
-        opacity: 0.6;
-        background: linear-gradient(135deg, #f8d7da, #f5c6cb);
-        border-left: 4px solid #dc3545;
-      `;
-    } else if (isPriceChanged) {
-      row.style.cssText = `
-        background: linear-gradient(135deg, #fff3cd, #ffeaa7);
-        border-left: 4px solid #ffc107;
-      `;
-    }
 
     row.innerHTML = `
       <img src="${
@@ -1315,11 +1233,6 @@ async function renderCartOnOrderPage(shouldValidate = true) {
       <div class="item-info">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <strong>${escapeHtml(item.name)}</strong>
-          ${
-            isUnavailable
-              ? '<span style="color:#dc3545;font-weight:bold;font-size:0.9rem;">UNAVAILABLE</span>'
-              : ""
-          }
           <button class="remove-item">Remove</button>
         </div>
         ${
@@ -1331,26 +1244,13 @@ async function renderCartOnOrderPage(shouldValidate = true) {
         `
             : ""
         }
-        ${
-          isPriceChanged
-            ? `
-          <div style="color:#856404;font-size:0.9rem;margin-top:4px;margin-bottom:8px;">
-            <i class="fas fa-info-circle"></i> Price updated
-          </div>
-        `
-            : ""
-        }
         <div class="qty-controls">
           <button class="qty-btn decrease" ${
-            isUnavailable
-              ? 'disabled style="opacity:0.5;cursor:not-allowed;"'
-              : ""
+            isUnavailable ? "disabled" : ""
           }>-</button>
           <span class="qty-display">${item.quantity}</span>
           <button class="qty-btn increase" ${
-            isUnavailable
-              ? 'disabled style="opacity:0.5;cursor:not-allowed;"'
-              : ""
+            isUnavailable ? "disabled" : ""
           }>+</button>
           <div style="margin-left:auto;font-weight:700;">NGN ${formatPrice(
             (item.price || 0) * (item.quantity || 1)
@@ -1362,7 +1262,7 @@ async function renderCartOnOrderPage(shouldValidate = true) {
     cartContainer.appendChild(row);
   });
 
-  // Add event listeners AFTER rendering
+  // Add event listeners
   setupCartEventListeners();
 }
 
@@ -1388,7 +1288,6 @@ function setupCartEventListeners() {
     if (isNaN(index) || index < 0 || index >= cart.length) return;
 
     // Handle quantity buttons
-
     if (target.classList.contains("qty-btn")) {
       e.preventDefault();
       e.stopPropagation();
@@ -1400,11 +1299,10 @@ function setupCartEventListeners() {
         if (cart[index].quantity > 1) {
           cart[index].quantity = cart[index].quantity - 1;
         }
-        // If quantity is 1, do nothing (don't decrease to 0)
       }
 
       saveCart(cart);
-      renderCartOnOrderPage(false); // Don't validate on button clicks
+      renderCartOnOrderPage(false);
     }
 
     // Handle remove button
@@ -1467,7 +1365,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // STEP 6: Initialize everything else
-  initMobileMenu();initMenuInteractions();
+  initMobileMenu();
+  initMenuInteractions();
   initOrderFunctionality();
   initBottomSheet();
   initRipple(
@@ -1496,6 +1395,3 @@ document.addEventListener("click", (e) => {
     showNotification("Cart cleared successfully", "success");
   }
 });
-
-
-
