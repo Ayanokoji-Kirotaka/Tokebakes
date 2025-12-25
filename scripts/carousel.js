@@ -1,8 +1,9 @@
-/* ================== carousel.js ================== */
-/* Toke Bakes Hero Carousel - FIXED VERSION */
+/* ==================== carousel.js - CACHE-ENHANCED VERSION ==================== */
 
 class HeroCarousel {
   constructor() {
+    console.log("🎠 HeroCarousel with Cache Support initializing...");
+
     this.container = document.querySelector(".hero-carousel");
     if (!this.container) {
       console.log("🎠 No carousel found on this page");
@@ -17,38 +18,88 @@ class HeroCarousel {
 
     // Auto-play timers
     this.autoPlayInterval = null;
-    this.autoPlayDelay = 5000; // 5 seconds between slides
+    this.autoPlayDelay = 5000;
     this.autoPlayEnabled = true;
 
     // State management
     this.isTransitioning = false;
     this.transitionTimeout = null;
-    this.transitionDuration = 600; // Match your CSS transition duration
+    this.transitionDuration = 600;
 
     // Touch/swipe support
     this.touchStartX = 0;
     this.touchEndX = 0;
 
-    // Initialize immediately (no theme waiting needed)
-    this.init();
+    // Cache tracking
+    this.cacheKey = CACHE_CONFIG.KEYS.CAROUSEL;
+    this.cacheExpiry = CACHE_CONFIG.EXPIRY.CAROUSEL;
+
+    // Initialize with cache first
+    this.initWithCache();
   }
 
-  async init() {
-    console.log("🎠 Initializing Hero Carousel...");
-    await this.loadCarouselData();
-    this.setupCarousel();
-    this.setupEventListeners();
-    this.startAutoPlay();
+  async initWithCache() {
+    console.log("🎠 Initializing carousel with cache...");
+
+    // Show skeleton immediately
+    this.showSkeleton();
+
+    // Try to load from cache first
+    const cachedData = await this.loadFromCache();
+
+    if (cachedData && cachedData.length > 0) {
+      console.log("⚡ Carousel loaded from cache");
+      this.slides = cachedData;
+      this.setupCarousel();
+      this.setupEventListeners();
+      this.startAutoPlay();
+    }
+
+    // Then fetch fresh data in background
+    setTimeout(() => {
+      this.loadFreshData();
+    }, 100);
   }
 
-  async loadCarouselData() {
+  async loadFromCache() {
     try {
-      console.log("🔄 Loading carousel data...");
-
-      if (!window.SUPABASE_CONFIG || !window.SUPABASE_CONFIG.URL) {
-        console.error("Supabase configuration not found");
-        return;
+      // Check memory cache
+      if (
+        window.cacheManager &&
+        window.cacheManager.memoryCache.has(this.cacheKey)
+      ) {
+        const cached = window.cacheManager.memoryCache.get(this.cacheKey);
+        if (Date.now() - cached.timestamp < cached.expiry) {
+          return cached.data;
+        }
       }
+
+      // Check localStorage
+      const stored = localStorage.getItem(this.cacheKey);
+      if (stored) {
+        const cached = JSON.parse(stored);
+        if (
+          Date.now() - cached.timestamp < cached.expiry &&
+          cached.version === CACHE_CONFIG.VERSION
+        ) {
+          // Update memory cache
+          if (window.cacheManager) {
+            window.cacheManager.memoryCache.set(this.cacheKey, cached);
+          }
+
+          return cached.data;
+        }
+      }
+    } catch (error) {
+      console.error("Error loading carousel from cache:", error);
+    }
+
+    return null;
+  }
+
+  async loadFreshData() {
+    try {
+      console.log("🔄 Fetching fresh carousel data...");
 
       const response = await fetch(
         `${SUPABASE_CONFIG.URL}${API_ENDPOINTS.CAROUSEL}?is_active=eq.true&order=display_order.asc,created_at.desc&select=*`,
@@ -61,9 +112,7 @@ class HeroCarousel {
         }
       );
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       const data = await response.json();
 
@@ -78,17 +127,75 @@ class HeroCarousel {
         ];
       } else {
         this.slides = data;
-        console.log(`✅ Loaded ${this.slides.length} carousel slides`);
+        console.log(`✅ Loaded ${this.slides.length} fresh carousel slides`);
+      }
+
+      // Cache the data
+      this.saveToCache(this.slides);
+
+      // Update UI if needed
+      if (
+        this.track.children.length === 0 ||
+        this.track.children.length !== this.slides.length
+      ) {
+        this.setupCarousel();
+        this.setupEventListeners();
       }
     } catch (error) {
-      console.error("Error loading carousel data:", error);
-      this.slides = [
-        {
-          id: "default",
-          image: "images/default-bg.jpg",
-          alt: "Toke Bakes Artisan Bakery",
-        },
-      ];
+      console.error("Error loading fresh carousel data:", error);
+
+      // If we have no slides at all, use default
+      if (this.slides.length === 0) {
+        this.slides = [
+          {
+            id: "default",
+            image: "images/default-bg.jpg",
+            alt: "Toke Bakes Artisan Bakery",
+          },
+        ];
+        this.setupCarousel();
+      }
+    }
+  }
+
+  saveToCache(data) {
+    try {
+      const cacheData = {
+        data: data,
+        timestamp: Date.now(),
+        expiry: this.cacheExpiry,
+        version: CACHE_CONFIG.VERSION,
+      };
+
+      // Save to localStorage
+      localStorage.setItem(this.cacheKey, JSON.stringify(cacheData));
+
+      // Save to memory cache
+      if (window.cacheManager) {
+        window.cacheManager.memoryCache.set(this.cacheKey, cacheData);
+      }
+
+      console.log("✅ Carousel data cached");
+    } catch (error) {
+      console.error("Error caching carousel data:", error);
+    }
+  }
+
+  showSkeleton() {
+    if (!this.track) return;
+
+    this.track.innerHTML = `
+      <div class="carousel-slide skeleton">
+        <div class="skeleton-image"></div>
+      </div>
+    `;
+
+    if (this.dotsContainer) {
+      this.dotsContainer.innerHTML = `
+        <div class="carousel-dot skeleton"></div>
+        <div class="carousel-dot skeleton"></div>
+        <div class="carousel-dot skeleton"></div>
+      `;
     }
   }
 
@@ -101,20 +208,19 @@ class HeroCarousel {
 
     // Create slides
     this.slides.forEach((slide, index) => {
-      // Create slide element
       const slideEl = document.createElement("div");
       slideEl.className = `carousel-slide ${index === 0 ? "active" : ""}`;
       slideEl.dataset.index = index;
 
-      // Use eager loading for first image, lazy for others
       const loading = index === 0 ? "eager" : "lazy";
 
       slideEl.innerHTML = `
         <img src="${slide.image}"
              alt="${slide.alt || "Toke Bakes"}"
-             class="slide-image"
+             class="slide-image ${index === 0 ? "loaded" : ""}"
              loading="${loading}"
-             onerror="this.onerror=null; this.src='images/default-bg.jpg';">
+             onerror="this.onerror=null; this.src='images/default-bg.jpg';"
+             ${index === 0 ? "" : 'data-src="' + slide.image + '"'}>
       `;
 
       this.track.appendChild(slideEl);
@@ -129,7 +235,7 @@ class HeroCarousel {
     });
 
     // Create navigation arrows if we have more than 1 slide
-    if (this.slides.length > 1) {
+    if (this.slides.length > 1 && this.navContainer) {
       this.navContainer.innerHTML = `
         <button class="carousel-prev" aria-label="Previous slide">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -143,12 +249,39 @@ class HeroCarousel {
         </button>
       `;
     }
+
+    // Lazy load other images
+    this.lazyLoadImages();
+  }
+
+  lazyLoadImages() {
+    const images = this.track.querySelectorAll("img[data-src]");
+    images.forEach((img, index) => {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              const img = entry.target;
+              img.src = img.dataset.src;
+              img.classList.add("loaded");
+              img.removeAttribute("data-src");
+              observer.unobserve(img);
+            }
+          });
+        },
+        {
+          rootMargin: "50px",
+        }
+      );
+
+      observer.observe(img);
+    });
   }
 
   setupEventListeners() {
     if (this.slides.length <= 1) return;
 
-    // Dots navigation - SIMPLE and RELIABLE
+    // Dots navigation
     this.dotsContainer.addEventListener("click", (e) => {
       const dot = e.target.closest(".carousel-dot");
       if (!dot || this.isTransitioning) return;
@@ -160,7 +293,7 @@ class HeroCarousel {
       }
     });
 
-    // Arrow navigation - FIXED: Use proper event delegation
+    // Arrow navigation
     if (this.navContainer) {
       this.navContainer.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -211,7 +344,7 @@ class HeroCarousel {
       { passive: true }
     );
 
-    // Keyboard navigation - FIXED: Added proper debouncing
+    // Keyboard navigation
     document.addEventListener("keydown", (e) => {
       if (
         !this.container ||
@@ -231,6 +364,12 @@ class HeroCarousel {
         this.pauseAutoPlay();
       }
     });
+
+    // Listen for cache updates
+    window.addEventListener("cacheUpdated", () => {
+      console.log("🔄 Carousel cache update received");
+      this.refresh();
+    });
   }
 
   handleSwipe() {
@@ -248,9 +387,7 @@ class HeroCarousel {
     }
   }
 
-  // FIXED: goToSlide with proper state management
   goToSlide(index) {
-    // Prevent multiple transitions at once
     if (
       this.isTransitioning ||
       index === this.currentIndex ||
@@ -259,10 +396,8 @@ class HeroCarousel {
     )
       return;
 
-    // Set transitioning state
     this.isTransitioning = true;
 
-    // Get current and next elements
     const currentSlide = this.track.querySelector(".carousel-slide.active");
     const nextSlide = this.track.querySelector(
       `.carousel-slide[data-index="${index}"]`
@@ -272,27 +407,22 @@ class HeroCarousel {
       `.carousel-dot[data-index="${index}"]`
     );
 
-    // Update classes
     if (currentSlide) currentSlide.classList.remove("active");
     if (nextSlide) nextSlide.classList.add("active");
     if (currentDot) currentDot.classList.remove("active");
     if (nextDot) nextDot.classList.add("active");
 
-    // Update ARIA attributes
     if (currentSlide) currentSlide.removeAttribute("aria-current");
     if (nextSlide) nextSlide.setAttribute("aria-current", "true");
     if (currentDot) currentDot.setAttribute("aria-current", "false");
     if (nextDot) nextDot.setAttribute("aria-current", "true");
 
-    // Update current index
     this.currentIndex = index;
 
-    // Clear any existing timeout
     if (this.transitionTimeout) {
       clearTimeout(this.transitionTimeout);
     }
 
-    // Reset transitioning state after animation
     this.transitionTimeout = setTimeout(() => {
       this.isTransitioning = false;
       this.transitionTimeout = null;
@@ -323,28 +453,24 @@ class HeroCarousel {
         this.nextSlide();
       }
     }, this.autoPlayDelay);
-
-    console.log("▶️ Auto-play started");
   }
 
   stopAutoPlay() {
     if (this.autoPlayInterval) {
       clearInterval(this.autoPlayInterval);
       this.autoPlayInterval = null;
-      console.log("⏸️ Auto-play stopped");
     }
   }
 
   pauseAutoPlay() {
     this.stopAutoPlay();
 
-    // Restart after delay if auto-play is enabled
     if (this.autoPlayEnabled) {
       setTimeout(() => {
         if (this.autoPlayEnabled && !this.autoPlayInterval) {
           this.startAutoPlay();
         }
-      }, 3000); // Restart after 3 seconds
+      }, 3000);
     }
   }
 
@@ -360,19 +486,50 @@ class HeroCarousel {
   // Refresh when admin updates data
   async refresh() {
     console.log("🔄 Refreshing carousel...");
-    await this.loadCarouselData();
-    this.setupCarousel();
-    this.setupEventListeners();
+    await this.loadFreshData();
 
     if (this.autoPlayEnabled) {
       this.startAutoPlay();
     }
   }
+
+  // Cleanup method for SPA
+  destroy() {
+    console.log("🎠 Cleaning up carousel...");
+
+    this.stopAutoPlay();
+
+    if (this.transitionTimeout) {
+      clearTimeout(this.transitionTimeout);
+    }
+
+    // Remove all event listeners by cloning
+    if (this.navContainer) {
+      const newNavContainer = this.navContainer.cloneNode(false);
+      this.navContainer.parentNode.replaceChild(
+        newNavContainer,
+        this.navContainer
+      );
+    }
+
+    if (this.dotsContainer) {
+      const newDotsContainer = this.dotsContainer.cloneNode(false);
+      this.dotsContainer.parentNode.replaceChild(
+        newDotsContainer,
+        this.dotsContainer
+      );
+    }
+
+    this.container = null;
+    this.track = null;
+    this.dotsContainer = null;
+    this.navContainer = null;
+    this.slides = [];
+  }
 }
 
 // Initialize carousel
 function initializeCarousel() {
-  // Don't initialize on admin pages
   if (
     window.location.pathname.includes("admin") ||
     document.querySelector(".admin-dashboard") ||
@@ -382,10 +539,16 @@ function initializeCarousel() {
     return;
   }
 
-  // Initialize immediately
+  if (
+    window.heroCarousel &&
+    typeof window.heroCarousel.destroy === "function"
+  ) {
+    window.heroCarousel.destroy();
+  }
+
   window.heroCarousel = new HeroCarousel();
 
-  // Listen for updates from admin panel
+  // Listen for admin updates
   if (typeof BroadcastChannel !== "undefined") {
     const channel = new BroadcastChannel("toke_bakes_data_updates");
     channel.onmessage = (event) => {
@@ -406,4 +569,9 @@ if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", initializeCarousel);
 } else {
   initializeCarousel();
+}
+
+// Export for SPA manager
+if (typeof window !== "undefined") {
+  window.initializeCarousel = initializeCarousel;
 }

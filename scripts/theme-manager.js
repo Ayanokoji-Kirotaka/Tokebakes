@@ -1,4 +1,4 @@
-﻿/* ==================== THEME MANAGER - UPDATED FOR AUTO-UPDATE ==================== */
+﻿/* ==================== theme-manager.js - UPDATED WITH CACHE INTEGRATION ==================== */
 const ThemeManager = {
   currentTheme: "styles/style.css",
   currentMode: "light",
@@ -6,39 +6,113 @@ const ThemeManager = {
 
   /* ================== INITIALIZATION ================== */
   init() {
-    console.log("🎨 Theme Manager Initialized - FIXED VERSION");
+    console.log("🎨 Theme Manager Initialized with Cache Support");
 
-    // Load saved preferences
-    const savedTheme =
-      localStorage.getItem("toke_bakes_css_theme") || "styles/style.css";
-    const savedMode = localStorage.getItem("toke_bakes_theme_mode") || "light";
-
-    this.currentTheme = savedTheme;
-    this.currentMode = savedMode;
+    // Load saved preferences with cache fallback
+    this.loadThemeWithCache();
 
     // Apply dark/light mode
-    document.documentElement.setAttribute("data-theme", savedMode);
-
-    // Apply saved theme WITHOUT modifying the path
-    this.applyTheme(savedTheme, false);
+    document.documentElement.setAttribute("data-theme", this.currentMode);
 
     // Setup admin panel
     if (this.isAdminPanel()) {
       this.setupAdminListeners();
-      this.updateAdminUI(savedTheme);
+      this.updateAdminUI(this.currentTheme);
     }
 
     // Setup dark/light toggle
     this.setupModeToggle();
 
     // Initialize footer with saved mode
-    this.updateFooterTheme(savedMode);
+    this.updateFooterTheme(this.currentMode);
 
     // Setup theme auto-update detection
     this.setupThemeAutoUpdate();
   },
 
-  /* ================== NEW: THEME AUTO-UPDATE SYSTEM ================== */
+  /* ================== CACHE-ENHANCED THEME LOADING ================== */
+  loadThemeWithCache() {
+    // Try to get from cache first
+    const cachedThemes = this.loadThemesFromCache();
+
+    if (cachedThemes && cachedThemes.length > 0) {
+      console.log("🎨 Themes loaded from cache");
+    }
+
+    // Load user preference
+    const savedTheme =
+      localStorage.getItem("toke_bakes_css_theme") || "styles/style.css";
+    const savedMode = localStorage.getItem("toke_bakes_theme_mode") || "light";
+
+    this.currentTheme = this.fixLegacyThemePath(savedTheme);
+    this.currentMode = savedMode;
+
+    // Apply theme immediately
+    this.applyTheme(this.currentTheme, false, false);
+
+    // Fetch fresh themes in background
+    setTimeout(() => this.loadFreshThemes(), 100);
+  },
+
+  loadThemesFromCache() {
+    try {
+      const stored = localStorage.getItem(CACHE_CONFIG.KEYS.THEMES);
+      if (stored) {
+        const cached = JSON.parse(stored);
+        if (
+          Date.now() - cached.timestamp < cached.expiry &&
+          cached.version === CACHE_CONFIG.VERSION
+        ) {
+          return cached.data;
+        }
+      }
+    } catch (error) {
+      console.error("Error loading themes from cache:", error);
+    }
+    return null;
+  },
+
+  async loadFreshThemes() {
+    try {
+      const response = await fetch(
+        `${SUPABASE_CONFIG.URL}${API_ENDPOINTS.THEMES}?select=*`,
+        {
+          headers: {
+            apikey: SUPABASE_CONFIG.ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.ok) {
+        const themes = await response.json();
+
+        // Cache the themes
+        const cacheData = {
+          data: themes,
+          timestamp: Date.now(),
+          expiry: CACHE_CONFIG.EXPIRY.THEMES,
+          version: CACHE_CONFIG.VERSION,
+        };
+        localStorage.setItem(
+          CACHE_CONFIG.KEYS.THEMES,
+          JSON.stringify(cacheData)
+        );
+
+        console.log("✅ Themes cached successfully");
+
+        // Update admin UI if needed
+        if (this.isAdminPanel()) {
+          this.updateAdminUI(this.currentTheme);
+        }
+      }
+    } catch (error) {
+      console.error("Error loading fresh themes:", error);
+    }
+  },
+
+  /* ================== THEME AUTO-UPDATE SYSTEM ================== */
   setupThemeAutoUpdate() {
     // Check for theme updates every 30 seconds
     setInterval(() => this.checkForThemeUpdates(), 30000);
@@ -66,21 +140,16 @@ const ThemeManager = {
   },
 
   checkForThemeUpdates() {
-    // Get the last theme update timestamp from localStorage
     const lastUpdate = localStorage.getItem("toke_bakes_theme_last_update");
     const myLastCheck = localStorage.getItem("my_theme_check") || "0";
 
     if (lastUpdate && lastUpdate > myLastCheck) {
       console.log("🔄 Theme update detected!");
 
-      // Get the new theme
       const newTheme =
         localStorage.getItem("toke_bakes_css_theme") || "styles/style.css";
-
-      // Update my last check timestamp
       localStorage.setItem("my_theme_check", lastUpdate);
 
-      // Apply the new theme
       if (newTheme !== this.currentTheme) {
         this.applyTheme(newTheme, false);
       }
@@ -89,26 +158,18 @@ const ThemeManager = {
     return false;
   },
 
-  /* ================== FIXED: APPLY THEME FUNCTION ================== */
+  /* ================== APPLY THEME FUNCTION ================== */
   applyTheme(cssFile, saveToDB = true, isAdminChange = false) {
     console.log("🎨 Applying theme:", cssFile, "isAdminChange:", isAdminChange);
 
-    // ⚠️ CRITICAL FIX: DO NOT modify the cssFile path here!
-    // The path should already be correct (e.g., "styles/style.css")
-    // Your HTML files already point to the correct location
-
-    // Store the exact path as provided
     this.currentTheme = cssFile;
 
-    // Save to localStorage (exact path)
     if (saveToDB) {
       localStorage.setItem("toke_bakes_css_theme", cssFile);
 
-      // Set update timestamp for auto-update system
       const timestamp = Date.now().toString();
       localStorage.setItem("toke_bakes_theme_last_update", timestamp);
 
-      // Broadcast to other tabs if admin is making the change
       if (isAdminChange && this.themeChannel) {
         this.themeChannel.postMessage({
           type: "THEME_CHANGED",
@@ -119,11 +180,9 @@ const ThemeManager = {
       }
     }
 
-    // Apply theme CSS - Use exact path without modification
     try {
       const link = document.getElementById("theme-stylesheet");
       if (link) {
-        // Add cache-busting parameter but keep the path as-is
         link.href = cssFile + "?v=" + Date.now();
         console.log("✅ Theme CSS updated to:", cssFile);
       }
@@ -131,15 +190,12 @@ const ThemeManager = {
       console.error("❌ Error applying theme:", error);
     }
 
-    // Update footer to match current mode
     this.updateFooterTheme(this.currentMode);
 
-    // Update admin UI
     if (this.isAdminPanel()) {
       this.updateAdminUI(cssFile);
     }
 
-    // Show notification ONLY for admin theme changes (not dark/light toggle)
     if (
       typeof showNotification === "function" &&
       cssFile !== "styles/style.css" &&
@@ -166,8 +222,6 @@ const ThemeManager = {
 
         const card = btn.closest(".theme-card");
         if (card && card.dataset.themeFile) {
-          // ⚠️ CRITICAL: Use the exact theme file from data attribute
-          // Admin panel cards MUST have correct paths like "styles/style.css"
           const themeFile = card.dataset.themeFile;
           console.log("Admin theme activation:", themeFile);
           this.applyTheme(themeFile, true, true);
@@ -201,11 +255,9 @@ const ThemeManager = {
     const newMode = this.currentMode === "light" ? "dark" : "light";
     this.currentMode = newMode;
 
-    // Apply the mode change
     document.documentElement.setAttribute("data-theme", newMode);
     localStorage.setItem("toke_bakes_theme_mode", newMode);
 
-    // Update UI elements
     this.updateModeToggleUI();
     this.updateFooterTheme(newMode);
 
@@ -254,7 +306,6 @@ const ThemeManager = {
     const themeCards = document.querySelectorAll(".theme-card");
     if (themeCards.length === 0) return;
 
-    // Reset ALL cards
     themeCards.forEach((card) => {
       const file = card.dataset.themeFile;
       card.classList.remove("active");
@@ -262,7 +313,6 @@ const ThemeManager = {
       const status = card.querySelector(".theme-status");
       if (status) {
         status.classList.remove("active");
-        // Set default icons based on file name
         if (file === "styles/style.css") {
           status.innerHTML = '<i class="fas fa-palette"></i> DEFAULT';
         } else if (file === "styles/theme-christmas.css") {
@@ -279,7 +329,6 @@ const ThemeManager = {
       }
     });
 
-    // Activate current theme card - use exact match
     const activeCard = document.querySelector(`[data-theme-file="${cssFile}"]`);
     if (activeCard) {
       activeCard.classList.add("active");
@@ -312,10 +361,7 @@ const ThemeManager = {
     this.applyTheme("styles/style.css", true, true);
   },
 
-  /* ================== NEW: PATH FIXER FOR LEGACY SUPPORT ================== */
-  // This ensures old saved themes get updated to new paths
   fixLegacyThemePath(cssFile) {
-    // If it's an old path without 'styles/', fix it
     if (cssFile === "style.css") return "styles/style.css";
     if (cssFile === "theme-christmas.css") return "styles/theme-christmas.css";
     if (cssFile === "theme-valentine.css") return "styles/theme-valentine.css";
@@ -324,7 +370,6 @@ const ThemeManager = {
     if (cssFile === "theme-independenceday.css")
       return "styles/theme-independenceday.css";
 
-    // Otherwise return as-is
     return cssFile;
   },
 };
@@ -335,7 +380,6 @@ window.ThemeManager = ThemeManager;
 // Auto-initialize with legacy path fix
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
-    // Fix any legacy saved theme paths before initialization
     const savedTheme = localStorage.getItem("toke_bakes_css_theme");
     if (savedTheme && !savedTheme.includes("styles/")) {
       const fixedTheme = ThemeManager.fixLegacyThemePath(savedTheme);
@@ -347,7 +391,6 @@ if (document.readyState === "loading") {
     ThemeManager.init();
   });
 } else {
-  // Fix legacy paths immediately
   const savedTheme = localStorage.getItem("toke_bakes_css_theme");
   if (savedTheme && !savedTheme.includes("styles/")) {
     const fixedTheme = ThemeManager.fixLegacyThemePath(savedTheme);
@@ -359,4 +402,4 @@ if (document.readyState === "loading") {
   ThemeManager.init();
 }
 
-console.log("✅ Theme Manager FIXED VERSION loaded!");
+console.log("✅ Theme Manager loaded with Cache Support!");

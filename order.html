@@ -4,6 +4,18 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <!-- Add these meta tags if not already present -->
+    <meta name="theme-color" content="#FFE5CC" />
+    <link rel="manifest" href="manifest.json" crossorigin="use-credentials" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="Toke Bakes" />
+
+    <!-- Service Worker Script -->
+    <script src="scripts/service-worker-manager.js" defer></script>
     <title>Toke Bakes Your Order</title>
     <link rel="icon" href="images/favicon.webp" type="image/webp" />
     <link id="theme-stylesheet" rel="stylesheet" href="styles/style.css" />
@@ -112,5 +124,15 @@
     <script src="scripts/theme-manager.js"></script>
     <script src="scripts/spa-manager.js"></script>
     <script src="scripts/script.js"></script>
+
+    <!-- Add before closing body tag -->
+    <div
+      id="cache-status-indicator"
+      class="cache-status"
+      style="display: none"
+    ></div>
+    <div id="offline-indicator" class="offline-indicator" style="display: none">
+      <i class="fas fa-wifi"></i> You're offline. Some features may be limited.
+    </div>
   </body>
 </html>

@@ -1,274 +1,370 @@
-﻿/* ================== EMERGENCY PATCH - PREVENT ERRORS ================== */
-// These functions were removed but might still be called
-if (typeof initFooterTheme === "undefined") {
-  window.initFooterTheme = function () {
-    /* Function removed */
-  };
-}
+﻿/* ==================== script.js - TOKE BAKES WITH INTELLIGENT CACHING ==================== */
+/* ==================== FIX: ADMIN PANEL DETECTION ==================== */
+(function () {
+  // Check if we're on admin page
+  const isAdminPage =
+    window.location.pathname.includes("admin-panel.html") ||
+    document.querySelector(".admin-dashboard") ||
+    document.querySelector(".admin-login-container");
 
-if (typeof updateFooterTheme === "undefined") {
-  window.updateFooterTheme = function () {
-    /* Function removed */
-  };
-}
+  // If we're on admin page, disable cache system
+  if (isAdminPage) {
+    console.log("🔧 Admin panel detected - disabling cache system");
 
-if (typeof initThemeToggle === "undefined") {
-  window.initThemeToggle = function () {
-    /* Function removed - handled by theme-manager.js */
-  };
-}
-/* ================== END PATCH ================== */
-/* ================== script.js - TOKE BAKES WEBSITE ================== */
+    // Override cache manager to do nothing
+    window.cacheManager = {
+      init: () => {},
+      getCachedData: () => Promise.resolve([]),
+      refreshAllCaches: () => Promise.resolve(),
+      checkForUpdates: () => Promise.resolve(false),
+    };
 
-/* ================== ENHANCED AUTO-UPDATE SYSTEM ================== */
-class WebsiteAutoUpdater {
+    // Override content loaders to return empty
+    window.loadDynamicContent = () => Promise.resolve();
+    window.loadFeaturedItems = () => Promise.resolve();
+    window.loadMenuItems = () => Promise.resolve();
+    window.loadGalleryImages = () => Promise.resolve();
+  }
+})();
+
+/* ==================== SMART CACHING SYSTEM ==================== */
+class SmartCacheManager {
   constructor() {
-    this.lastUpdateKey = "toke_bakes_last_update";
+    this.memoryCache = new Map();
     this.broadcastChannel = null;
-    this.pollingInterval = null;
+    this.updateInterval = null;
     this.init();
   }
 
   init() {
-    console.log("🔧 Initializing Enhanced WebsiteAutoUpdater...");
+    console.log("🔧 Initializing SmartCacheManager...");
 
-    // 1. Setup BroadcastChannel for instant sync (same browser tabs)
+    // Setup BroadcastChannel for cross-tab sync
     if (typeof BroadcastChannel !== "undefined") {
-      this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
+      this.broadcastChannel = new BroadcastChannel("toke_bakes_cache_sync");
       this.broadcastChannel.onmessage = (event) => {
-        if (event.data.type === "DATA_UPDATED") {
-          console.log("📡 BroadcastChannel update received!", event.data);
-          this.refreshDataWithUI();
+        if (event.data.type === "CACHE_UPDATED") {
+          this.handleCacheUpdate(event.data);
         }
       };
-      console.log("✅ BroadcastChannel ready for instant sync");
     }
 
-    // 2. Check for updates every 25 seconds
-    this.startPolling(25000); // 25 seconds
+    // Start background updates
+    this.startBackgroundUpdates();
 
-    // 3. Check when user returns to tab
+    // Listen for visibility changes
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
-        console.log("👁️ Tab became visible, checking for updates...");
         this.checkForUpdates();
       }
     });
 
-    // 4. Initial check on page load
-    setTimeout(() => this.checkForUpdates(), 3000);
+    // Listen for admin updates
+    if (typeof BroadcastChannel !== "undefined") {
+      const adminChannel = new BroadcastChannel("toke_bakes_data_updates");
+      adminChannel.onmessage = (event) => {
+        if (event.data.type === "DATA_UPDATED") {
+          this.handleAdminUpdate(event.data);
+        }
+      };
+    }
   }
 
-  startPolling(interval = 25000) {
-    if (this.pollingInterval) clearInterval(this.pollingInterval);
-    this.pollingInterval = setInterval(() => {
+  startBackgroundUpdates() {
+    if (this.updateInterval) clearInterval(this.updateInterval);
+    this.updateInterval = setInterval(() => {
       this.checkForUpdates();
-    }, interval);
-    console.log(`✅ Polling started (every ${interval / 1000}s)`);
+    }, CACHE_CONFIG.UPDATE_INTERVAL);
+
+    console.log(
+      `🔄 Background updates every ${CACHE_CONFIG.UPDATE_INTERVAL / 1000}s`
+    );
   }
 
   async checkForUpdates() {
-    const lastUpdate = localStorage.getItem(this.lastUpdateKey);
-    const myLastCheck = localStorage.getItem("my_last_check") || "0";
+    const lastUpdate = localStorage.getItem(CACHE_CONFIG.KEYS.TIMESTAMP);
+    const now = Date.now();
 
-    if (lastUpdate && lastUpdate > myLastCheck) {
-      console.log("🔄 Update detected via localStorage/timestamp");
-      localStorage.setItem("my_last_check", lastUpdate);
-      await this.refreshDataWithUI();
-      return true;
+    if (!lastUpdate || now - parseInt(lastUpdate) > 30000) {
+      // 30 seconds
+      await this.refreshAllCaches(true); // Silent refresh
     }
-    return false;
   }
 
-  async refreshDataWithUI() {
-    // Show syncing indicator
-    this.showSyncIndicator("syncing");
-
+  async refreshAllCaches(silent = false) {
     try {
-      console.log("🔄 Refreshing website data...");
+      if (!silent) this.showCacheStatus("syncing");
 
-      // Clear ALL caches aggressively
-      if (window.cachedMenuItems) {
-        window.cachedMenuItems = null;
-        window.cacheTimestamp = null;
+      // Refresh all cache types
+      await Promise.all([
+        this.fetchAndCache(
+          API_ENDPOINTS.MENU,
+          CACHE_CONFIG.KEYS.MENU,
+          CACHE_CONFIG.EXPIRY.MENU
+        ),
+        this.fetchAndCache(
+          API_ENDPOINTS.FEATURED,
+          CACHE_CONFIG.KEYS.FEATURED,
+          CACHE_CONFIG.EXPIRY.FEATURED
+        ),
+        this.fetchAndCache(
+          API_ENDPOINTS.GALLERY,
+          CACHE_CONFIG.KEYS.GALLERY,
+          CACHE_CONFIG.EXPIRY.GALLERY
+        ),
+        this.fetchAndCache(
+          API_ENDPOINTS.CAROUSEL,
+          CACHE_CONFIG.KEYS.CAROUSEL,
+          CACHE_CONFIG.EXPIRY.CAROUSEL
+        ),
+        this.fetchAndCache(
+          API_ENDPOINTS.THEMES,
+          CACHE_CONFIG.KEYS.THEMES,
+          CACHE_CONFIG.EXPIRY.THEMES
+        ),
+      ]);
+
+      // Update timestamp
+      localStorage.setItem(CACHE_CONFIG.KEYS.TIMESTAMP, Date.now().toString());
+
+      // Notify other tabs
+      if (this.broadcastChannel) {
+        this.broadcastChannel.postMessage({
+          type: "CACHE_UPDATED",
+          timestamp: Date.now(),
+        });
       }
 
-      // Clear dataCache if it exists (from admin.js)
-      if (window.dataCache && window.dataCache.clear) {
-        window.dataCache.clear();
+      if (!silent) {
+        this.showCacheStatus("updated");
+        setTimeout(() => this.hideCacheStatus(), 2000);
       }
 
-      // Reload content based on current page
-      if (typeof loadDynamicContent === "function") {
-        await loadDynamicContent();
-        console.log("✅ Dynamic content reloaded");
-      }
-
-      // Also refresh cart if on order page
-      if (
-        window.location.pathname.includes("order") &&
-        typeof renderCartOnOrderPage === "function"
-      ) {
-        await renderCartOnOrderPage(true);
-        console.log("✅ Cart refreshed");
-      }
-
-      // Show success indicator
-      this.showSyncIndicator("updated");
-
-      // Show notification
-      this.showUpdateNotification();
-
-      // Hide indicator after 2 seconds
-      setTimeout(() => {
-        this.hideSyncIndicator();
-      }, 2000);
+      console.log("✅ All caches refreshed successfully");
+      return true;
     } catch (error) {
-      console.error("❌ Sync refresh failed:", error);
-      this.hideSyncIndicator();
-
-      // Show error state briefly
-      this.showSyncIndicator("error");
-      setTimeout(() => this.hideSyncIndicator(), 3000);
+      console.error("❌ Cache refresh failed:", error);
+      if (!silent) {
+        this.showCacheStatus("error");
+        setTimeout(() => this.hideCacheStatus(), 3000);
+      }
+      return false;
     }
   }
 
-  showSyncIndicator(state) {
-    let indicator = document.getElementById("sync-status-indicator");
+  async fetchAndCache(endpoint, cacheKey, expiry) {
+    try {
+      console.log(`🔄 Fetching fresh data for ${endpoint}...`);
+
+      const response = await fetch(
+        `${SUPABASE_CONFIG.URL}${endpoint}?select=*&order=created_at.desc`,
+        {
+          headers: {
+            apikey: SUPABASE_CONFIG.ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+            "Content-Type": "application/json",
+          },
+          signal: AbortSignal.timeout(CACHE_CONFIG.OFFLINE_TIMEOUT),
+        }
+      );
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const data = await response.json();
+
+      // Cache the data
+      const cacheData = {
+        data: data,
+        timestamp: Date.now(),
+        expiry: expiry,
+        version: CACHE_CONFIG.VERSION,
+      };
+
+      // Store in localStorage
+      localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+
+      // Store in memory cache
+      this.memoryCache.set(cacheKey, cacheData);
+
+      // Enforce memory limit
+      if (this.memoryCache.size > CACHE_CONFIG.MAX_MEMORY_ITEMS) {
+        const firstKey = this.memoryCache.keys().next().value;
+        this.memoryCache.delete(firstKey);
+      }
+
+      console.log(`✅ ${endpoint} cached with ${data.length} items`);
+      return data;
+    } catch (error) {
+      console.error(`❌ Failed to fetch ${endpoint}:`, error);
+      throw error;
+    }
+  }
+
+  async getCachedData(cacheKey, endpoint) {
+    // 1. Check memory cache first (fastest)
+    if (this.memoryCache.has(cacheKey)) {
+      const cached = this.memoryCache.get(cacheKey);
+      if (Date.now() - cached.timestamp < cached.expiry) {
+        console.log(`⚡ ${cacheKey} served from memory cache`);
+        return cached.data;
+      }
+    }
+
+    // 2. Check localStorage (fast)
+    const stored = localStorage.getItem(cacheKey);
+    if (stored) {
+      try {
+        const cached = JSON.parse(stored);
+
+        // Validate cache
+        if (cached.version !== CACHE_CONFIG.VERSION) {
+          console.log(`🔄 Cache version mismatch for ${cacheKey}`);
+          localStorage.removeItem(cacheKey);
+        } else if (Date.now() - cached.timestamp < cached.expiry) {
+          console.log(`💾 ${cacheKey} served from localStorage`);
+
+          // Update memory cache
+          this.memoryCache.set(cacheKey, cached);
+          return cached.data;
+        } else {
+          console.log(`🔄 ${cacheKey} cache expired, fetching fresh`);
+        }
+      } catch (e) {
+        console.error(`❌ Corrupted cache for ${cacheKey}:`, e);
+        localStorage.removeItem(cacheKey);
+      }
+    }
+
+    // 3. Fetch fresh data (background)
+    setTimeout(() => {
+      this.fetchAndCache(
+        endpoint,
+        cacheKey,
+        CACHE_CONFIG.EXPIRY[cacheKey.split("_").pop().toUpperCase()]
+      );
+    }, 100);
+
+    // 4. Return fallback or empty array
+    return [];
+  }
+
+  handleCacheUpdate(data) {
+    console.log("📡 Cache update received from another tab");
+    this.memoryCache.clear(); // Clear memory cache to force fresh load
+    this.triggerContentRefresh();
+  }
+
+  handleAdminUpdate(data) {
+    console.log("👑 Admin update detected:", data);
+
+    // Invalidate specific cache based on update type
+    switch (data.itemType) {
+      case "menu":
+        this.invalidateCache(CACHE_CONFIG.KEYS.MENU);
+        break;
+      case "featured":
+        this.invalidateCache(CACHE_CONFIG.KEYS.FEATURED);
+        break;
+      case "gallery":
+        this.invalidateCache(CACHE_CONFIG.KEYS.GALLERY);
+        break;
+      case "carousel":
+        this.invalidateCache(CACHE_CONFIG.KEYS.CAROUSEL);
+        break;
+      default:
+        this.invalidateAllCaches();
+    }
+
+    this.triggerContentRefresh();
+  }
+
+  invalidateCache(cacheKey) {
+    localStorage.removeItem(cacheKey);
+    this.memoryCache.delete(cacheKey);
+    console.log(`🗑️ Cache invalidated: ${cacheKey}`);
+  }
+
+  invalidateAllCaches() {
+    Object.values(CACHE_CONFIG.KEYS).forEach((key) => {
+      localStorage.removeItem(key);
+    });
+    this.memoryCache.clear();
+    console.log("🗑️ All caches invalidated");
+  }
+
+  triggerContentRefresh() {
+    // Dispatch custom event for components to refresh
+    window.dispatchEvent(new CustomEvent("cacheUpdated"));
+  }
+
+  showCacheStatus(status) {
+    let indicator = document.getElementById("cache-status-indicator");
 
     if (!indicator) {
-      // Create indicator if it doesn't exist
       indicator = document.createElement("div");
-      indicator.id = "sync-status-indicator";
+      indicator.id = "cache-status-indicator";
       document.body.appendChild(indicator);
     }
 
-    // Reset classes
-    indicator.className = "";
+    indicator.className = `cache-status cache-status-${status}`;
 
-    // Set state
-    if (state === "syncing") {
-      indicator.classList.add("syncing");
-      indicator.innerHTML = "⟳";
-      indicator.title = "Updating content...";
-    } else if (state === "updated") {
-      indicator.classList.add("updated");
-      indicator.innerHTML = "✓";
-      indicator.title = "Content updated!";
-    } else if (state === "error") {
-      indicator.style.cssText = `
-        position: fixed; bottom: 20px; right: 20px;
-        width: 40px; height: 40px; border-radius: 50%;
-        background: #dc3545; color: white; display: flex;
-        align-items: center; justify-content: center;
-        font-size: 1.2rem; z-index: 10000;
-      `;
-      indicator.innerHTML = "!";
-      indicator.title = "Update failed";
-    }
+    const messages = {
+      syncing: "⟳ Updating...",
+      updated: "✓ Updated",
+      error: "⚠️ Update failed",
+    };
+
+    indicator.textContent = messages[status] || "";
+    indicator.style.display = "flex";
   }
 
-  hideSyncIndicator() {
-    const indicator = document.getElementById("sync-status-indicator");
+  hideCacheStatus() {
+    const indicator = document.getElementById("cache-status-indicator");
     if (indicator) {
       indicator.style.display = "none";
-      indicator.className = "";
     }
   }
 
-  showUpdateNotification() {
-    // Optional: You can enable this for visual toast
-    // For now, just log to console
-    console.log("✅ Website content updated successfully!");
+  clearOldCaches() {
+    const now = Date.now();
+    Object.values(CACHE_CONFIG.KEYS).forEach((key) => {
+      if (key === CACHE_CONFIG.KEYS.TIMESTAMP) return;
 
-    // If you want a toast notification later, uncomment:
-    /*
-    showNotification('Content updated! New items are available.', 'success');
-    */
-  }
-}
-
-// ================== DATA SOURCE CONFIGURATION ==================
-
-const useSupabase = true; // Always use Supabase
-
-// ================== DATA LOADING FUNCTIONS ==================
-
-// Cache for menu items to reduce API calls
-let cachedMenuItems = null;
-let cacheTimestamp = null;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-
-// Load from Supabase
-async function loadFromSupabase(endpoint) {
-  try {
-    // Check if Supabase config is available
-    if (
-      !window.SUPABASE_CONFIG ||
-      !window.SUPABASE_CONFIG.URL ||
-      !window.SUPABASE_CONFIG.ANON_KEY
-    ) {
-      console.error("Supabase configuration not found in script.js");
-      return [];
-    }
-
-    const response = await fetch(
-      `${SUPABASE_CONFIG.URL}${endpoint}?select=*&order=created_at.desc`,
-      {
-        headers: {
-          apikey: SUPABASE_CONFIG.ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-          "Content-Type": "application/json",
-        },
-        cache: "no-cache",
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        try {
+          const cached = JSON.parse(stored);
+          if (now - cached.timestamp > cached.expiry * 2) {
+            // Double expiry
+            localStorage.removeItem(key);
+          }
+        } catch (e) {
+          localStorage.removeItem(key);
+        }
       }
-    );
+    });
 
-    if (!response.ok) {
-      console.warn(`Failed to load from ${endpoint}:`, response.status);
-      return [];
-    }
-
-    const data = await response.json();
-    return Array.isArray(data) ? data : [];
-  } catch (error) {
-    console.error(`Error loading from Supabase ${endpoint}:`, error);
-    return [];
+    console.log("🧹 Old caches cleaned up");
   }
 }
 
-// Get menu items with caching
-async function getMenuItems() {
-  const now = Date.now();
+// Initialize cache manager globally
+window.cacheManager = new SmartCacheManager();
 
-  if (
-    cachedMenuItems &&
-    cacheTimestamp &&
-    now - cacheTimestamp < CACHE_DURATION
-  ) {
-    return cachedMenuItems;
-  }
-
-  cachedMenuItems = await loadFromSupabase(API_ENDPOINTS.MENU);
-  cacheTimestamp = now;
-  return cachedMenuItems;
-}
-
-// ================== LOAD FEATURED ITEMS - IMPROVED VERSION ==================
+/* ==================== ENHANCED CONTENT LOADERS ==================== */
 async function loadFeaturedItems() {
   const container = document.getElementById("featured-container");
   if (!container) return;
 
-  // Show loading state immediately
-  container.innerHTML = `
-    <div class="loading-message">
-      <div class="loading-spinner"></div>
-      <p>Loading featured creations...</p>
-    </div>
-  `;
+  // Show skeleton immediately
+  container.innerHTML = this.createSkeleton("featured", 4);
 
   try {
-    const items = await loadFromSupabase(API_ENDPOINTS.FEATURED);
+    // Get cached data (instant load)
+    const items = await window.cacheManager.getCachedData(
+      CACHE_CONFIG.KEYS.FEATURED,
+      API_ENDPOINTS.FEATURED
+    );
 
     if (!items || items.length === 0) {
       container.innerHTML = `
@@ -281,19 +377,8 @@ async function loadFeaturedItems() {
       return;
     }
 
-    // Generate HTML from data
-    container.innerHTML = items
-      .map(
-        (item) => `
-          <article class="featured-item">
-            <img src="${item.image}" alt="${item.title}" loading="lazy"
-                 onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkZlYXR1cmVkPC90ZXh0Pjwvc3ZnPg==';">
-            <h4>${escapeHtml(item.title)}</h4>
-            <p>${escapeHtml(item.description)}</p>
-          </article>
-        `
-      )
-      .join("");
+    // Render with progressive enhancement
+    this.renderWithProgressiveImages(container, items, "featured");
   } catch (error) {
     console.error("Error loading featured items:", error);
     container.innerHTML = `
@@ -306,21 +391,19 @@ async function loadFeaturedItems() {
   }
 }
 
-// ================== LOAD MENU ITEMS - IMPROVED VERSION ==================
 async function loadMenuItems() {
   const container = document.getElementById("menu-container");
   if (!container) return;
 
-  // Show loading state immediately
-  container.innerHTML = `
-    <div class="loading-message">
-      <div class="loading-spinner"></div>
-      <p>Loading menu items...</p>
-    </div>
-  `;
+  // Show skeleton immediately
+  container.innerHTML = this.createSkeleton("menu", 6);
 
   try {
-    const items = await getMenuItems();
+    // Get cached data (instant load)
+    const items = await window.cacheManager.getCachedData(
+      CACHE_CONFIG.KEYS.MENU,
+      API_ENDPOINTS.MENU
+    );
 
     if (!items || items.length === 0) {
       container.innerHTML = `
@@ -333,26 +416,8 @@ async function loadMenuItems() {
       return;
     }
 
-    // Generate HTML from data
-    container.innerHTML = items
-      .map(
-        (item) => `
-          <div class="menu-item" data-item="${escapeHtml(
-            item.title
-          )}" data-price="${item.price}" data-id="${item.id || ""}">
-            <img src="${item.image}" alt="${
-          item.title
-        }" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4='">
-            <h3>${escapeHtml(item.title)}</h3>
-            <p>${escapeHtml(item.description)}</p>
-            <div class="popup">
-              <button class="add-cart">Add to Cart</button>
-              <a class="order-now" href="#">Order Now</a>
-            </div>
-          </div>
-        `
-      )
-      .join("");
+    // Render with progressive enhancement
+    this.renderWithProgressiveImages(container, items, "menu");
   } catch (error) {
     console.error("Error loading menu items:", error);
     container.innerHTML = `
@@ -365,21 +430,19 @@ async function loadMenuItems() {
   }
 }
 
-// ================== LOAD GALLERY IMAGES - IMPROVED VERSION ==================
 async function loadGalleryImages() {
   const container = document.getElementById("gallery-container");
   if (!container) return;
 
-  // Show loading state immediately
-  container.innerHTML = `
-    <div class="loading-message">
-      <div class="loading-spinner"></div>
-      <p>Loading gallery images...</p>
-    </div>
-  `;
+  // Show skeleton immediately
+  container.innerHTML = this.createSkeleton("gallery", 8);
 
   try {
-    const items = await loadFromSupabase(API_ENDPOINTS.GALLERY);
+    // Get cached data (instant load)
+    const items = await window.cacheManager.getCachedData(
+      CACHE_CONFIG.KEYS.GALLERY,
+      API_ENDPOINTS.GALLERY
+    );
 
     if (!items || items.length === 0) {
       container.innerHTML = `
@@ -392,14 +455,8 @@ async function loadGalleryImages() {
       return;
     }
 
-    // Generate HTML from data
-    container.innerHTML = items
-      .map(
-        (item) => `
-          <img src="${item.image}" alt="${item.alt}" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+='">
-        `
-      )
-      .join("");
+    // Render with progressive enhancement
+    this.renderWithProgressiveImages(container, items, "gallery");
   } catch (error) {
     console.error("Error loading gallery images:", error);
     container.innerHTML = `
@@ -412,22 +469,140 @@ async function loadGalleryImages() {
   }
 }
 
-// ================== LOAD DYNAMIC CONTENT - IMPROVED VERSION ==================
-async function loadDynamicContent(forceReload = false) {
-  const currentPage = window.location.pathname.split("/").pop() || "index.html";
+/* ==================== HELPER FUNCTIONS ==================== */
+function createSkeleton(type, count) {
+  const skeletons = [];
 
-  console.log("📱 Loading content for page:", currentPage);
-
-  // Clear any existing loading states FIRST
-  clearLoadingStates();
-
-  // Check if Supabase config exists
-  if (!window.SUPABASE_CONFIG || !window.API_ENDPOINTS) {
-    console.error("Supabase configuration not loaded");
-    showConfigError();
-    return;
+  for (let i = 0; i < count; i++) {
+    if (type === "featured") {
+      skeletons.push(`
+        <article class="featured-item skeleton">
+          <div class="skeleton-image"></div>
+          <div class="skeleton-line short"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line medium"></div>
+        </article>
+      `);
+    } else if (type === "menu") {
+      skeletons.push(`
+        <div class="menu-item skeleton">
+          <div class="skeleton-image"></div>
+          <div class="skeleton-line short"></div>
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line medium"></div>
+          <div class="skeleton-buttons"></div>
+        </div>
+      `);
+    } else if (type === "gallery") {
+      skeletons.push(`
+        <div class="skeleton-gallery-item">
+          <div class="skeleton-image"></div>
+        </div>
+      `);
+    }
   }
 
+  return skeletons.join("");
+}
+
+function renderWithProgressiveImages(container, items, type) {
+  // First pass: render HTML without images
+  const html = items
+    .map((item, index) => {
+      if (type === "featured") {
+        return `
+        <article class="featured-item" data-index="${index}">
+          <div class="image-placeholder" data-src="${
+            item.image
+          }" data-alt="${escapeHtml(item.title)}"></div>
+          <h4>${escapeHtml(item.title)}</h4>
+          <p>${escapeHtml(item.description)}</p>
+        </article>
+      `;
+      } else if (type === "menu") {
+        return `
+        <div class="menu-item" data-item="${escapeHtml(
+          item.title
+        )}" data-price="${item.price}" data-id="${
+          item.id || ""
+        }" data-index="${index}">
+          <div class="image-placeholder" data-src="${
+            item.image
+          }" data-alt="${escapeHtml(item.title)}"></div>
+          <h3>${escapeHtml(item.title)}</h3>
+          <p>${escapeHtml(item.description)}</p>
+          <div class="popup">
+            <button class="add-cart">Add to Cart</button>
+            <a class="order-now" href="#">Order Now</a>
+          </div>
+        </div>
+      `;
+      } else if (type === "gallery") {
+        return `
+        <div class="gallery-image-container" data-index="${index}">
+          <div class="image-placeholder" data-src="${
+            item.image
+          }" data-alt="${escapeHtml(item.alt)}"></div>
+        </div>
+      `;
+      }
+    })
+    .join("");
+
+  container.innerHTML = html;
+  container.classList.remove("skeleton-loading");
+
+  // Second pass: load images progressively
+  this.loadProgressiveImages(container);
+}
+
+function loadProgressiveImages(container) {
+  const placeholders = container.querySelectorAll(".image-placeholder");
+
+  placeholders.forEach((placeholder, index) => {
+    const img = new Image();
+    img.src = placeholder.dataset.src;
+    img.alt = placeholder.dataset.alt;
+    img.loading = "lazy";
+
+    img.onload = () => {
+      // Replace placeholder with actual image
+      placeholder.parentNode.replaceChild(img, placeholder);
+
+      // Add loaded class for animation
+      img.classList.add("loaded");
+
+      // Trigger custom event
+      if (index === 0) {
+        container.dispatchEvent(new CustomEvent("firstImageLoaded"));
+      }
+    };
+
+    img.onerror = () => {
+      // Use fallback image
+      img.src =
+        "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkRlZmF1bHQgSW1hZ2U8L3RleHQ+PC9zdmc+";
+      placeholder.parentNode.replaceChild(img, placeholder);
+      img.classList.add("loaded", "fallback");
+    };
+  });
+}
+
+/* ==================== LOAD DYNAMIC CONTENT - CACHE-AWARE ==================== */
+async function loadDynamicContent(forceRefresh = false) {
+  const currentPage = window.location.pathname.split("/").pop() || "index.html";
+
+  console.log(`📱 Loading content for ${currentPage} (cache-aware)`);
+
+  // Clear any existing loading states
+  clearLoadingStates();
+
+  // Force refresh if requested
+  if (forceRefresh) {
+    await window.cacheManager.refreshAllCaches();
+  }
+
+  // Load content based on page
   if (
     currentPage.includes("index") ||
     currentPage === "" ||
@@ -444,13 +619,10 @@ async function loadDynamicContent(forceReload = false) {
     await loadGalleryImages();
   }
 
-  console.log("✅ Content loading complete for:", currentPage);
+  console.log(`✅ Content loaded for: ${currentPage}`);
 }
 
-// ================== HELPER FUNCTIONS ==================
 function clearLoadingStates() {
-  console.log("🧹 Clearing loading states");
-
   const containers = [
     "featured-container",
     "menu-container",
@@ -460,31 +632,12 @@ function clearLoadingStates() {
   containers.forEach((containerId) => {
     const container = document.getElementById(containerId);
     if (container) {
-      // Only clear if it exists on this page
-      console.log(`Found container: ${containerId}`);
+      container.classList.add("skeleton-loading");
     }
   });
 }
 
-function showConfigError() {
-  const containers = document.querySelectorAll(
-    "#featured-container, #menu-container, #gallery-container"
-  );
-  containers.forEach((container) => {
-    if (container) {
-      container.innerHTML = `
-        <div class="empty-state error">
-          <i class="fas fa-exclamation-triangle"></i>
-          <p>Website configuration error.</p>
-          <p class="small">Please check config.js file.</p>
-        </div>
-      `;
-    }
-  });
-}
-
-// ================== ORIGINAL TOKE BAKES CODE ==================
-
+/* ==================== ORIGINAL FUNCTIONALITY (UPDATED) ==================== */
 const currentPage = (() => {
   const p = window.location.pathname.split("/").pop();
   return p === "" ? "index.html" : p;
@@ -517,21 +670,52 @@ function formatPrice(num) {
   return Number(num).toLocaleString("en-NG");
 }
 
-// Escape HTML for security (already defined in admin.js, but defined here too)
 function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
 }
 
-/* ================== FIXED CART VALIDATION FUNCTIONS ================== */
+/* ==================== ENHANCED NOTIFICATION ==================== */
+function showNotification(message, type = "success") {
+  const notification = document.createElement("div");
+  notification.className = `notification notification-${type}`;
+  notification.innerHTML = `
+    <div class="notification-icon">${
+      type === "success" ? "✓" : type === "error" ? "⚠" : "ℹ"
+    }</div>
+    <div class="notification-content">${message}</div>
+    <button class="notification-close">&times;</button>
+  `;
 
+  document.body.appendChild(notification);
+
+  // Close button
+  notification
+    .querySelector(".notification-close")
+    .addEventListener("click", () => {
+      notification.remove();
+    });
+
+  // Auto remove
+  setTimeout(() => {
+    if (notification.parentNode) {
+      notification.style.animation = "slideOutRight 0.3s ease-out forwards";
+      setTimeout(() => notification.remove(), 300);
+    }
+  }, 3000);
+}
+
+/* ==================== CART VALIDATION ==================== */
 async function validateCartItems() {
   try {
     const cart = readCart();
     if (cart.length === 0) return { valid: true, items: [] };
 
-    const currentMenu = await getMenuItems();
+    const currentMenu = await window.cacheManager.getCachedData(
+      CACHE_CONFIG.KEYS.MENU,
+      API_ENDPOINTS.MENU
+    );
 
     const validationResults = [];
     let hasChanges = false;
@@ -617,67 +801,7 @@ function updateCartWithValidation(validationResults) {
   return updatedCart;
 }
 
-/* ================== NOTIFICATION FUNCTION ================== */
-function showNotification(message, type = "success") {
-  // Create a simple notification element
-  const notification = document.createElement("div");
-  notification.textContent = message;
-  notification.style.cssText = `
-    position: fixed;
-    top: 25px;
-    right: 25px;
-    background: ${type === "success" ? "#4CAF50" : "#F44336"};
-    color: white;
-    padding: 1rem 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    z-index: 9999;
-    animation: slideInRight 0.3s ease-out;
-    font-family: 'Poppins', sans-serif;
-    font-weight: 500;
-    max-width: 300px;
-  `;
-
-  document.body.appendChild(notification);
-
-  // Remove after 3 seconds
-  setTimeout(() => {
-    notification.style.animation = "slideOutRight 0.3s ease-out forwards";
-    setTimeout(() => notification.remove(), 300);
-  }, 3000);
-}
-
-// Add animation keyframes for notifications
-if (!document.querySelector("#notification-styles")) {
-  const style = document.createElement("style");
-  style.id = "notification-styles";
-  style.textContent = `
-    @keyframes slideInRight {
-      from {
-        opacity: 0;
-        transform: translateX(100%);
-      }
-      to {
-        opacity: 1;
-        transform: translateX(0);
-      }
-    }
-
-    @keyframes slideOutRight {
-      from {
-        opacity: 1;
-        transform: translateX(0);
-      }
-      to {
-        opacity: 0;
-        transform: translateX(100%);
-      }
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-/* ================== ENHANCED SESSION AWARE LOADER ================== */
+/* ==================== SESSION AWARE LOADER ==================== */
 (function () {
   const loader = document.getElementById("loader");
   if (!loader) return;
@@ -692,142 +816,71 @@ if (!document.querySelector("#notification-styles")) {
     return;
   }
 
-  // Session tracking (more intelligent than daily)
-  const SESSION_KEY = "toke_bakes_session";
-  const sessionData = JSON.parse(localStorage.getItem(SESSION_KEY) || "{}");
-  const now = Date.now();
-  const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+  // Check if we have cached data - if yes, hide loader immediately
+  const hasCachedData =
+    localStorage.getItem(CACHE_CONFIG.KEYS.FEATURED) ||
+    localStorage.getItem(CACHE_CONFIG.KEYS.MENU) ||
+    localStorage.getItem(CACHE_CONFIG.KEYS.GALLERY);
 
-  // Check if user is in an active "session"
-  const hasActiveSession =
-    sessionData.timestamp && now - sessionData.timestamp < SESSION_TIMEOUT;
-
-  if (hasActiveSession) {
-    // User is in active session (visited within 30 minutes)
+  if (hasCachedData) {
     loader.style.display = "none";
-    console.log("🔁 Active session - seamless experience");
-  } else {
-    // New session or session expired
-    sessionData.timestamp = now;
-    sessionData.visitCount = (sessionData.visitCount || 0) + 1;
-    localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData));
-
-    // Show loader on first 2 visits, then never again
-    if (sessionData.visitCount <= 2) {
-      window.addEventListener("load", () => {
-        // Shorter loader on second visit
-        const duration = sessionData.visitCount === 1 ? 1200 : 600;
-
-        setTimeout(() => {
-          loader.style.opacity = "0";
-          setTimeout(() => (loader.style.display = "none"), 800);
-        }, duration);
-      });
-    } else {
-      // Experienced user - no loader at all
-      loader.style.display = "none";
-    }
+    return;
   }
 
-  // Update session timestamp on user activity
-  ["click", "scroll", "mousemove", "keypress"].forEach((event) => {
-    document.addEventListener(
-      event,
-      () => {
-        const updatedData = JSON.parse(
-          localStorage.getItem(SESSION_KEY) || "{}"
-        );
-        updatedData.timestamp = Date.now();
-        localStorage.setItem(SESSION_KEY, JSON.stringify(updatedData));
-      },
-      { passive: true }
-    );
-  });
+  // Show loader only on first visit
+  const SESSION_KEY = "toke_bakes_visit_count";
+  const visitCount = parseInt(localStorage.getItem(SESSION_KEY) || "0");
+
+  if (visitCount < 2) {
+    localStorage.setItem(SESSION_KEY, (visitCount + 1).toString());
+
+    window.addEventListener("load", () => {
+      const duration = visitCount === 0 ? 1200 : 600;
+
+      setTimeout(() => {
+        loader.style.opacity = "0";
+        setTimeout(() => (loader.style.display = "none"), 800);
+      }, duration);
+    });
+  } else {
+    loader.style.display = "none";
+  }
 })();
 
-/* ================== BULLETPROOF NAV HIGHLIGHT ================== */
+/* ==================== NAV HIGHLIGHT ==================== */
 (function highlightNav() {
-  // Skip navigation highlighting on admin pages
   if (
     window.location.pathname.includes("admin") ||
     document.querySelector(".admin-dashboard") ||
     document.querySelector(".admin-login-container")
   ) {
-    console.log("⏭️ Skipping nav highlight on admin page");
     return;
   }
 
   const navLinks = document.querySelectorAll("nav a");
+  const currentPage = window.location.pathname.split("/").pop() || "index";
 
-  // Get current location info
-  const loc = {
-    href: window.location.href.toLowerCase(),
-    pathname: window.location.pathname.toLowerCase(),
-    hostname: window.location.hostname,
-  };
-
-  // Determine if we're local or online
-  const isLocal =
-    loc.hostname === "localhost" || loc.href.startsWith("file://");
-
-  // Parse current page
-  let currentPage = loc.pathname.split("/").pop() || "index";
-  currentPage = currentPage.replace(/\.(html|htm)$/, "").split("?")[0];
-  if (currentPage === "") currentPage = "index";
-
-  console.log(
-    `Nav Debug: Current page="${currentPage}", Path="${loc.pathname}", Local=${isLocal}`
-  );
-
-  navLinks.forEach((link, index) => {
+  navLinks.forEach((link) => {
     const href = link.getAttribute("href");
     if (!href) return;
 
-    // Parse link page
     let linkPage = href.split("/").pop() || "index";
     linkPage = linkPage.replace(/\.(html|htm)$/, "").split("?")[0];
     if (linkPage === "") linkPage = "index";
 
-    // Reset
     link.classList.remove("active");
 
-    // LOGIC THAT WORKS EVERYWHERE:
-
-    // 1. Home page check
     if (linkPage === "index" && currentPage === "index") {
       link.classList.add("active");
-      console.log(`✓ Link ${index} (${href}) activated as HOME`);
-      return;
-    }
-
-    // 2. Direct match
-    if (linkPage === currentPage && linkPage !== "index") {
+    } else if (linkPage === currentPage.replace(/\.(html|htm)$/, "")) {
       link.classList.add("active");
-      console.log(`✓ Link ${index} (${href}) activated as DIRECT MATCH`);
-      return;
-    }
-
-    // 3. For online (Netlify) - check if current path contains page name
-    if (!isLocal && loc.pathname.includes(linkPage) && linkPage !== "index") {
+    } else if (currentPage.includes(linkPage) && linkPage !== "index") {
       link.classList.add("active");
-      console.log(`✓ Link ${index} (${href}) activated as PATH CONTAINS`);
-      return;
     }
-
-    // 4. For local - check full path
-    if (isLocal && loc.href.endsWith(href)) {
-      link.classList.add("active");
-      console.log(`✓ Link ${index} (${href}) activated as LOCAL MATCH`);
-      return;
-    }
-
-    console.log(`✗ Link ${index} (${href}) NOT activated`);
   });
-
-  console.log("--- Navigation Highlight Complete ---");
 })();
 
-/* ================== FIXED CART COUNT - NO ZERO FLASH ================== */
+/* ==================== CART COUNT ==================== */
 function refreshCartCount() {
   const countEls = document.querySelectorAll("#cart-count");
   const cart = readCart();
@@ -837,7 +890,6 @@ function refreshCartCount() {
     el.textContent = totalItems;
     el.setAttribute("data-count", String(totalItems));
 
-    // FIX: Hide immediately if zero
     if (totalItems === 0) {
       el.style.display = "none";
     } else {
@@ -846,40 +898,46 @@ function refreshCartCount() {
   });
 }
 
-/* ================== MOBILE MENU ================== */
+/* ==================== MOBILE MENU ==================== */
 function initMobileMenu() {
   const toggleBtn = document.getElementById("navbarToggle");
   const navList = document.querySelector(".navbar ul");
 
   if (toggleBtn && navList) {
-    toggleBtn.addEventListener("click", (e) => {
+    const newToggle = toggleBtn.cloneNode(true);
+    toggleBtn.parentNode.replaceChild(newToggle, toggleBtn);
+
+    const newNavList = navList.cloneNode(true);
+    navList.parentNode.replaceChild(newNavList, navList);
+
+    const freshToggle = document.getElementById("navbarToggle");
+    const freshNavList = document.querySelector(".navbar ul");
+
+    freshToggle.addEventListener("click", (e) => {
       e.stopPropagation();
-      navList.classList.toggle("show");
+      freshNavList.classList.toggle("show");
     });
 
-    // Close when clicking outside
     document.addEventListener("click", (e) => {
       if (
-        navList.classList.contains("show") &&
+        freshNavList.classList.contains("show") &&
         !e.target.closest(".navbar") &&
         !e.target.closest("#navbarToggle")
       ) {
-        navList.classList.remove("show");
+        freshNavList.classList.remove("show");
       }
     });
 
-    // Close when clicking links
     document.querySelectorAll(".navbar a").forEach((link) => {
       link.addEventListener("click", () => {
-        navList.classList.remove("show");
+        freshNavList.classList.remove("show");
       });
     });
   }
 }
 
-/* ================== FIXED MENU INTERACTIONS ================== */
+/* ==================== MENU INTERACTIONS ==================== */
 function initMenuInteractions() {
-  // Close popups when clicking outside
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".menu-item")) {
       document.querySelectorAll(".menu-item.show-popup").forEach((el) => {
@@ -888,7 +946,6 @@ function initMenuInteractions() {
     }
   });
 
-  // Menu item click handling
   document.addEventListener("click", (e) => {
     const menuItem = e.target.closest(".menu-item");
     if (!menuItem) return;
@@ -902,7 +959,6 @@ function initMenuInteractions() {
     if (!isShown) menuItem.classList.add("show-popup");
   });
 
-  // Add to cart functionality
   document.addEventListener("click", (e) => {
     const addBtn = e.target.closest(".add-cart");
     if (!addBtn) return;
@@ -934,9 +990,8 @@ function initMenuInteractions() {
   });
 }
 
-/* ================== ORDER FUNCTIONALITY ================== */
+/* ==================== ORDER FUNCTIONALITY ==================== */
 function initOrderFunctionality() {
-  // Order now buttons
   document.addEventListener("click", (e) => {
     const orderNow = e.target.closest(".order-now");
     if (!orderNow) return;
@@ -958,7 +1013,6 @@ function initOrderFunctionality() {
     showOrderOptions(orderData);
   });
 
-  // Proceed to order button
   document.addEventListener("click", async (e) => {
     if (!e.target || e.target.id !== "proceed-order") return;
 
@@ -1054,7 +1108,6 @@ function showOrderOptions(orderData) {
   sheet.classList.add("visible");
 }
 
-// Bottom sheet functionality
 function initBottomSheet() {
   if (document.getElementById("order-bottom-sheet")) return;
 
@@ -1075,7 +1128,6 @@ function initBottomSheet() {
   `;
   document.body.insertAdjacentHTML("beforeend", html);
 
-  // Sheet event listeners
   document.addEventListener("click", (e) => {
     const sheet = document.getElementById("order-bottom-sheet");
     if (!sheet) return;
@@ -1178,7 +1230,7 @@ function initBottomSheet() {
   });
 }
 
-/* ================== FIXED CART QUANTITY FUNCTION ================== */
+/* ==================== CART RENDERING ==================== */
 async function renderCartOnOrderPage(shouldValidate = true) {
   const cartContainer = document.getElementById("cart-container");
   if (!cartContainer) return;
@@ -1186,7 +1238,6 @@ async function renderCartOnOrderPage(shouldValidate = true) {
   let validation = null;
   let cart = readCart();
 
-  // Only validate on initial load
   if (shouldValidate) {
     validation = await validateCartItems();
     cart = updateCartWithValidation(validation.results);
@@ -1203,7 +1254,6 @@ async function renderCartOnOrderPage(shouldValidate = true) {
     return;
   }
 
-  // Show clear cart button
   const clearCartBtn = document.getElementById("clear-cart");
   if (clearCartBtn) {
     clearCartBtn.style.display = "block";
@@ -1215,13 +1265,11 @@ async function renderCartOnOrderPage(shouldValidate = true) {
     };
   }
 
-  // Render cart items
   cart.forEach((item, index) => {
     const row = document.createElement("div");
     row.className = "cart-row";
     row.dataset.index = index;
 
-    // Check if item is unavailable
     const isUnavailable = item.unavailable;
 
     row.innerHTML = `
@@ -1262,20 +1310,16 @@ async function renderCartOnOrderPage(shouldValidate = true) {
     cartContainer.appendChild(row);
   });
 
-  // Add event listeners
   setupCartEventListeners();
 }
 
-/* ================== FIXED CART EVENT HANDLING ================== */
 function setupCartEventListeners() {
   const cartContainer = document.getElementById("cart-container");
   if (!cartContainer) return;
 
-  // Remove old listeners to prevent duplicates
   cartContainer.replaceWith(cartContainer.cloneNode(true));
   const freshContainer = document.getElementById("cart-container");
 
-  // Add fresh event listener
   freshContainer.addEventListener("click", function (e) {
     const target = e.target;
     const row = target.closest(".cart-row");
@@ -1287,7 +1331,6 @@ function setupCartEventListeners() {
 
     if (isNaN(index) || index < 0 || index >= cart.length) return;
 
-    // Handle quantity buttons
     if (target.classList.contains("qty-btn")) {
       e.preventDefault();
       e.stopPropagation();
@@ -1295,7 +1338,6 @@ function setupCartEventListeners() {
       if (target.classList.contains("increase")) {
         cart[index].quantity = (cart[index].quantity || 1) + 1;
       } else if (target.classList.contains("decrease")) {
-        // Only decrease if quantity is greater than 1
         if (cart[index].quantity > 1) {
           cart[index].quantity = cart[index].quantity - 1;
         }
@@ -1305,7 +1347,6 @@ function setupCartEventListeners() {
       renderCartOnOrderPage(false);
     }
 
-    // Handle remove button
     if (target.classList.contains("remove-item")) {
       e.preventDefault();
       e.stopPropagation();
@@ -1318,7 +1359,7 @@ function setupCartEventListeners() {
   });
 }
 
-/* ================== RIPPLE EFFECT ================== */
+/* ==================== RIPPLE EFFECT ==================== */
 function initRipple(selector) {
   document.addEventListener(
     "click",
@@ -1342,29 +1383,21 @@ function initRipple(selector) {
   );
 }
 
-// Initialize when DOM is loaded
+/* ==================== INITIALIZATION ==================== */
 document.addEventListener("DOMContentLoaded", async () => {
-  console.log("🚀 Initializing Toke Bakes with Enhanced Sync...");
-  // Load cart first to prevent flash
+  console.log("🚀 Initializing Toke Bakes with Intelligent Caching...");
+
+  // Load cart first
   refreshCartCount();
 
-  // STEP 2: Initialize sync system FIRST (IMPORTANT!)
-  window.websiteUpdater = new WebsiteAutoUpdater();
-
-  // STEP 3: Tiny delay for sync to initialize (using requestAnimationFrame - faster)
-  await new Promise((resolve) => requestAnimationFrame(resolve));
-
-  // STEP 4: NOW load cart (after sync is ready)
-  refreshCartCount();
-
-  // STEP 5: Load dynamic content
+  // Load content with cache
   try {
     await loadDynamicContent();
   } catch (error) {
     console.error("Failed to load initial content:", error);
   }
 
-  // STEP 6: Initialize everything else
+  // Initialize everything else
   initMobileMenu();
   initMenuInteractions();
   initOrderFunctionality();
@@ -1383,10 +1416,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     yearElement.textContent = new Date().getFullYear();
   }
 
-  console.log("✅ Toke Bakes fully initialized with enhanced sync");
+  // Listen for cache updates
+  window.addEventListener("cacheUpdated", () => {
+    console.log("🔄 Cache update detected, refreshing content...");
+    loadDynamicContent();
+
+    // Refresh cart if on order page
+    if (currentPage.includes("order")) {
+      renderCartOnOrderPage(true);
+    }
+  });
+
+  console.log("✅ Toke Bakes fully initialized with intelligent caching");
 });
 
-// Global event listener for clear cart button (fallback)
+// Global event listener for clear cart button
 document.addEventListener("click", (e) => {
   if (e.target && e.target.id === "clear-cart") {
     e.preventDefault();

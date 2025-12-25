@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Toke Bakes - Offline</title>
+    <link rel="stylesheet" href="styles/style.css" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+  </head>
+  <body>
+    <div class="offline-container">
+      <div class="offline-content">
+        <i class="fas fa-wifi-slash fa-4x"></i>
+        <h1>You're Offline</h1>
+        <p>
+          Don't worry! You can still browse our menu and gallery using cached
+          content.
+        </p>
+        <p>Connect to the internet to see the latest updates.</p>
+        <a href="index.html" class="btn">Go to Homepage</a>
+      </div>
+    </div>
+
+    <style>
+      .offline-container {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: linear-gradient(135deg, #ffe5cc 0%, #fff9f0 100%);
+      }
+
+      .offline-content {
+        text-align: center;
+        max-width: 500px;
+        padding: 3rem;
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+      }
+
+      .offline-content i {
+        color: #ff9800;
+        margin-bottom: 2rem;
+      }
+
+      .offline-content h1 {
+        color: #333;
+        margin-bottom: 1rem;
+      }
+
+      .offline-content p {
+        color: #666;
+        margin-bottom: 1rem;
+        line-height: 1.6;
+      }
+
+      .offline-content .btn {
+        margin-top: 2rem;
+      }
+    </style>
+  </body>
+</html>
