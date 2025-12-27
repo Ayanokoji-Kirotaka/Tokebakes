@@ -1476,7 +1476,7 @@ async function secureRequest(
 
 // Load data with caching
 const dataCache = new Map();
-const CACHE_TTL = 60000; // 1 minute
+const CACHE_TTL = 300000; // 1 minute
 
 async function loadDataFromSupabase(endpoint, id = null, forceRefresh = false) {
   const cacheKey = id ? `${endpoint}_${id}` : endpoint;

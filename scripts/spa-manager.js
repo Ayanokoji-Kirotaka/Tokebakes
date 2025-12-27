@@ -1,15 +1,14 @@
-/* ==================== spa-manager.js - CACHE-AWARE VERSION ==================== */
+/* Fixed SPA Manager with proper reinitialization of all components */
 
 class SPAManager {
   constructor() {
     this.currentPage = window.location.pathname;
     this.isTransitioning = false;
-    this.cachePreloader = new Set();
     this.init();
   }
 
   init() {
-    console.log("🚀 Initializing Cache-Aware SPA Manager...");
+    console.log("🚀 Initializing Enhanced SPA Manager...");
 
     // Setup link interception
     setTimeout(() => this.setupLinkInterception(), 100);
@@ -18,63 +17,6 @@ class SPAManager {
     window.addEventListener("popstate", () => {
       if (!this.isTransitioning) {
         this.loadPage(window.location.pathname);
-      }
-    });
-
-    // Setup cache preloading
-    this.setupCachePreloading();
-  }
-
-  setupCachePreloading() {
-    // Prefetch likely next pages based on current page
-    const preloadMap = {
-      "index.html": ["menu.html", "gallery.html"],
-      "menu.html": ["order.html", "index.html"],
-      "gallery.html": ["index.html", "menu.html"],
-      "order.html": ["menu.html", "index.html"],
-    };
-
-    const currentPage =
-      window.location.pathname.split("/").pop() || "index.html";
-    const toPreload = preloadMap[currentPage] || ["index.html", "menu.html"];
-
-    toPreload.forEach((page) => {
-      if (!this.cachePreloader.has(page)) {
-        this.cachePreloader.add(page);
-        this.prefetchPage(page);
-      }
-    });
-  }
-
-  async prefetchPage(url) {
-    try {
-      // Fetch the page in background
-      const response = await fetch(url);
-      if (response.ok) {
-        const html = await response.text();
-
-        // Parse and extract content
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, "text/html");
-
-        // Cache images from the page
-        this.prefetchImages(doc);
-
-        console.log(`📦 Prefetched ${url}`);
-      }
-    } catch (error) {
-      // Silent fail for prefetching
-    }
-  }
-
-  prefetchImages(doc) {
-    const images = doc.querySelectorAll("img[src]");
-    images.forEach((img) => {
-      const imageUrl = img.src;
-      if (imageUrl && !imageUrl.startsWith("data:")) {
-        // Create invisible image to cache it
-        const preloadImg = new Image();
-        preloadImg.src = imageUrl;
       }
     });
   }
@@ -101,28 +43,8 @@ class SPAManager {
       }
 
       e.preventDefault();
-
-      // Pre-cache the target page's data
-      this.precachePageData(href);
-
       this.navigateTo(href);
     });
-  }
-
-  precachePageData(pageUrl) {
-    // Determine what data to precache based on target page
-    const page = pageUrl.split("/").pop() || "index.html";
-
-    if (page.includes("menu") && window.cacheManager) {
-      // Ensure menu data is fresh
-      setTimeout(() => {
-        window.cacheManager.fetchAndCache(
-          API_ENDPOINTS.MENU,
-          CACHE_CONFIG.KEYS.MENU,
-          CACHE_CONFIG.EXPIRY.MENU
-        );
-      }, 100);
-    }
   }
 
   async navigateTo(url) {
@@ -159,15 +81,13 @@ class SPAManager {
         document.title = newContent.title;
       }
 
-      // REINITIALIZE EVERYTHING
+      // REINITIALIZE EVERYTHING - CRITICAL FIX
       this.reinitializePage();
-
-      // Setup new preloading
-      this.setupCachePreloading();
 
       console.log(`✅ SPA navigation complete: ${url}`);
     } catch (error) {
       console.error("SPA navigation failed:", error);
+      // Fallback to full page load
       window.location.href = url;
       return;
     } finally {
@@ -214,8 +134,13 @@ class SPAManager {
   reinitializePage() {
     console.log("🔄 Reinitializing page components after SPA navigation...");
 
+    // Small delay to ensure DOM is ready
     setTimeout(() => {
       try {
+        // Reset initialization flags to allow re-initialization on new pages
+        window.menuInteractionsInitialized = false;
+        window.orderFunctionalityInitialized = false;
+
         // 1. Reinitialize carousel if on homepage
         this.reinitCarousel();
 
@@ -273,11 +198,13 @@ class SPAManager {
 
     console.log("🔄 Reinitializing carousel...");
 
+    // Destroy existing carousel if it exists
     if (window.heroCarousel) {
       window.heroCarousel.stopAutoPlay();
       window.heroCarousel = null;
     }
 
+    // Initialize new carousel
     if (typeof HeroCarousel === "function") {
       window.heroCarousel = new HeroCarousel();
     } else if (typeof initializeCarousel === "function") {
@@ -297,12 +224,14 @@ class SPAManager {
       return;
     }
 
+    // Remove old event listeners by cloning and replacing
     const newToggle = toggleBtn.cloneNode(true);
     toggleBtn.parentNode.replaceChild(newToggle, toggleBtn);
 
     const newNavList = navList.cloneNode(true);
     navList.parentNode.replaceChild(newNavList, navList);
 
+    // Reinitialize mobile menu functionality
     const freshToggle = document.getElementById("navbarToggle");
     const freshNavList = document.querySelector(".navbar ul");
 
@@ -312,6 +241,7 @@ class SPAManager {
         freshNavList.classList.toggle("show");
       });
 
+      // Close when clicking outside
       document.addEventListener("click", (e) => {
         if (
           freshNavList.classList.contains("show") &&
@@ -322,6 +252,7 @@ class SPAManager {
         }
       });
 
+      // Close when clicking links
       document.querySelectorAll(".navbar a").forEach((link) => {
         link.addEventListener("click", () => {
           freshNavList.classList.remove("show");
@@ -340,17 +271,21 @@ class SPAManager {
       return;
     }
 
+    // Clone and replace to remove old event listeners
     const newToggle = themeToggle.cloneNode(true);
     themeToggle.parentNode.replaceChild(newToggle, themeToggle);
 
+    // Get fresh reference
     const freshToggle = document.getElementById("themeToggle");
 
+    // Check if ThemeManager exists
     if (
       window.ThemeManager &&
       typeof window.ThemeManager.setupModeToggle === "function"
     ) {
       window.ThemeManager.setupModeToggle();
     } else {
+      // Fallback manual initialization
       this.initThemeToggleFallback(freshToggle);
     }
   }
@@ -362,6 +297,7 @@ class SPAManager {
     const sunIcon = themeToggle.querySelector(".sun");
     const moonIcon = themeToggle.querySelector(".moon");
 
+    // Function to update icons based on theme
     const updateIcons = (theme) => {
       if (theme === "dark") {
         if (sunIcon) sunIcon.style.display = "none";
@@ -374,10 +310,12 @@ class SPAManager {
       }
     };
 
+    // Initial icon setup
     const currentTheme =
       localStorage.getItem("toke_bakes_theme_mode") || "light";
     updateIcons(currentTheme);
 
+    // Click handler
     themeToggle.addEventListener("click", (e) => {
       e.preventDefault();
 
@@ -385,18 +323,23 @@ class SPAManager {
         document.documentElement.getAttribute("data-theme") || "light";
       const newTheme = current === "dark" ? "light" : "dark";
 
+      // Update document attribute
       document.documentElement.setAttribute("data-theme", newTheme);
 
+      // Update icons
       updateIcons(newTheme);
 
+      // Save to localStorage
       localStorage.setItem("toke_bakes_theme_mode", newTheme);
 
+      // Update footer theme
       this.updateFooterTheme(newTheme);
 
       console.log(`🌓 Theme mode changed to ${newTheme}`);
     });
   }
 
+  // Update footer theme (separate from ThemeManager)
   updateFooterTheme(theme) {
     const footer = document.querySelector(".bakes-footer");
     if (!footer) {
@@ -428,6 +371,7 @@ class SPAManager {
 
       link.classList.remove("active");
 
+      // Check for home page
       if (
         (linkPage === "index" ||
           linkPage === "" ||
@@ -437,7 +381,9 @@ class SPAManager {
           currentPage === "index.html")
       ) {
         link.classList.add("active");
-      } else if (
+      }
+      // Check for other pages
+      else if (
         linkPage.replace(".html", "") === currentPage.replace(".html", "")
       ) {
         link.classList.add("active");
@@ -445,6 +391,7 @@ class SPAManager {
     });
   }
 
+  // Load a specific page (for popstate)
   async loadPage(path) {
     if (this.isTransitioning) return;
     this.navigateTo(path);
@@ -458,23 +405,4 @@ if (document.readyState === "loading") {
   });
 } else {
   window.spaManager = new SPAManager();
-}
-
-/* ================== EMERGENCY PATCH ================== */
-if (typeof initFooterTheme === "undefined") {
-  window.initFooterTheme = function () {
-    /* Function removed */
-  };
-}
-
-if (typeof updateFooterTheme === "undefined") {
-  window.updateFooterTheme = function () {
-    /* Function removed */
-  };
-}
-
-if (typeof initThemeToggle === "undefined") {
-  window.initThemeToggle = function () {
-    /* Function removed - handled by theme-manager.js */
-  };
 }

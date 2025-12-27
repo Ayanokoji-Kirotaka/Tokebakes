@@ -4,25 +4,110 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Add these meta tags if not already present -->
-    <meta name="theme-color" content="#FFE5CC" />
-    <link rel="manifest" href="manifest.json" crossorigin="use-credentials" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta
-      name="apple-mobile-web-app-status-bar-style"
-      content="black-translucent"
-    />
-    <meta name="apple-mobile-web-app-title" content="Toke Bakes" />
-
-    <!-- Service Worker Script -->
-    <script src="scripts/service-worker-manager.js" defer></script>
     <title>Privacy Policy — Toke Bakes</title>
+    <script>
+      // Prevent theme flashing by applying saved theme immediately
+      const savedMode = localStorage.getItem('toke_bakes_theme_mode') || 'light';
+      document.documentElement.setAttribute('data-theme', savedMode);
+    </script>
+    <style>
+      /* Prevent FOUC for navbar links */
+      .navbar a {
+        color: #333;
+        text-decoration: none;
+        transition: color 0.3s ease;
+      }
+      [data-theme="dark"] .navbar a {
+        color: #fff;
+      }
+      /* Critical CSS for header and navbar */
+      header {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.95);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+      }
+      [data-theme="dark"] header {
+        background: rgba(45, 45, 45, 0.95);
+      }
+      .header-inner {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 1rem 1.25rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .navbar {
+        display: flex;
+        align-items: center;
+        gap: 1.25rem;
+      }
+      .navbar ul {
+        display: flex;
+        list-style: none;
+        gap: 1.75rem;
+        margin: 0;
+        padding: 0;
+        align-items: center;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      .brand h1 {
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+      .logo-sm {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        object-fit: cover;
+      }
+      /* Font Awesome icons inline */
+      .fa {
+        font-family: "Font Awesome 6 Free";
+        font-style: normal;
+        font-variant: normal;
+        text-rendering: auto;
+        -webkit-font-smoothing: antialiased;
+      }
+      .fa-solid {
+        font-weight: 900;
+      }
+      .fa-shopping-cart::before {
+        content: "\f07a";
+      }
+      .fa-sun::before {
+        content: "\f185";
+      }
+      .fa-moon::before {
+        content: "\f186";
+      }
+      .fa-bars::before {
+        content: "\f0c9";
+      }
+    </style>
     <link rel="icon" href="images/logo.webp" type="image/webp" />
-    <link id="theme-stylesheet" rel="stylesheet" href="styles/style.css" />
+    <link
+      rel="preload"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-solid-900.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin="anonymous"
+    />
+    <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
     />
+    <link id="theme-stylesheet" rel="stylesheet" href="styles/style.css" />
+    <script src="scripts/config.js"></script>
+    <script src="scripts/theme-manager.js"></script>
   </head>
   <body>
     <!-- Header -->
@@ -35,9 +120,9 @@
         <nav class="navbar">
           <!-- Navigation links (visible on desktop) -->
           <ul>
-            <li><a href="index.html">Home</a></li>
-            <li><a href="menu.html">Menu</a></li>
-            <li><a href="gallery.html">Gallery</a></li>
+            <li><a href="index.html" style="text-decoration: none;">Home</a></li>
+            <li><a href="menu.html" style="text-decoration: none;">Menu</a></li>
+            <li><a href="gallery.html" style="text-decoration: none;">Gallery</a></li>
           </ul>
 
           <!-- Cart -->
@@ -131,19 +216,13 @@
       </div>
     </footer>
 
-    <script src="scripts/config.js"></script>
-    <script src="scripts/theme-manager.js"></script>
+
+
+
+
+
     <script src="scripts/spa-manager.js"></script>
     <script src="scripts/script.js"></script>
-
-    <!-- Add before closing body tag -->
-    <div
-      id="cache-status-indicator"
-      class="cache-status"
-      style="display: none"
-    ></div>
-    <div id="offline-indicator" class="offline-indicator" style="display: none">
-      <i class="fas fa-wifi"></i> You're offline. Some features may be limited.
-    </div>
-  </body>
+</body>
+</body>
 </html>
