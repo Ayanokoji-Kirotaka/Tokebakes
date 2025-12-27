@@ -1044,9 +1044,9 @@ function initMenuInteractions() {
   if (window.menuInteractionsInitialized) return;
   window.menuInteractionsInitialized = true;
 
-  // Handle both click and touch events for better mobile support
-  const handleInteraction = (e) => {
-    // Close popups when clicking/tapping outside
+  // Handle click events for menu items
+  document.addEventListener("click", function (e) {
+    // Close all popups when clicking outside menu items
     if (!e.target.closest(".menu-item")) {
       document.querySelectorAll(".menu-item.show-popup").forEach((el) => {
         el.classList.remove("show-popup");
@@ -1057,10 +1057,10 @@ function initMenuInteractions() {
     const menuItem = e.target.closest(".menu-item");
     if (!menuItem) return;
 
-    // Handle add to cart
+    // Handle add to cart button
     const addBtn = e.target.closest(".add-cart");
     if (addBtn) {
-      e.stopPropagation();
+      e.preventDefault(); // Keep this, but remove stopPropagation
 
       const name = (
         menuItem.dataset.item ||
@@ -1082,21 +1082,26 @@ function initMenuInteractions() {
       }
       saveCart(cart);
 
+      // Visual feedback for adding to cart
       const prevText = addBtn.textContent;
       addBtn.textContent = "Added ✓";
+      addBtn.style.backgroundColor = "#4CAF50";
       addBtn.disabled = true;
+
       setTimeout(() => {
         addBtn.textContent = prevText;
+        addBtn.style.backgroundColor = "#e67a00";
         addBtn.disabled = false;
-      }, 900);
+      }, 1500);
+
+      // DON'T RETURN HERE - let the click continue to ripple function
       return;
     }
 
-    // Handle order now
+    // Handle order now button
     const orderNow = e.target.closest(".order-now");
     if (orderNow) {
-      e.preventDefault();
-      e.stopPropagation();
+      e.preventDefault(); // Keep this, but remove stopPropagation
 
       const name = (
         menuItem.dataset.item ||
@@ -1111,23 +1116,44 @@ function initMenuInteractions() {
       };
 
       showOrderOptions(orderData);
+      // DON'T RETURN HERE - let the click continue to ripple function
       return;
     }
 
-    // Prevent toggle if clicking on popup area
+    // Don't toggle popup if clicking on the popup itself
     if (e.target.closest(".popup")) return;
 
-    // Toggle popup
+    // Toggle the popup for this menu item
     const isShown = menuItem.classList.contains("show-popup");
-    document
-      .querySelectorAll(".menu-item")
-      .forEach((i) => i.classList.remove("show-popup"));
-    if (!isShown) menuItem.classList.add("show-popup");
-  };
 
-  // Add both click and touch event listeners
-  document.addEventListener("click", handleInteraction);
-  document.addEventListener("touchend", handleInteraction, { passive: true });
+    // Close all other popups
+    document.querySelectorAll(".menu-item").forEach((item) => {
+      if (item !== menuItem) {
+        item.classList.remove("show-popup");
+      }
+    });
+
+    // Toggle current item's popup
+    if (isShown) {
+      menuItem.classList.remove("show-popup");
+    } else {
+      menuItem.classList.add("show-popup");
+    }
+  });
+
+  // Also add touch events for better mobile support
+  document.addEventListener(
+    "touchstart",
+    function (e) {
+      // Close popups when touching outside
+      if (!e.target.closest(".menu-item")) {
+        document.querySelectorAll(".menu-item.show-popup").forEach((el) => {
+          el.classList.remove("show-popup");
+        });
+      }
+    },
+    { passive: true }
+  );
 }
 
 /* ================== ORDER FUNCTIONALITY ================== */
@@ -1444,6 +1470,30 @@ async function renderCartOnOrderPage(shouldValidate = true) {
   setupCartEventListeners();
 }
 
+/* ================== RIPPLE EFFECT ================== */
+function initRipple(selector) {
+  document.addEventListener(
+    "click",
+    function (e) {
+      const el = e.target.closest(selector);
+      if (!el) return;
+
+      const rect = el.getBoundingClientRect();
+      const ripple = document.createElement("span");
+      ripple.className = "ripple-effect";
+      const size = Math.max(rect.width, rect.height) * 1.2;
+      ripple.style.width = ripple.style.height = size + "px";
+      ripple.style.left = e.clientX - rect.left - size / 2 + "px";
+      ripple.style.top = e.clientY - rect.top - size / 2 + "px";
+
+      el.style.position = el.style.position || "relative";
+      el.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 600);
+    },
+    { passive: true }
+  );
+}
+
 /* ================== FIXED CART EVENT HANDLING ================== */
 function setupCartEventListeners() {
   const cartContainer = document.getElementById("cart-container");
@@ -1496,35 +1546,9 @@ function setupCartEventListeners() {
   });
 }
 
-/* ================== RIPPLE EFFECT ================== */
-function initRipple(selector) {
-  document.addEventListener(
-    "click",
-    function (e) {
-      const el = e.target.closest(selector);
-      if (!el) return;
-
-      const rect = el.getBoundingClientRect();
-      const ripple = document.createElement("span");
-      ripple.className = "ripple-effect";
-      const size = Math.max(rect.width, rect.height) * 1.2;
-      ripple.style.width = ripple.style.height = size + "px";
-      ripple.style.left = e.clientX - rect.left - size / 2 + "px";
-      ripple.style.top = e.clientY - rect.top - size / 2 + "px";
-
-      el.style.position = el.style.position || "relative";
-      el.appendChild(ripple);
-      setTimeout(() => ripple.remove(), 600);
-    },
-    { passive: true }
-  );
-}
-
 // Initialize when DOM is loaded
 document.addEventListener("DOMContentLoaded", async () => {
   console.log("🚀 Initializing Toke Bakes with Enhanced Sync...");
-  // Load cart first to prevent flash
-  refreshCartCount();
 
   // STEP 2: Initialize sync system FIRST (IMPORTANT!)
   window.websiteUpdater = new WebsiteAutoUpdater();
@@ -1544,11 +1568,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // STEP 6: Initialize everything else
   initMobileMenu();
+  initThemeToggle();
+  initFooterTheme();
   initMenuInteractions();
   initOrderFunctionality();
   initBottomSheet();
+
+  // Initialize ripple - EXACT WORKING SELECTOR
   initRipple(
-    ".btn, .add-cart, .order-now, .qty-controls button, .order-option-btn, .remove-item .theme-toggle"
+    ".btn, .add-cart, .order-now, .qty-btn, .order-option-btn, .remove-item, .theme-toggle"
   );
 
   if (currentPage.includes("order")) {
@@ -1561,7 +1589,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     yearElement.textContent = new Date().getFullYear();
   }
 
-  console.log("✅ Toke Bakes fully initialized with enhanced sync");
+  console.log("✅ Toke Bakes fully initialized");
 });
 
 // Global event listener for clear cart button (fallback)

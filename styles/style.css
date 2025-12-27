@@ -1245,10 +1245,10 @@ header {
   align-items: center;
 }
 
-.menu-item.show-popup,
+/* .menu-item.show-popup,
 .cms-menu-item.show-popup {
   overflow: visible;
-}
+} */
 
 .menu-item .add-cart,
 .menu-item .order-now,
@@ -1883,7 +1883,8 @@ header {
 .btn,
 .add-cart,
 .order-now,
-.order-option-btn {
+.order-option-btn,
+.menu-item {
   position: relative;
   overflow: hidden;
 }
