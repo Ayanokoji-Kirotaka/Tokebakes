@@ -2,8 +2,11 @@
 
 class SPAManager {
   constructor() {
-    this.currentPage = window.location.pathname;
+    this.currentPage = this.normalizeUrl(window.location.pathname).key;
     this.isTransitioning = false;
+    this.pageTransitionMs = 200;
+    this.progressEl = null;
+    this.pageCache = new Map();
     this.init();
   }
 
@@ -11,7 +14,8 @@ class SPAManager {
     console.log("🚀 Initializing Enhanced SPA Manager...");
 
     // Setup link interception
-    setTimeout(() => this.setupLinkInterception(), 100);
+    this.setupLinkInterception();
+    this.preloadNavLinks();
 
     // Handle browser back/forward
     window.addEventListener("popstate", () => {
@@ -22,88 +26,250 @@ class SPAManager {
   }
 
   setupLinkInterception() {
+    const maybePrefetch = (e) => {
+      const link = e.target.closest("a[href]");
+      if (!link) return;
+      if (!this.shouldHandleLink(link)) return;
+      const href = link.getAttribute("href");
+      this.prefetchPage(href);
+    };
+
+    document.addEventListener("mouseover", maybePrefetch, { passive: true });
+    document.addEventListener("focusin", maybePrefetch, { passive: true });
+    document.addEventListener("touchstart", maybePrefetch, { passive: true });
+
     document.addEventListener("click", (e) => {
       if (this.isTransitioning) return;
 
       const link = e.target.closest("a[href]");
       if (!link) return;
 
+      if (!this.shouldHandleLink(link)) return;
       const href = link.getAttribute("href");
-
-      // Skip conditions
-      if (
-        href.startsWith("#") ||
-        href.includes("admin") ||
-        href.startsWith("mailto:") ||
-        href.startsWith("tel:") ||
-        link.target === "_blank" ||
-        link.hasAttribute("download")
-      ) {
-        return;
-      }
 
       e.preventDefault();
       this.navigateTo(href);
     });
   }
 
+  startTransition() {
+    document.body.classList.add("spa-navigating");
+    this.showProgress();
+  }
+
+  endTransition() {
+    this.hideProgress();
+    document.body.classList.remove("spa-navigating");
+  }
+
+  showProgress() {
+    if (!this.progressEl) {
+      this.progressEl = document.querySelector(".spa-progress");
+      if (!this.progressEl) {
+        this.progressEl = document.createElement("div");
+        this.progressEl.className = "spa-progress";
+        document.body.appendChild(this.progressEl);
+      }
+    }
+    this.progressEl.classList.add("active");
+  }
+
+  hideProgress() {
+    if (this.progressEl) {
+      this.progressEl.classList.remove("active");
+    }
+  }
+
+  normalizeUrl(url) {
+    try {
+      const resolved = new URL(url, window.location.href);
+      const key = `${resolved.pathname}${resolved.search || ""}`;
+      return {
+        key,
+        fetchUrl: `${resolved.pathname}${resolved.search || ""}`,
+        pushUrl: `${resolved.pathname}${resolved.search || ""}`,
+      };
+    } catch {
+      return { key: url, fetchUrl: url, pushUrl: url };
+    }
+  }
+
+  parseHtmlToContent(html) {
+    const parser = new DOMParser();
+    const newDoc = parser.parseFromString(html, "text/html");
+    return {
+      header: newDoc.getElementById("site-header")?.innerHTML,
+      main: newDoc.getElementById("main-content")?.innerHTML,
+      footer: newDoc.getElementById("site-footer")?.innerHTML,
+      title: newDoc.querySelector("title")?.textContent,
+    };
+  }
+
+  primeCmsLoadingState() {
+    try {
+      ["featured-container", "menu-container", "gallery-container"].forEach(
+        (id) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          if (el.querySelector(".loading-message")) {
+            el.setAttribute("data-loading", "true");
+          }
+        }
+      );
+    } catch {}
+  }
+
+  shouldHandleLink(link) {
+    const href = link.getAttribute("href");
+    if (!href) return false;
+
+    // Skip external links
+    try {
+      const resolved = new URL(href, window.location.href);
+      if (resolved.origin !== window.location.origin) return false;
+    } catch {}
+
+    if (
+      href.startsWith("#") ||
+      href.includes("admin") ||
+      href.startsWith("mailto:") ||
+      href.startsWith("tel:") ||
+      link.target === "_blank" ||
+      link.hasAttribute("download")
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  preloadNavLinks() {
+    const run = () => {
+      const links = document.querySelectorAll(".navbar a[href]");
+      links.forEach((link) => {
+        const href = link.getAttribute("href");
+        if (!href) return;
+        this.prefetchPage(href);
+      });
+    };
+
+    if ("requestIdleCallback" in window) {
+      requestIdleCallback(run, { timeout: 1200 });
+    } else {
+      setTimeout(run, 400);
+    }
+  }
+
+  async prefetchPage(url) {
+    const normalized = this.normalizeUrl(url);
+    if (this.pageCache.has(normalized.key)) return;
+    try {
+      const response = await fetch(normalized.fetchUrl, {
+        cache: "force-cache",
+        credentials: "same-origin",
+      });
+      if (!response.ok) return;
+      const html = await response.text();
+      const content = this.parseHtmlToContent(html);
+      if (!content.main) return;
+
+      this.pageCache.set(normalized.key, { content, ts: Date.now() });
+      if (this.pageCache.size > 6) {
+        const firstKey = this.pageCache.keys().next().value;
+        this.pageCache.delete(firstKey);
+      }
+    } catch (e) {
+      // Ignore prefetch errors silently
+    }
+  }
+
   async navigateTo(url) {
-    if (this.isTransitioning || url === this.currentPage) return;
+    const normalized = this.normalizeUrl(url);
+    if (this.isTransitioning || normalized.key === this.currentPage) return;
 
     this.isTransitioning = true;
-    console.log(`🔀 SPA Navigating to: ${url}`);
+    this.startTransition();
+
+    const mainEl = document.getElementById("main-content");
+    if (!mainEl) {
+      window.location.href = normalized.pushUrl || url;
+      return;
+    }
+
+    mainEl.classList.add("spa-fade-out");
+    const fadePromise = new Promise((resolve) =>
+      setTimeout(resolve, this.pageTransitionMs)
+    );
+    console.log(`🔀 SPA Navigating to: ${normalized.pushUrl}`);
 
     try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const contentPromise = (async () => {
+        let cached = this.pageCache.get(normalized.key);
+        let newContent = cached?.content || null;
 
-      const html = await response.text();
-      const parser = new DOMParser();
-      const newDoc = parser.parseFromString(html, "text/html");
+        if (!newContent) {
+          const response = await fetch(normalized.fetchUrl, {
+            cache: "force-cache",
+            credentials: "same-origin",
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const html = await response.text();
+          newContent = this.parseHtmlToContent(html);
+          this.pageCache.set(normalized.key, {
+            content: newContent,
+            ts: Date.now(),
+          });
+        }
 
-      const newContent = {
-        header: newDoc.getElementById("site-header")?.innerHTML,
-        main: newDoc.getElementById("main-content")?.innerHTML,
-        footer: newDoc.getElementById("site-footer")?.innerHTML,
-        title: newDoc.querySelector("title")?.textContent,
-      };
+        if (!newContent.main) throw new Error("No main content found");
+        return newContent;
+      })();
 
-      if (!newContent.main) throw new Error("No main content found");
+      const [newContent] = await Promise.all([contentPromise, fadePromise]);
 
       // Update page
-      await this.updatePage(newContent);
+      await this.updatePage(newContent, true);
 
       // Update URL
-      window.history.pushState({}, "", url);
-      this.currentPage = url;
+      window.history.pushState({}, "", normalized.pushUrl);
+      this.currentPage = normalized.key;
 
       if (newContent.title) {
         document.title = newContent.title;
       }
 
+      window.dispatchEvent(
+        new CustomEvent("spa:navigated", { detail: { path: normalized.key } })
+      );
+
       // REINITIALIZE EVERYTHING - CRITICAL FIX
       this.reinitializePage();
 
-      console.log(`✅ SPA navigation complete: ${url}`);
+      // Keep cache warm (stale-while-revalidate)
+      this.prefetchPage(normalized.fetchUrl);
+
+      console.log(`✅ SPA navigation complete: ${normalized.pushUrl}`);
     } catch (error) {
       console.error("SPA navigation failed:", error);
       // Fallback to full page load
-      window.location.href = url;
+      window.location.href = normalized.pushUrl || url;
       return;
     } finally {
       this.isTransitioning = false;
+      this.endTransition();
     }
   }
 
-  async updatePage(content) {
+  async updatePage(content, skipFadeOut = false) {
     const mainEl = document.getElementById("main-content");
     if (!mainEl) return;
 
-    // 1. Fade out
-    mainEl.classList.add("spa-fade-out");
+    if (!skipFadeOut) {
+      // 1. Fade out
+      mainEl.classList.add("spa-fade-out");
 
-    // Wait for fade out
-    await new Promise((resolve) => setTimeout(resolve, 300));
+      // Wait for fade out
+      await new Promise((resolve) => setTimeout(resolve, this.pageTransitionMs));
+    }
 
     // 2. Update content
     const headerEl = document.getElementById("site-header");
@@ -121,6 +287,12 @@ class SPAManager {
       footerEl.innerHTML = content.footer;
     }
 
+    // Prime CMS containers immediately to avoid a brief unmasked flash
+    this.primeCmsLoadingState();
+
+    // Ensure new page starts at the top (prevents odd mid-page flashes)
+    window.scrollTo(0, 0);
+
     // 3. Fade in
     mainEl.classList.remove("spa-fade-out");
     mainEl.classList.add("spa-fade-in");
@@ -128,14 +300,13 @@ class SPAManager {
     // Remove fade-in class after animation
     setTimeout(() => {
       mainEl.classList.remove("spa-fade-in");
-    }, 400);
+    }, this.pageTransitionMs + 60);
   }
 
   reinitializePage() {
     console.log("🔄 Reinitializing page components after SPA navigation...");
 
-    // Small delay to ensure DOM is ready
-    setTimeout(() => {
+    const run = () => {
       try {
         // Reset initialization flags to allow re-initialization on new pages
         window.menuInteractionsInitialized = false;
@@ -154,7 +325,9 @@ class SPAManager {
 
         // 4. Reinitialize CMS content for the new page
         if (typeof loadDynamicContent === "function") {
-          loadDynamicContent();
+          Promise.resolve(loadDynamicContent()).catch((e) =>
+            console.warn("Dynamic content reload failed:", e)
+          );
         }
 
         // 5. Reinitialize menu interactions
@@ -178,14 +351,19 @@ class SPAManager {
           window.location.pathname.includes("order") &&
           typeof renderCartOnOrderPage === "function"
         ) {
-          renderCartOnOrderPage(true);
+          Promise.resolve(renderCartOnOrderPage(true)).catch((e) =>
+            console.warn("Cart render failed:", e)
+          );
         }
 
+        window.dispatchEvent(new CustomEvent("spa:reinitialized"));
         console.log("✅ All components reinitialized successfully");
       } catch (error) {
         console.warn("Some components failed to reinitialize:", error);
       }
-    }, 100);
+    };
+
+    requestAnimationFrame(run);
   }
 
   // NEW: Reinitialize carousel
@@ -240,6 +418,11 @@ class SPAManager {
         e.stopPropagation();
         freshNavList.classList.toggle("show");
       });
+
+      // Mobile UX: keep menu open by default on small screens
+      if (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) {
+        freshNavList.classList.add("show");
+      }
 
       // Close when clicking outside
       document.addEventListener("click", (e) => {

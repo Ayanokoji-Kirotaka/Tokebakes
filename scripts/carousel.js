@@ -1,12 +1,20 @@
 /* ================== carousel.js - SPA-ENHANCED VERSION ================== */
 
+const CAROUSEL_DEBUG = false;
+const carouselDebugLog = (...args) => {
+  if (CAROUSEL_DEBUG) carouselDebugLog(...args);
+};
+const carouselDebugWarn = (...args) => {
+  if (CAROUSEL_DEBUG) carouselDebugWarn(...args);
+};
+
 class HeroCarousel {
   constructor() {
-    console.log("🎠 HeroCarousel constructor called");
+    carouselDebugLog("🎠 HeroCarousel constructor called");
 
     this.container = document.querySelector(".hero-carousel");
     if (!this.container) {
-      console.log("🎠 No carousel found on this page");
+      carouselDebugLog("🎠 No carousel found on this page");
       return;
     }
 
@@ -20,6 +28,9 @@ class HeroCarousel {
     this.autoPlayInterval = null;
     this.autoPlayDelay = 5000;
     this.autoPlayEnabled = true;
+    this.resumeTimeout = null;
+    this.resumeDelay = 3500;
+    this.isHovered = false;
 
     // State management
     this.isTransitioning = false;
@@ -30,12 +41,27 @@ class HeroCarousel {
     this.touchStartX = 0;
     this.touchEndX = 0;
 
+    // Hero content elements
+    this.heroContent = {
+      title: document.querySelector(".hero-content h2"),
+      subtitle: document.querySelector(".hero-content .lead"),
+      cta: document.querySelector(".hero-content .btn"),
+    };
+    this.defaultHero = {
+      title: this.heroContent.title ? this.heroContent.title.textContent : "",
+      subtitle: this.heroContent.subtitle
+        ? this.heroContent.subtitle.textContent
+        : "",
+      ctaText: this.heroContent.cta ? this.heroContent.cta.textContent : "",
+      ctaLink: this.heroContent.cta ? this.heroContent.cta.getAttribute("href") : "",
+    };
+
     // Initialize immediately
     this.init();
   }
 
   async init() {
-    console.log("🎠 Initializing Hero Carousel...");
+    carouselDebugLog("🎠 Initializing Hero Carousel...");
     await this.loadCarouselData();
     this.setupCarousel();
     this.hideLoadingState();
@@ -45,7 +71,7 @@ class HeroCarousel {
 
   // NEW: Cleanup method for SPA navigation
   destroy() {
-    console.log("🎠 Cleaning up carousel...");
+    carouselDebugLog("🎠 Cleaning up carousel...");
 
     // Stop auto-play
     this.stopAutoPlay();
@@ -54,6 +80,7 @@ class HeroCarousel {
     if (this.transitionTimeout) {
       clearTimeout(this.transitionTimeout);
     }
+    this.clearResumeTimer();
 
     // Remove event listeners
     if (this.navContainer) {
@@ -79,7 +106,7 @@ class HeroCarousel {
     this.navContainer = null;
     this.slides = [];
 
-    console.log("🎠 Carousel cleanup complete");
+    carouselDebugLog("🎠 Carousel cleanup complete");
   }
 
   async loadCarouselData() {
@@ -103,7 +130,7 @@ class HeroCarousel {
           // 24 hours
           hasCachedData = true;
           this.slides = parsed.data;
-          console.log(
+          carouselDebugLog(
             `✅ Loaded ${this.slides.length} carousel slides from cache`
           );
           return;
@@ -119,7 +146,7 @@ class HeroCarousel {
     const startTime = Date.now();
 
     try {
-      console.log("🔄 Loading carousel data...");
+      carouselDebugLog("🔄 Loading carousel data...");
 
       if (!window.SUPABASE_CONFIG || !window.SUPABASE_CONFIG.URL) {
         console.error("Supabase configuration not found");
@@ -168,7 +195,7 @@ class HeroCarousel {
       } catch (e) {}
 
       if (!data || data.length === 0) {
-        console.warn("No active carousel items found");
+        carouselDebugWarn("No active carousel items found");
         this.slides = [
           {
             id: "default",
@@ -178,7 +205,7 @@ class HeroCarousel {
         ];
       } else {
         this.slides = data;
-        console.log(`✅ Loaded ${this.slides.length} carousel slides`);
+        carouselDebugLog(`✅ Loaded ${this.slides.length} carousel slides`);
       }
     } catch (error) {
       console.error("Error loading carousel data:", error);
@@ -285,6 +312,31 @@ class HeroCarousel {
         </button>
       `;
     }
+
+    // Sync hero content with the first slide
+    this.updateHeroContent(this.slides[0]);
+  }
+
+  updateHeroContent(slide) {
+    if (!this.heroContent.title && !this.heroContent.subtitle) return;
+
+    const title = slide?.title || this.defaultHero.title;
+    const subtitle = slide?.subtitle || this.defaultHero.subtitle;
+    const ctaText = slide?.cta_text || this.defaultHero.ctaText;
+    const ctaLink = slide?.cta_link || this.defaultHero.ctaLink;
+
+    if (this.heroContent.title) {
+      this.heroContent.title.textContent = title;
+    }
+    if (this.heroContent.subtitle) {
+      this.heroContent.subtitle.textContent = subtitle;
+    }
+    if (this.heroContent.cta) {
+      this.heroContent.cta.textContent = ctaText;
+      if (ctaLink) {
+        this.heroContent.cta.setAttribute("href", ctaLink);
+      }
+    }
   }
 
   setupEventListeners() {
@@ -324,13 +376,14 @@ class HeroCarousel {
 
     // Mouse hover handling
     this.container.addEventListener("mouseenter", () => {
+      this.isHovered = true;
       this.stopAutoPlay();
+      this.clearResumeTimer();
     });
 
     this.container.addEventListener("mouseleave", () => {
-      if (this.autoPlayEnabled) {
-        this.startAutoPlay();
-      }
+      this.isHovered = false;
+      this.scheduleAutoPlayResume();
     });
 
     // Touch/swipe support
@@ -339,6 +392,7 @@ class HeroCarousel {
       (e) => {
         this.touchStartX = e.changedTouches[0].screenX;
         this.stopAutoPlay();
+        this.clearResumeTimer();
       },
       { passive: true }
     );
@@ -348,7 +402,7 @@ class HeroCarousel {
       (e) => {
         this.touchEndX = e.changedTouches[0].screenX;
         this.handleSwipe();
-        this.pauseAutoPlay();
+        this.scheduleAutoPlayResume(this.resumeDelay + 1000);
       },
       { passive: true }
     );
@@ -428,6 +482,9 @@ class HeroCarousel {
     // Update current index
     this.currentIndex = index;
 
+    // Sync hero content with current slide
+    this.updateHeroContent(this.slides[index]);
+
     // Clear any existing timeout
     if (this.transitionTimeout) {
       clearTimeout(this.transitionTimeout);
@@ -455,7 +512,8 @@ class HeroCarousel {
 
   // Auto-play methods
   startAutoPlay() {
-    if (this.slides.length <= 1 || !this.autoPlayEnabled) return;
+    if (this.slides.length <= 1 || !this.autoPlayEnabled || this.isHovered)
+      return;
 
     this.stopAutoPlay();
 
@@ -464,29 +522,37 @@ class HeroCarousel {
         this.nextSlide();
       }
     }, this.autoPlayDelay);
-
-    console.log("▶️ Auto-play started");
   }
 
   stopAutoPlay() {
     if (this.autoPlayInterval) {
       clearInterval(this.autoPlayInterval);
       this.autoPlayInterval = null;
-      console.log("⏸️ Auto-play stopped");
     }
   }
 
-  pauseAutoPlay() {
-    this.stopAutoPlay();
-
-    // Restart after delay if auto-play is enabled
-    if (this.autoPlayEnabled) {
-      setTimeout(() => {
-        if (this.autoPlayEnabled && !this.autoPlayInterval) {
-          this.startAutoPlay();
-        }
-      }, 3000);
+  clearResumeTimer() {
+    if (this.resumeTimeout) {
+      clearTimeout(this.resumeTimeout);
+      this.resumeTimeout = null;
     }
+  }
+
+  scheduleAutoPlayResume(delay = this.resumeDelay) {
+    if (!this.autoPlayEnabled) return;
+    this.clearResumeTimer();
+
+    this.resumeTimeout = setTimeout(() => {
+      this.resumeTimeout = null;
+      if (this.autoPlayEnabled && !this.isHovered) {
+        this.startAutoPlay();
+      }
+    }, delay);
+  }
+
+  pauseAutoPlay(delay = this.resumeDelay) {
+    this.stopAutoPlay();
+    this.scheduleAutoPlayResume(delay);
   }
 
   toggleAutoPlay() {
@@ -500,7 +566,7 @@ class HeroCarousel {
 
   // Refresh when admin updates data
   async refresh() {
-    console.log("🔄 Refreshing carousel...");
+    carouselDebugLog("🔄 Refreshing carousel...");
     await this.loadCarouselData();
     this.setupCarousel();
     this.setupEventListeners();
@@ -519,7 +585,7 @@ function initializeCarousel() {
     document.querySelector(".admin-dashboard") ||
     document.querySelector(".admin-login-container")
   ) {
-    console.log("⏭️ Skipping carousel on admin page");
+    carouselDebugLog("⏭️ Skipping carousel on admin page");
     return;
   }
 
@@ -543,7 +609,7 @@ function initializeCarousel() {
         event.data.itemType === "carousel" &&
         window.heroCarousel
       ) {
-        console.log("🔄 Carousel update detected from admin panel");
+        carouselDebugLog("🔄 Carousel update detected from admin panel");
         window.heroCarousel.refresh();
       }
     };
@@ -561,3 +627,4 @@ if (document.readyState === "loading") {
 if (typeof window !== "undefined") {
   window.initializeCarousel = initializeCarousel;
 }
+

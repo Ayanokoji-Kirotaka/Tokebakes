@@ -33,11 +33,13 @@ class DataSyncManager {
 
 const dataSync = new DataSyncManager();
 
-// Admin credentials with SHA-256 hash for "admin123"
-const ADMIN_CREDENTIALS = {
-  username: "admin",
-  passwordHash:
-    "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
+// Debug logger (disabled for production)
+const DEBUG = false;
+const debugLog = (...args) => {
+  if (DEBUG) debugLog(...args);
+};
+const debugWarn = (...args) => {
+  if (DEBUG) debugWarn(...args);
 };
 
 // Current admin state
@@ -49,6 +51,21 @@ const SESSION_TIMEOUT_MINUTES = 30;
 
 // Store for temporary image data
 let tempImageCache = new Map();
+
+// Storage buckets aligned with Supabase SQL
+const STORAGE_BUCKETS = {
+  featured: "featured-items",
+  menu: "menu-items",
+  gallery: "gallery",
+  carousel: "hero-carousel",
+};
+
+const STORAGE_LIMITS_KB = {
+  featured: 2000,
+  menu: 2000,
+  gallery: 5000,
+  carousel: 5000,
+};
 
 /* ================== MODERN CONFIRMATION DIALOG SYSTEM ================== */
 
@@ -195,26 +212,17 @@ async function getItemDetails(itemId, itemType) {
     };
 
     const endpoint = endpoints[itemType] || API_ENDPOINTS.FEATURED;
-    const response = await fetch(
-      `${SUPABASE_CONFIG.URL}${endpoint}/${itemId}`,
-      {
-        headers: {
-          apikey: SUPABASE_CONFIG.ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const item = await loadDataFromSupabase(endpoint, itemId, true);
 
-    if (response.ok) {
-      const item = await response.json();
+    if (item) {
       return {
         id: item.id,
-        title: item.title || item.alt || "Carousel Image", // Updated for carousel
+        title: item.title || item.alt || "Carousel Image",
         description: item.description || "",
         price: item.price || null,
         created: item.created_at || null,
         type: itemType,
+        image: item.image || null,
       };
     }
   } catch (error) {
@@ -246,7 +254,14 @@ async function deleteFeaturedItem(id) {
       return;
     }
 
-    await secureRequest(`${API_ENDPOINTS.FEATURED}?id=eq.${id}`, "DELETE");
+    await secureRequest(`${API_ENDPOINTS.FEATURED}?id=eq.${id}`, "DELETE", null, {
+      authRequired: true,
+    });
+    const featuredPath = extractStoragePath(
+      itemDetails.image,
+      STORAGE_BUCKETS.featured
+    );
+    await deleteFromStorage(STORAGE_BUCKETS.featured, featuredPath);
     showNotification("Featured item deleted!", "success");
 
     // Clear from cache
@@ -274,7 +289,14 @@ async function deleteMenuItem(id) {
       return;
     }
 
-    await secureRequest(`${API_ENDPOINTS.MENU}?id=eq.${id}`, "DELETE");
+    await secureRequest(`${API_ENDPOINTS.MENU}?id=eq.${id}`, "DELETE", null, {
+      authRequired: true,
+    });
+    const menuPath = extractStoragePath(
+      itemDetails.image,
+      STORAGE_BUCKETS.menu
+    );
+    await deleteFromStorage(STORAGE_BUCKETS.menu, menuPath);
     showNotification("Menu item deleted!", "success");
 
     // Clear from cache
@@ -282,6 +304,7 @@ async function deleteMenuItem(id) {
     clearDataCache();
 
     await renderMenuItems();
+    await populateFeaturedMenuSelect();
     await updateItemCounts();
 
     dataSync.notifyDataChanged("delete", "menu");
@@ -302,7 +325,14 @@ async function deleteGalleryItem(id) {
       return;
     }
 
-    await secureRequest(`${API_ENDPOINTS.GALLERY}?id=eq.${id}`, "DELETE");
+    await secureRequest(`${API_ENDPOINTS.GALLERY}?id=eq.${id}`, "DELETE", null, {
+      authRequired: true,
+    });
+    const galleryPath = extractStoragePath(
+      itemDetails.image,
+      STORAGE_BUCKETS.gallery
+    );
+    await deleteFromStorage(STORAGE_BUCKETS.gallery, galleryPath);
     showNotification("Gallery image deleted!", "success");
 
     // Clear from cache
@@ -331,7 +361,17 @@ async function deleteCarouselItem(id) {
       return;
     }
 
-    await secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=eq.${id}`, "DELETE");
+    await secureRequest(
+      `${API_ENDPOINTS.CAROUSEL}?id=eq.${id}`,
+      "DELETE",
+      null,
+      { authRequired: true }
+    );
+    const carouselPath = extractStoragePath(
+      itemDetails.image,
+      STORAGE_BUCKETS.carousel
+    );
+    await deleteFromStorage(STORAGE_BUCKETS.carousel, carouselPath);
     showNotification("Carousel image deleted!", "success");
 
     // Clear from cache
@@ -365,7 +405,7 @@ const secureStorage = {
     try {
       sessionStorage.setItem(`secure_${key}`, btoa(JSON.stringify(value)));
     } catch (e) {
-      console.warn("Secure storage failed:", e);
+      debugWarn("Secure storage failed:", e);
       // Fallback to memory storage
       window.tempStorage = window.tempStorage || {};
       window.tempStorage[`secure_${key}`] = value;
@@ -376,7 +416,7 @@ const secureStorage = {
       const item = sessionStorage.getItem(`secure_${key}`);
       return item ? JSON.parse(atob(item)) : null;
     } catch (e) {
-      console.warn("Secure storage retrieval failed:", e);
+      debugWarn("Secure storage retrieval failed:", e);
       // Check memory storage
       return window.tempStorage ? window.tempStorage[`secure_${key}`] : null;
     }
@@ -385,7 +425,7 @@ const secureStorage = {
     try {
       sessionStorage.removeItem(`secure_${key}`);
     } catch (e) {
-      console.warn("Secure storage removal failed:", e);
+      debugWarn("Secure storage removal failed:", e);
     }
     // Also remove from memory storage
     if (window.tempStorage) {
@@ -636,164 +676,6 @@ function showPopup(options) {
   });
 }
 
-/* ================== PASSWORD HASHING ================== */
-
-// Enhanced password hashing
-async function hashPassword(password) {
-  try {
-    // Use SHA-256 for consistency with your existing hash
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-  } catch (error) {
-    console.error("Password hashing failed:", error);
-    // Simple fallback for very old browsers
-    return password; // This is just a fallback - modern browsers support crypto
-  }
-}
-
-/* ================== PASSWORD SYNC FUNCTIONS ================== */
-
-// Load password from database on startup
-async function loadPasswordFromDatabase() {
-  try {
-    console.log("Loading admin password from database...");
-
-    const response = await fetch(
-      `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.admin&select=password_hash`,
-      {
-        method: "GET",
-        headers: {
-          apikey: SUPABASE_CONFIG.ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-        },
-      }
-    );
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data.length > 0 && data[0].password_hash) {
-        const dbHash = data[0].password_hash;
-
-        // Update local hash to match database
-        ADMIN_CREDENTIALS.passwordHash = dbHash;
-
-        console.log(
-          "✅ Loaded password hash from database:",
-          dbHash.substring(0, 20) + "..."
-        );
-
-        return true;
-      }
-    }
-
-    console.log("⚠️ Using local password hash");
-    return false;
-  } catch (error) {
-    console.error("Failed to load password from database:", error);
-    return false;
-  }
-}
-
-// Check password sync status
-async function checkPasswordSync() {
-  try {
-    const response = await fetch(
-      `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.admin&select=password_hash`,
-      {
-        method: "GET",
-        headers: {
-          apikey: SUPABASE_CONFIG.ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-        },
-      }
-    );
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data.length > 0) {
-        const dbHash = data[0].password_hash;
-        const localHash = ADMIN_CREDENTIALS.passwordHash;
-
-        const isSynced = dbHash === localHash;
-
-        if (!isSynced) {
-          console.warn("⚠️ Password NOT synced!");
-          console.log("Database hash:", dbHash.substring(0, 20) + "...");
-          console.log("Local hash:", localHash.substring(0, 20) + "...");
-
-          // Auto-sync with database
-          ADMIN_CREDENTIALS.passwordHash = dbHash;
-          console.log("✅ Password synced with database");
-        } else {
-          console.log("✅ Passwords are synced");
-        }
-
-        return isSynced;
-      }
-    }
-    return false;
-  } catch (error) {
-    console.error("Password sync check error:", error);
-    return false;
-  }
-}
-
-// Update password in database
-async function updatePasswordInDatabase(newHash) {
-  try {
-    const response = await fetch(
-      `${SUPABASE_CONFIG.URL}/rest/v1/admin_users?username=eq.admin`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SUPABASE_CONFIG.ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-          Prefer: "return=representation",
-        },
-        body: JSON.stringify({
-          password_hash: newHash,
-          last_login: new Date().toISOString(),
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Password update failed:", errorText);
-      return {
-        success: false,
-        message: `Database update failed: ${response.status}`,
-      };
-    }
-
-    const result = await response.json();
-
-    if (result && result.length > 0) {
-      console.log("✅ Password updated in database successfully");
-      return {
-        success: true,
-        message: "Password updated in database",
-        data: result[0],
-      };
-    } else {
-      return {
-        success: false,
-        message: "No rows were updated",
-      };
-    }
-  } catch (error) {
-    console.error("Update password error:", error);
-    return {
-      success: false,
-      message: `Network error: ${error.message}`,
-    };
-  }
-}
-
 /* ================== ENHANCED UTILITY FUNCTIONS ================== */
 
 /**
@@ -929,7 +811,7 @@ async function compressImage(file, maxSizeKB = 300) {
               qualityUsed: compressionResult.quality,
             };
 
-            console.log(
+            debugLog(
               `🍰 Food Image Compressed: ${originalKB}KB → ${compressedKB}KB (${savings}% saved) ` +
                 `as ${compressionResult.format.toUpperCase()} at ${(
                   compressionResult.quality * 100
@@ -1009,7 +891,7 @@ function optimizeImage(canvas, maxSizeKB) {
 
     // If still too large after optimization
     if (base64.length > TARGET_SIZE * 1.2) {
-      console.warn("Food image remains large - prioritizing quality over size");
+      debugWarn("Food image remains large - prioritizing quality over size");
     }
   } catch (error) {
     // Secondary: WebP failed, use JPEG fallback (5% of users)
@@ -1029,6 +911,153 @@ function optimizeImage(canvas, maxSizeKB) {
   }
 
   return { data: base64, format, quality };
+}
+
+function dataUrlToBlob(dataUrl) {
+  const [header, base64] = dataUrl.split(",");
+  const mimeMatch = header.match(/data:(.*);base64/);
+  const mime = mimeMatch ? mimeMatch[1] : "image/webp";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime });
+}
+
+function slugify(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)+/g, "")
+    .slice(0, 50);
+}
+
+function buildStoragePath(itemType, originalName, format) {
+  const safeName = slugify(originalName || itemType || "image");
+  const stamp = Date.now();
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${stamp}-${rand}-${safeName}.${format}`;
+}
+
+async function prepareImageForUpload(file, itemType) {
+  const maxSizeKB = STORAGE_LIMITS_KB[itemType] || 2000;
+  const compressed = await compressImage(file, maxSizeKB);
+  const blob = dataUrlToBlob(compressed.data);
+  return {
+    blob,
+    format: compressed.format,
+    width: compressed.dimensions?.width,
+    height: compressed.dimensions?.height,
+    size: blob.size,
+  };
+}
+
+async function uploadToStorage(bucket, path, blob) {
+  const session = await ensureValidSession();
+  if (!session?.access_token) {
+    throw new Error("Authentication required to upload");
+  }
+
+  const response = await fetch(
+    `${SUPABASE_CONFIG.URL}/storage/v1/object/${bucket}/${path}`,
+    {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_CONFIG.ANON_KEY,
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": blob.type || "application/octet-stream",
+        "x-upsert": "true",
+      },
+      body: blob,
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || "Upload failed");
+  }
+
+  return `${SUPABASE_CONFIG.URL}/storage/v1/object/public/${bucket}/${path}`;
+}
+
+function extractStoragePath(url, bucket) {
+  if (!url || !bucket) return null;
+  const marker = `/storage/v1/object/public/${bucket}/`;
+  const index = url.indexOf(marker);
+  if (index === -1) return null;
+  return url.substring(index + marker.length);
+}
+
+async function deleteFromStorage(bucket, path) {
+  if (!bucket || !path) return;
+  const session = await ensureValidSession();
+  if (!session?.access_token) return;
+
+  await fetch(`${SUPABASE_CONFIG.URL}/storage/v1/object/${bucket}/${path}`, {
+    method: "DELETE",
+    headers: {
+      apikey: SUPABASE_CONFIG.ANON_KEY,
+      Authorization: `Bearer ${session.access_token}`,
+    },
+  });
+}
+
+function parseTags(rawTags) {
+  if (!rawTags) return [];
+  return rawTags
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+}
+
+async function getNextDisplayOrder(endpoint) {
+  const result = await secureRequest(
+    `${endpoint}?select=display_order&order=display_order.desc&limit=1`,
+    "GET",
+    null,
+    { authRequired: true }
+  );
+
+  const maxValue =
+    Array.isArray(result) && result[0] && result[0].display_order !== null
+      ? Number(result[0].display_order)
+      : -1;
+
+  return Number.isFinite(maxValue) ? maxValue + 1 : 0;
+}
+
+async function processImageUpload(itemType, imageFile, existingUrl) {
+  if (!imageFile && existingUrl) {
+    return { url: existingUrl, meta: null };
+  }
+
+  if (!imageFile) {
+    throw new Error("Please select an image");
+  }
+
+  const bucket = STORAGE_BUCKETS[itemType];
+  if (!bucket) {
+    throw new Error("Invalid storage bucket");
+  }
+
+  const prepared = await prepareImageForUpload(imageFile, itemType);
+  const path = buildStoragePath(itemType, imageFile.name, prepared.format);
+  const url = await uploadToStorage(bucket, path, prepared.blob);
+
+  const existingPath = extractStoragePath(existingUrl, bucket);
+  if (existingPath) {
+    await deleteFromStorage(bucket, existingPath);
+  }
+
+  return {
+    url,
+    meta: {
+      width: prepared.width,
+      height: prepared.height,
+      size: prepared.size,
+    },
+  };
 }
 
 // ================== ENHANCED NOTIFICATION SYSTEM ==================
@@ -1326,7 +1355,74 @@ if (!document.querySelector("#notification-animations")) {
   document.head.appendChild(style);
 }
 
-/* ================== FIXED SECURE API FUNCTIONS ================== */
+/* ================== SECURE API FUNCTIONS ================== */
+
+const SESSION_SKEW_SECONDS = 60;
+
+function getStoredSession() {
+  return secureStorage.getItem("session");
+}
+
+function storeSession(session) {
+  secureStorage.setItem("session", session);
+}
+
+function clearSession() {
+  secureStorage.removeItem("session");
+}
+
+async function refreshSessionIfNeeded(session) {
+  if (!session || !session.refresh_token) return session;
+
+  const now = Math.floor(Date.now() / 1000);
+  if (
+    session.expires_at &&
+    session.expires_at - now > SESSION_SKEW_SECONDS
+  ) {
+    return session;
+  }
+
+  try {
+    const response = await fetch(
+      `${SUPABASE_CONFIG.URL}/auth/v1/token?grant_type=refresh_token`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_CONFIG.ANON_KEY,
+        },
+        body: JSON.stringify({ refresh_token: session.refresh_token }),
+      }
+    );
+
+    if (!response.ok) {
+      return session;
+    }
+
+    const refreshed = await response.json();
+    const refreshedSession = {
+      access_token: refreshed.access_token,
+      refresh_token: refreshed.refresh_token || session.refresh_token,
+      expires_at:
+        refreshed.expires_at ||
+        Math.floor(Date.now() / 1000) + (refreshed.expires_in || 3600),
+      user: refreshed.user || session.user,
+      email: (refreshed.user && refreshed.user.email) || session.email,
+    };
+
+    storeSession(refreshedSession);
+    return refreshedSession;
+  } catch (error) {
+    debugWarn("Session refresh failed:", error);
+    return session;
+  }
+}
+
+async function ensureValidSession() {
+  const session = getStoredSession();
+  if (!session) return null;
+  return refreshSessionIfNeeded(session);
+}
 
 async function secureRequest(
   endpoint,
@@ -1334,48 +1430,53 @@ async function secureRequest(
   data = null,
   options = {}
 ) {
-  const { retries = 3, timeout = 10000 } = options;
+  const {
+    retries = 3,
+    timeout = 10000,
+    authRequired = false,
+    headers: extraHeaders = {},
+  } = options;
 
-  // Check if Supabase is configured
   if (!SUPABASE_CONFIG || !SUPABASE_CONFIG.URL || !SUPABASE_CONFIG.ANON_KEY) {
     throw new Error("Supabase configuration missing. Check config.js");
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-  const headers = {
-    "Content-Type": "application/json",
-    apikey: SUPABASE_CONFIG.ANON_KEY,
-    Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-    Prefer: "return=representation",
-  };
-
-  const session = secureStorage.getItem("session");
-  if (session && session.token) {
-    headers["X-Session-Token"] = session.token;
+  const session = await ensureValidSession();
+  if (authRequired && !session?.access_token) {
+    throw new Error("Authentication required");
   }
 
-  const config = {
-    method: method,
-    headers: headers,
-    signal: controller.signal,
+  const baseHeaders = {
+    apikey: SUPABASE_CONFIG.ANON_KEY,
+    Authorization: `Bearer ${
+      session?.access_token || SUPABASE_CONFIG.ANON_KEY
+    }`,
+    Prefer: "return=representation",
+    ...extraHeaders,
   };
 
   if (data && (method === "POST" || method === "PATCH" || method === "PUT")) {
-    config.body = JSON.stringify(data);
+    baseHeaders["Content-Type"] = "application/json";
   }
 
   for (let attempt = 1; attempt <= retries; attempt++) {
-    try {
-      console.log(
-        `API request ${method} ${endpoint} (attempt ${attempt}/${retries})`
-      );
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
 
+    const config = {
+      method,
+      headers: baseHeaders,
+      signal: controller.signal,
+    };
+
+    if (data && (method === "POST" || method === "PATCH" || method === "PUT")) {
+      config.body = JSON.stringify(data);
+    }
+
+    try {
       const response = await fetch(`${SUPABASE_CONFIG.URL}${endpoint}`, config);
       clearTimeout(timeoutId);
 
-      // Handle rate limiting
       if (response.status === 429) {
         const retryAfter = response.headers.get("Retry-After") || 1;
         await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
@@ -1385,7 +1486,6 @@ async function secureRequest(
       if (!response.ok) {
         const errorData = await response.text();
 
-        // Handle specific error cases
         if (response.status === 401) {
           showNotification(
             "Authentication failed. Please login again.",
@@ -1416,16 +1516,13 @@ async function secureRequest(
         );
       }
 
-      // For DELETE requests that return 204 No Content
       if (method === "DELETE" && response.status === 204) {
         return { success: true, message: "Item deleted successfully" };
       }
 
-      // For successful requests with content
       if (response.status !== 204) {
         const result = await response.json();
 
-        // Cache image data for faster editing
         if (Array.isArray(result)) {
           result.forEach((item) => {
             if (item.image && item.id && tempImageCache.size < 50) {
@@ -1446,7 +1543,6 @@ async function secureRequest(
       if (attempt === retries) {
         console.error("API request failed after retries:", error);
 
-        // User-friendly error messages
         if (error.name === "AbortError") {
           showNotification("Request timeout. Please try again.", "error");
         } else if (error.message.includes("Failed to fetch")) {
@@ -1466,7 +1562,6 @@ async function secureRequest(
         throw error;
       }
 
-      // Exponential backoff
       await new Promise((resolve) =>
         setTimeout(resolve, Math.pow(2, attempt) * 1000)
       );
@@ -1477,6 +1572,13 @@ async function secureRequest(
 // Load data with caching
 const dataCache = new Map();
 const CACHE_TTL = 300000; // 1 minute
+const ORDERING_MAP = {
+  [API_ENDPOINTS.FEATURED]: "display_order.asc,created_at.desc",
+  [API_ENDPOINTS.MENU]: "display_order.asc,created_at.desc",
+  [API_ENDPOINTS.GALLERY]: "display_order.asc,created_at.desc",
+  [API_ENDPOINTS.CAROUSEL]: "display_order.asc,created_at.desc",
+  [API_ENDPOINTS.THEMES]: "is_active.desc,updated_at.desc,created_at.desc",
+};
 
 async function loadDataFromSupabase(endpoint, id = null, forceRefresh = false) {
   const cacheKey = id ? `${endpoint}_${id}` : endpoint;
@@ -1490,11 +1592,14 @@ async function loadDataFromSupabase(endpoint, id = null, forceRefresh = false) {
   }
 
   try {
+    const orderBy = ORDERING_MAP[endpoint] || "created_at.desc";
     const url = id
       ? `${endpoint}?id=eq.${id}&select=*`
-      : `${endpoint}?select=*&order=created_at.desc`;
+      : `${endpoint}?select=*&order=${orderBy}`;
 
-    const result = await secureRequest(url, "GET");
+    const result = await secureRequest(url, "GET", null, {
+      authRequired: true,
+    });
 
     // Handle Supabase response format
     let data;
@@ -1518,7 +1623,7 @@ async function loadDataFromSupabase(endpoint, id = null, forceRefresh = false) {
 
     // Return cached data if available (even if stale)
     if (dataCache.has(cacheKey)) {
-      console.log("Using cached data. Some information may be outdated.");
+      debugLog("Using cached data. Some information may be outdated.");
       return dataCache.get(cacheKey).data;
     }
 
@@ -1546,11 +1651,59 @@ let loginAttempts = {
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_TIME = 15 * 60 * 1000; // 15 minutes
 
-async function checkLogin(username, password) {
-  try {
-    console.log("🔐 Login attempt for:", username);
+async function requestAuthSession(email, password) {
+  const response = await fetch(
+    `${SUPABASE_CONFIG.URL}/auth/v1/token?grant_type=password`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_CONFIG.ANON_KEY,
+      },
+      body: JSON.stringify({ email, password }),
+    }
+  );
 
-    // Check if locked out
+  if (!response.ok) {
+    const errorText = await response.text();
+    return {
+      success: false,
+      message: errorText || "Authentication failed",
+    };
+  }
+
+  const result = await response.json();
+  const session = {
+    access_token: result.access_token,
+    refresh_token: result.refresh_token,
+    expires_at:
+      result.expires_at ||
+      Math.floor(Date.now() / 1000) + (result.expires_in || 3600),
+    user: result.user,
+    email: (result.user && result.user.email) || email,
+  };
+
+  return { success: true, session };
+}
+
+async function checkIsAdmin() {
+  const result = await secureRequest(
+    "/rest/v1/rpc/is_admin",
+    "POST",
+    null,
+    { authRequired: true }
+  );
+
+  if (Array.isArray(result)) {
+    return Boolean(result[0]);
+  }
+  return Boolean(result);
+}
+
+async function checkLogin(email, password) {
+  try {
+    debugLog("🔐 Login attempt for:", email);
+
     const storedAttempts = JSON.parse(
       sessionStorage.getItem("login_attempts") || '{"count":0,"timestamp":0}'
     );
@@ -1567,15 +1720,18 @@ async function checkLogin(username, password) {
         );
         return false;
       } else {
-        // Reset after lockout period
         sessionStorage.removeItem("login_attempts");
       }
     }
 
-    // Validate username
-    const sanitizedUsername = sanitizeInput(username);
-    if (sanitizedUsername !== ADMIN_CREDENTIALS.username) {
-      console.log("❌ Username mismatch");
+    const sanitizedEmail = sanitizeInput(email);
+    if (!sanitizedEmail || !sanitizedEmail.includes("@")) {
+      showNotification("Please enter a valid admin email.", "error");
+      return false;
+    }
+
+    const authResult = await requestAuthSession(sanitizedEmail, password);
+    if (!authResult.success) {
       storedAttempts.count++;
       storedAttempts.timestamp =
         storedAttempts.count === 1 ? Date.now() : storedAttempts.timestamp;
@@ -1583,49 +1739,23 @@ async function checkLogin(username, password) {
       return false;
     }
 
-    console.log("✅ Username matches");
+    storeSession(authResult.session);
 
-    // Hash password and compare
-    const hashedPassword = await hashPassword(password);
-    console.log("Generated hash:", hashedPassword.substring(0, 20) + "...");
-    console.log(
-      "Stored hash:",
-      ADMIN_CREDENTIALS.passwordHash.substring(0, 20) + "..."
-    );
-
-    const isValid = hashedPassword === ADMIN_CREDENTIALS.passwordHash;
-    console.log("Hash match?", isValid);
-
-    if (isValid) {
-      // Clear login attempts on success
-      sessionStorage.removeItem("login_attempts");
-
-      // Create secure session
-      const session = {
-        token: generateSessionToken(),
-        username: username,
-        loginTime: new Date().toISOString(),
-        expiresAt: new Date(
-          Date.now() + SESSION_TIMEOUT_MINUTES * 60 * 1000
-        ).toISOString(),
-      };
-
-      secureStorage.setItem("session", session);
-      startSessionTimeout();
-      setupActivityMonitoring();
-
-      console.log("✅ Login successful!");
-      return true;
-    } else {
-      // Increment failed attempts
-      storedAttempts.count++;
-      storedAttempts.timestamp =
-        storedAttempts.count === 1 ? Date.now() : storedAttempts.timestamp;
-      sessionStorage.setItem("login_attempts", JSON.stringify(storedAttempts));
-
-      console.log("❌ Password incorrect");
+    const isAdmin = await checkIsAdmin();
+    if (!isAdmin) {
+      clearSession();
+      showNotification(
+        "Access denied. Your account is not an admin.",
+        "error"
+      );
       return false;
     }
+
+    sessionStorage.removeItem("login_attempts");
+    startSessionTimeout();
+    setupActivityMonitoring();
+    debugLog("✅ Login successful!");
+    return true;
   } catch (error) {
     console.error("Login error:", error);
     return false;
@@ -1664,9 +1794,26 @@ function setupActivityMonitoring() {
   });
 }
 
+async function signOutAdmin() {
+  const session = getStoredSession();
+  if (!session?.access_token) return;
+
+  try {
+    await fetch(`${SUPABASE_CONFIG.URL}/auth/v1/logout`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_CONFIG.ANON_KEY,
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+  } catch (error) {
+    debugWarn("Supabase logout failed:", error);
+  }
+}
+
 // Enhanced logout
 function logoutAdmin() {
-  console.log("Logging out admin...");
+  debugLog("Logging out admin...");
 
   // Clear all sensitive data
   currentAdmin = null;
@@ -1674,7 +1821,8 @@ function logoutAdmin() {
   currentEditId = null;
   clearSessionTimeout();
   clearDataCache();
-  secureStorage.removeItem("session");
+  signOutAdmin();
+  clearSession();
 
   // Reset UI
   const loginScreen = document.getElementById("login-screen");
@@ -1689,22 +1837,12 @@ function logoutAdmin() {
   resetGalleryForm();
   resetCarouselForm(); // Added
 
-  console.log("✅ Logged out successfully");
+  debugLog("✅ Logged out successfully");
 }
 
-// FIXED: Password change with enhanced validation
+// Updated password change for Supabase Auth
 async function changePassword(currentPass, newPass, confirmPass) {
   try {
-    // Step 1: Validate current password
-    console.log("Verifying current password...");
-
-    // Check current password
-    const currentValid = await checkLogin("admin", currentPass);
-    if (!currentValid) {
-      return { success: false, message: "Current password is incorrect" };
-    }
-
-    // Step 2: Validate new password
     if (newPass !== confirmPass) {
       return { success: false, message: "New passwords do not match" };
     }
@@ -1716,98 +1854,48 @@ async function changePassword(currentPass, newPass, confirmPass) {
       };
     }
 
-    // Check for common passwords
-    const commonPasswords = [
-      "password",
-      "12345678",
-      "qwerty",
-      "admin123",
-      "tokebakes",
-      "toke123",
-      "password123",
-      "adminadmin",
-    ];
-    if (commonPasswords.includes(newPass.toLowerCase())) {
+    const session = await ensureValidSession();
+    const email = session?.email || session?.user?.email;
+    if (!email) {
+      return { success: false, message: "Please log in again to continue." };
+    }
+
+    const verify = await requestAuthSession(email, currentPass);
+    if (!verify.success) {
+      return { success: false, message: "Current password is incorrect" };
+    }
+
+    const response = await fetch(`${SUPABASE_CONFIG.URL}/auth/v1/user`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_CONFIG.ANON_KEY,
+        Authorization: `Bearer ${verify.session.access_token}`,
+      },
+      body: JSON.stringify({ password: newPass }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
       return {
         success: false,
-        message: "Password is too common. Please choose a stronger password.",
+        message: errorText || "Failed to update password.",
       };
     }
 
-    // Step 3: Generate new hash
-    console.log("Generating secure hash...");
-    const newHash = await hashPassword(newPass);
-
-    // Step 4: Update database
-    console.log("Updating password in database...");
-    const dbResult = await updatePasswordInDatabase(newHash);
-
-    if (!dbResult.success) {
-      console.error("Database update failed:", dbResult.message);
-
-      // Use custom popup instead of confirm
-      const continueLocal = await showPopup({
-        title: "Database Update Failed",
-        message: `Failed to update database: ${dbResult.message}\n\nDo you want to update the password locally only?\nYou will need to manually update the database later.`,
-        type: "warning",
-        showCancel: true,
-        cancelText: "Cancel",
-        confirmText: "Update Locally",
-      });
-
-      if (!continueLocal) {
-        return { success: false, message: "Password change cancelled" };
-      }
-
-      // Update local only
-      ADMIN_CREDENTIALS.passwordHash = newHash;
-
-      console.log(
-        "✅ Password updated locally only. Manual database update required."
-      );
-
-      return {
-        success: true,
-        message:
-          "Password updated locally only. Manual database update required.",
-        requiresManualUpdate: true,
-      };
+    const refreshed = await requestAuthSession(email, newPass);
+    if (refreshed.success) {
+      storeSession(refreshed.session);
     }
-
-    // Step 5: Update local credentials AFTER successful database update
-    ADMIN_CREDENTIALS.passwordHash = newHash;
-
-    // Step 6: Update session
-    const session = secureStorage.getItem("session");
-    if (session) {
-      session.passwordUpdated = new Date().toISOString();
-      secureStorage.setItem("session", session);
-    }
-
-    // Step 7: Verify sync
-    await checkPasswordSync();
-
-    // Step 8: Log success
-    console.log(
-      `🔒 Password changed successfully at ${new Date().toISOString()}`
-    );
 
     return {
       success: true,
-      message: "Password updated successfully in both local and database",
+      message: "Password updated successfully.",
       timestamp: new Date().toISOString(),
     };
   } catch (error) {
     console.error("Password change error:", error);
-
-    let userMessage = "Error changing password";
-    if (error.message.includes("Failed to fetch")) {
-      userMessage = "Network error. Cannot connect to database.";
-    } else if (error.message.includes("crypto.subtle")) {
-      userMessage = "Browser security error. Try using a modern browser.";
-    }
-
-    return { success: false, message: userMessage };
+    return { success: false, message: "Error changing password" };
   }
 }
 
@@ -1836,9 +1924,10 @@ async function saveItem(itemType, formData) {
       carousel: ["alt", "image"], // Added
     };
 
-    const missingFields = requiredFields[itemType].filter(
-      (field) => !formData[field]
-    );
+    const missingFields = requiredFields[itemType].filter((field) => {
+      const value = formData[field];
+      return value === undefined || value === null || value === "";
+    });
     if (missingFields.length > 0) {
       throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
     }
@@ -1855,12 +1944,13 @@ async function saveItem(itemType, formData) {
       await secureRequest(
         `${endpoint}?id=eq.${currentEditId}`,
         "PATCH",
-        formData
+        formData,
+        { authRequired: true }
       );
-      console.log(`${itemType} item updated successfully!`);
+      debugLog(`${itemType} item updated successfully!`);
     } else {
-      await secureRequest(endpoint, "POST", formData);
-      console.log(`${itemType} item added successfully!`);
+      await secureRequest(endpoint, "POST", formData, { authRequired: true });
+      debugLog(`${itemType} item added successfully!`);
     }
 
     // Clear cache for this endpoint
@@ -1936,31 +2026,57 @@ async function saveFeaturedItem(e) {
   const description = document
     .getElementById("featured-description")
     .value.trim();
+  const menuItemIdRaw = document.getElementById("featured-menu-item").value;
+  const displayOrderInput = document.getElementById(
+    "featured-display-order"
+  ).value;
+  const isActive = document.getElementById("featured-active").value === "true";
+  const startDate = document.getElementById("featured-start-date").value;
+  const endDate = document.getElementById("featured-end-date").value;
   const imageFile = document.getElementById("featured-image").files[0];
   const itemId = document.getElementById("featured-id").value;
 
   try {
-    let imageBase64 = "";
-
-    if (imageFile) {
-      const compressed = await compressImage(imageFile);
-      imageBase64 = compressed.data;
-    } else if (isEditing && itemId && tempImageCache.has(itemId)) {
-      imageBase64 = tempImageCache.get(itemId);
-    } else {
-      showPopup({
-        title: "Image Required",
-        message: "Please select an image",
-        type: "error",
-        confirmText: "OK",
-      });
+    if (!title || title.length > 100) {
+      showNotification("Title must be 1-100 characters", "error");
       return;
     }
+
+    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+      showNotification("End date must be after start date", "error");
+      return;
+    }
+
+    let displayOrder;
+    if (displayOrderInput === "" && !isEditing) {
+      displayOrder = await getNextDisplayOrder(API_ENDPOINTS.FEATURED);
+    } else {
+      displayOrder = parseInt(displayOrderInput || "0", 10);
+    }
+
+    if (!Number.isFinite(displayOrder) || displayOrder < 0) {
+      showNotification("Display order must be 0 or higher", "error");
+      return;
+    }
+
+    const existingUrl = isEditing && itemId ? tempImageCache.get(itemId) : "";
+    const upload = await processImageUpload(
+      "featured",
+      imageFile,
+      existingUrl
+    );
+
+    const menuItemId = menuItemIdRaw ? Number(menuItemIdRaw) : null;
 
     const formData = {
       title,
       description,
-      image: imageBase64,
+      image: upload.url,
+      menu_item_id: Number.isFinite(menuItemId) ? menuItemId : null,
+      display_order: displayOrder,
+      is_active: isActive,
+      start_date: startDate || null,
+      end_date: endDate || null,
     };
 
     const success = await saveItem("featured", formData);
@@ -1987,9 +2103,21 @@ async function editFeaturedItem(id) {
       return;
     }
 
+    await populateFeaturedMenuSelect(item.menu_item_id);
+
     document.getElementById("featured-id").value = item.id;
     document.getElementById("featured-title").value = item.title;
     document.getElementById("featured-description").value = item.description;
+    document.getElementById("featured-menu-item").value =
+      item.menu_item_id || "";
+    document.getElementById("featured-display-order").value =
+      item.display_order ?? 0;
+    document.getElementById("featured-active").value = item.is_active
+      ? "true"
+      : "false";
+    document.getElementById("featured-start-date").value =
+      item.start_date || "";
+    document.getElementById("featured-end-date").value = item.end_date || "";
 
     const preview = document.getElementById("featured-image-preview");
     preview.innerHTML = `<img src="${item.image}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
@@ -2062,39 +2190,97 @@ async function renderMenuItems() {
   }
 }
 
+async function populateFeaturedMenuSelect(selectedId = null) {
+  const select = document.getElementById("featured-menu-item");
+  if (!select) return;
+
+  try {
+    const items = await loadDataFromSupabase(API_ENDPOINTS.MENU);
+    const currentValue = selectedId ?? select.value;
+
+    select.innerHTML = `<option value="">None</option>${items
+      .map(
+        (item) =>
+          `<option value="${item.id}">${escapeHtml(item.title)}</option>`
+      )
+      .join("")}`;
+
+    if (currentValue) {
+      select.value = String(currentValue);
+    }
+  } catch (error) {
+    console.error("Failed to populate menu selector:", error);
+  }
+}
+
 async function saveMenuItem(e) {
   e.preventDefault();
 
   const title = document.getElementById("menu-title").value.trim();
   const description = document.getElementById("menu-description").value.trim();
-  const price = document.getElementById("menu-price").value;
+  const priceValue = Number(document.getElementById("menu-price").value);
+  const category =
+    document.getElementById("menu-category").value.trim() || "pastries";
+  const tagsRaw = document.getElementById("menu-tags").value;
+  const isAvailable = document.getElementById("menu-available").value === "true";
+  const displayOrderInput = document.getElementById("menu-display-order").value;
+  const caloriesInput = document.getElementById("menu-calories").value;
   const imageFile = document.getElementById("menu-image").files[0];
   const itemId = document.getElementById("menu-id").value;
 
   // Validation
-  if (price < 0) {
-    showNotification("Price must be a positive number", "error");
+  if (!title || title.length > 100) {
+    showNotification("Title must be 1-100 characters", "error");
+    return;
+  }
+
+  if (category.length > 50) {
+    showNotification("Category must be 50 characters or fewer", "error");
+    return;
+  }
+
+  if (
+    Number.isNaN(priceValue) ||
+    priceValue < 1 ||
+    priceValue > 1000000
+  ) {
+    showNotification("Price must be between 1 and 1,000,000", "error");
     return;
   }
 
   try {
-    let imageBase64 = "";
-
-    if (imageFile) {
-      const compressed = await compressImage(imageFile);
-      imageBase64 = compressed.data;
-    } else if (isEditing && itemId && tempImageCache.has(itemId)) {
-      imageBase64 = tempImageCache.get(itemId);
+    let displayOrder;
+    if (displayOrderInput === "" && !isEditing) {
+      displayOrder = await getNextDisplayOrder(API_ENDPOINTS.MENU);
     } else {
-      showNotification("Please select an image", "error");
+      displayOrder = parseInt(displayOrderInput || "0", 10);
+    }
+
+    if (!Number.isFinite(displayOrder) || displayOrder < 0) {
+      showNotification("Display order must be 0 or higher", "error");
       return;
     }
+
+    const calories =
+      caloriesInput === "" ? null : parseInt(caloriesInput, 10);
+    if (calories !== null && (!Number.isFinite(calories) || calories < 0)) {
+      showNotification("Calories must be a positive number", "error");
+      return;
+    }
+
+    const existingUrl = isEditing && itemId ? tempImageCache.get(itemId) : "";
+    const upload = await processImageUpload("menu", imageFile, existingUrl);
 
     const formData = {
       title,
       description,
-      price: Number(price),
-      image: imageBase64,
+      price: priceValue,
+      image: upload.url,
+      category,
+      tags: parseTags(tagsRaw),
+      is_available: isAvailable,
+      display_order: displayOrder,
+      calories,
     };
 
     const success = await saveItem("menu", formData);
@@ -2102,6 +2288,7 @@ async function saveMenuItem(e) {
     if (success) {
       resetMenuForm();
       await renderMenuItems();
+      await populateFeaturedMenuSelect();
       await updateItemCounts();
       showNotification("Menu item saved successfully!", "success");
       dataSync.notifyDataChanged(isEditing ? "update" : "create", "menu");
@@ -2125,6 +2312,20 @@ async function editMenuItem(id) {
     document.getElementById("menu-title").value = item.title;
     document.getElementById("menu-description").value = item.description;
     document.getElementById("menu-price").value = item.price;
+    document.getElementById("menu-category").value =
+      item.category || "pastries";
+    document.getElementById("menu-tags").value = Array.isArray(item.tags)
+      ? item.tags.join(", ")
+      : "";
+    document.getElementById("menu-available").value = item.is_available
+      ? "true"
+      : "false";
+    document.getElementById("menu-display-order").value =
+      item.display_order ?? 0;
+    document.getElementById("menu-calories").value =
+      item.calories !== null && item.calories !== undefined
+        ? item.calories
+        : "";
 
     const preview = document.getElementById("menu-image-preview");
     preview.innerHTML = `<img src="${item.image}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
@@ -2167,6 +2368,7 @@ async function renderGalleryItems() {
         <img src="${item.image}" alt="${item.alt}" loading="lazy">
         <div class="gallery-admin-overlay">
           <p><strong>Alt Text:</strong> ${item.alt}</p>
+          <p><strong>Order:</strong> ${item.display_order ?? 0}</p>
           <div class="gallery-admin-actions">
             <button class="btn-edit" onclick="editGalleryItem('${item.id}')">
               <i class="fas fa-edit"></i> Edit
@@ -2195,26 +2397,44 @@ async function saveGalleryItem(e) {
   e.preventDefault();
 
   const alt = document.getElementById("gallery-alt").value.trim();
+  const displayOrderInput = document.getElementById(
+    "gallery-display-order"
+  ).value;
   const imageFile = document.getElementById("gallery-image").files[0];
   const itemId = document.getElementById("gallery-id").value;
 
   try {
-    let imageBase64 = "";
-
-    if (imageFile) {
-      const compressed = await compressImage(imageFile);
-      imageBase64 = compressed.data;
-    } else if (isEditing && itemId && tempImageCache.has(itemId)) {
-      imageBase64 = tempImageCache.get(itemId);
-    } else {
-      showNotification("Please select an image", "error");
+    if (!alt || alt.length > 255) {
+      showNotification("Alt text must be 1-255 characters", "error");
       return;
     }
 
+    let displayOrder;
+    if (displayOrderInput === "" && !isEditing) {
+      displayOrder = await getNextDisplayOrder(API_ENDPOINTS.GALLERY);
+    } else {
+      displayOrder = parseInt(displayOrderInput || "0", 10);
+    }
+
+    if (!Number.isFinite(displayOrder) || displayOrder < 0) {
+      showNotification("Display order must be 0 or higher", "error");
+      return;
+    }
+
+    const existingUrl = isEditing && itemId ? tempImageCache.get(itemId) : "";
+    const upload = await processImageUpload("gallery", imageFile, existingUrl);
+
     const formData = {
       alt,
-      image: imageBase64,
+      image: upload.url,
+      display_order: displayOrder,
     };
+
+    if (upload.meta) {
+      formData.width = upload.meta.width || null;
+      formData.height = upload.meta.height || null;
+      formData.file_size = upload.meta.size || null;
+    }
 
     const success = await saveItem("gallery", formData);
 
@@ -2242,6 +2462,8 @@ async function editGalleryItem(id) {
 
     document.getElementById("gallery-id").value = item.id;
     document.getElementById("gallery-alt").value = item.alt;
+    document.getElementById("gallery-display-order").value =
+      item.display_order ?? 0;
 
     const preview = document.getElementById("gallery-image-preview");
     preview.innerHTML = `<img src="${item.image}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
@@ -2279,8 +2501,12 @@ async function renderCarouselItems() {
     }
 
     container.innerHTML = items
-      .map(
-        (item, index) => `
+      .map((item, index) => {
+        const orderLabel = Number.isFinite(item.display_order)
+          ? item.display_order
+          : index + 1;
+
+        return `
       <div class="carousel-admin-item" data-id="${item.id}">
         <div class="carousel-slide-badge ${
           item.is_active ? "active" : "inactive"
@@ -2290,7 +2516,7 @@ async function renderCarouselItems() {
           }"></i>
           ${item.is_active ? "Active" : "Inactive"}
         </div>
-        <div class="carousel-slide-number">${index + 1}</div>
+        <div class="carousel-slide-number">${orderLabel}</div>
         <img src="${item.image}" alt="${item.alt}" loading="lazy">
         <div class="carousel-admin-overlay">
           <p><strong>Alt Text:</strong> ${item.alt}</p>
@@ -2307,8 +2533,8 @@ async function renderCarouselItems() {
           </div>
         </div>
       </div>
-    `
-      )
+    `;
+      })
       .join("");
   } catch (error) {
     console.error(`Error rendering carousel items:`, error);
@@ -2325,30 +2551,75 @@ async function saveCarouselItem(e) {
   e.preventDefault();
 
   const alt = document.getElementById("carousel-alt").value.trim();
-  const displayOrder =
-    parseInt(document.getElementById("carousel-display-order").value) || 0;
+  const title = document.getElementById("carousel-title").value.trim();
+  const subtitle = document.getElementById("carousel-subtitle").value.trim();
+  const ctaText = document.getElementById("carousel-cta-text").value.trim();
+  const ctaLink = document.getElementById("carousel-cta-link").value.trim();
+  const displayOrderInput = document.getElementById(
+    "carousel-display-order"
+  ).value;
   const isActive = document.getElementById("carousel-active").value === "true";
   const imageFile = document.getElementById("carousel-image").files[0];
   const itemId = document.getElementById("carousel-id").value;
 
   try {
-    let imageBase64 = "";
-
-    if (imageFile) {
-      const compressed = await compressImage(imageFile);
-      imageBase64 = compressed.data;
-    } else if (isEditing && itemId && tempImageCache.has(itemId)) {
-      imageBase64 = tempImageCache.get(itemId);
-    } else {
-      showNotification("Please select an image", "error");
+    if (!alt || alt.length > 255) {
+      showNotification("Alt text must be 1-255 characters", "error");
       return;
     }
 
+    if (title && title.length > 100) {
+      showNotification("Title must be 100 characters or fewer", "error");
+      return;
+    }
+
+    if (ctaText && ctaText.length > 50) {
+      showNotification("CTA text must be 50 characters or fewer", "error");
+      return;
+    }
+
+    if (ctaLink && ctaLink.length > 255) {
+      showNotification("CTA link must be 255 characters or fewer", "error");
+      return;
+    }
+
+    let displayOrder;
+    if (displayOrderInput === "" && !isEditing) {
+      displayOrder = await getNextDisplayOrder(API_ENDPOINTS.CAROUSEL);
+    } else {
+      displayOrder = parseInt(displayOrderInput || "0", 10);
+    }
+
+    if (!Number.isFinite(displayOrder) || displayOrder < 0) {
+      showNotification("Display order must be 0 or higher", "error");
+      return;
+    }
+
+    if (ctaLink) {
+      try {
+        new URL(ctaLink, window.location.origin);
+      } catch (error) {
+        showNotification("CTA link must be a valid URL or path", "error");
+        return;
+      }
+    }
+
+    const existingUrl = isEditing && itemId ? tempImageCache.get(itemId) : "";
+    const upload = await processImageUpload(
+      "carousel",
+      imageFile,
+      existingUrl
+    );
+
     const formData = {
       alt,
+      title: title || null,
+      subtitle: subtitle || null,
+      cta_text: ctaText || null,
+      cta_link: ctaLink || null,
       display_order: displayOrder,
       is_active: isActive,
-      image: imageBase64,
+      image: upload.url,
     };
 
     const success = await saveItem("carousel", formData);
@@ -2377,6 +2648,10 @@ async function editCarouselItem(id) {
 
     document.getElementById("carousel-id").value = item.id;
     document.getElementById("carousel-alt").value = item.alt;
+    document.getElementById("carousel-title").value = item.title || "";
+    document.getElementById("carousel-subtitle").value = item.subtitle || "";
+    document.getElementById("carousel-cta-text").value = item.cta_text || "";
+    document.getElementById("carousel-cta-link").value = item.cta_link || "";
     document.getElementById("carousel-display-order").value =
       item.display_order || 0;
     document.getElementById("carousel-active").value = item.is_active
@@ -2410,19 +2685,15 @@ async function updateStorageUsage() {
       loadDataFromSupabase(API_ENDPOINTS.CAROUSEL), // Added carousel
     ]);
 
-    const allItems = [...featured, ...menu, ...gallery, ...carousel]; // Added carousel
+    const allItems = [...featured, ...menu, ...gallery, ...carousel];
     let totalBytes = 0;
+    let hasUnknown = false;
 
     allItems.forEach((item) => {
-      if (item.image) {
-        // Base64 size calculation
-        const base64Length = item.image.length;
-        const padding = item.image.endsWith("==")
-          ? 2
-          : item.image.endsWith("=")
-          ? 1
-          : 0;
-        totalBytes += (base64Length * 3) / 4 - padding;
+      if (Number.isFinite(item.file_size)) {
+        totalBytes += Number(item.file_size);
+      } else if (item.image) {
+        hasUnknown = true;
       }
     });
 
@@ -2436,7 +2707,11 @@ async function updateStorageUsage() {
 
     if (storageUsedEl) storageUsedEl.textContent = mbUsed;
     if (storageFillEl) storageFillEl.style.width = `${percentage}%`;
-    if (storageInfoEl) storageInfoEl.textContent = `${mbUsed} MB / 500 MB`;
+    if (storageInfoEl) {
+      storageInfoEl.textContent = hasUnknown
+        ? `${mbUsed} MB / 500 MB (approx)`
+        : `${mbUsed} MB / 500 MB`;
+    }
 
     // Add warnings
     if (mbUsed > 450) {
@@ -2560,10 +2835,18 @@ async function importData(file) {
 
     // Clear existing data - UPDATED WITH CAROUSEL
     await Promise.all([
-      secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE"),
-      secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE"),
-      secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE"),
-      secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=gt.0`, "DELETE"), // Added carousel
+      secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE", null, {
+        authRequired: true,
+      }),
+      secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE", null, {
+        authRequired: true,
+      }),
+      secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE", null, {
+        authRequired: true,
+      }),
+      secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=gt.0`, "DELETE", null, {
+        authRequired: true,
+      }), // Added carousel
     ]);
 
     // Import new data
@@ -2577,7 +2860,7 @@ async function importData(file) {
     // Import batches
     const importBatch = async (items, endpoint) => {
       for (const item of items) {
-        await secureRequest(endpoint, "POST", item);
+        await secureRequest(endpoint, "POST", item, { authRequired: true });
         imported++;
 
         // Small delay to prevent rate limiting
@@ -2602,6 +2885,7 @@ async function importData(file) {
       renderGalleryItems(),
       renderCarouselItems(), // Added carousel
     ]);
+    await populateFeaturedMenuSelect();
     await updateItemCounts();
 
     dataSync.notifyDataChanged("import", "all");
@@ -2658,39 +2942,26 @@ function resetCarouselForm() {
 /* ================== FIXED INITIALIZATION ================== */
 
 async function initAdminPanel() {
-  console.log("🔧 Initializing Admin Panel v2.1 (WITH CAROUSEL)...");
+  debugLog("🔧 Initializing Admin Panel v2.1 (WITH CAROUSEL)...");
 
-  // 🔒 Initialize admin credentials from database
-  try {
-    await loadPasswordFromDatabase();
-
-    // Check password sync status
-    setTimeout(async () => {
-      await checkPasswordSync();
-    }, 1000);
-  } catch (error) {
-    console.error("Failed to initialize credentials:", error);
-  }
+  // 🔒 Admin session will be validated after login
 
   // Check session
-  const session = secureStorage.getItem("session");
-  console.log("Session check:", session);
+  const session = await ensureValidSession();
+  debugLog("Session check:", session);
 
-  if (session && session.token) {
-    // Check if session is still valid
-    const expiresAt = new Date(session.expiresAt);
-    if (expiresAt > new Date()) {
-      // Valid session, show dashboard
-      currentAdmin = session.username;
+  if (session?.access_token) {
+    const isAdmin = await checkIsAdmin();
+    if (isAdmin) {
+      currentAdmin = session.email || session.user?.email;
       document.getElementById("login-screen").style.display = "none";
       document.getElementById("admin-dashboard").style.display = "block";
       startSessionTimeout();
       setupActivityMonitoring();
-      console.log("✅ Restored existing session");
+      debugLog("✅ Restored existing session");
     } else {
-      // Session expired
-      secureStorage.removeItem("session");
-      console.log("❌ Session expired");
+      clearSession();
+      debugLog("❌ Session is not authorized");
     }
   }
 
@@ -2741,7 +3012,7 @@ async function initAdminPanel() {
 }
 
 function setupEventListeners() {
-  console.log("Setting up event listeners...");
+  debugLog("Setting up event listeners...");
 
   // Tab switching - UPDATED TO RESET CAROUSEL FORM
   document.querySelectorAll(".admin-tab").forEach((tab) => {
@@ -2781,21 +3052,21 @@ function setupEventListeners() {
   if (loginForm) {
     loginForm.addEventListener("submit", async function (e) {
       e.preventDefault();
-      console.log("Login form submitted");
+      debugLog("Login form submitted");
 
-      const username = sanitizeInput(
-        document.getElementById("admin-username").value
+      const email = sanitizeInput(
+        document.getElementById("admin-email").value
       );
       const password = document.getElementById("admin-password").value;
 
-      console.log("Attempting login with:", username);
+      debugLog("Attempting login with:", email);
 
-      const isValid = await checkLogin(username, password);
+      const isValid = await checkLogin(email, password);
       if (isValid) {
-        currentAdmin = username;
+        currentAdmin = email;
         document.getElementById("login-screen").style.display = "none";
         document.getElementById("admin-dashboard").style.display = "block";
-        showNotification(`Welcome back, ${username}!`, "success");
+        showNotification(`Welcome back, ${email}!`, "success");
 
         // Load data after successful login - UPDATED WITH CAROUSEL
         await Promise.all([
@@ -2804,9 +3075,10 @@ function setupEventListeners() {
           renderGalleryItems(),
           renderCarouselItems(), // Added carousel
         ]);
+        await populateFeaturedMenuSelect();
         await updateItemCounts();
       } else {
-        showNotification("Invalid username or password", "error");
+        showNotification("Invalid email or password", "error");
       }
     });
   }
@@ -2855,6 +3127,34 @@ function setupEventListeners() {
         passwordForm.reset();
       } else {
         showNotification(result.message, "error");
+      }
+    });
+  }
+
+  // Add admin access form
+  const addAdminForm = document.getElementById("add-admin-form");
+  if (addAdminForm) {
+    addAdminForm.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const userId = document.getElementById("admin-user-id").value.trim();
+
+      if (!userId) {
+        showNotification("Please enter a valid Auth User ID.", "error");
+        return;
+      }
+
+      try {
+        await secureRequest(
+          "/rest/v1/app_admins",
+          "POST",
+          { user_id: userId },
+          { authRequired: true }
+        );
+        showNotification("Admin access granted.", "success");
+        addAdminForm.reset();
+      } catch (error) {
+        console.error("Failed to add admin:", error);
+        showNotification("Failed to grant admin access.", "error");
       }
     });
   }
@@ -2991,10 +3291,18 @@ function setupEventListeners() {
 
         // UPDATED WITH CAROUSEL
         await Promise.all([
-          secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE"),
-          secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE"),
-          secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE"),
-          secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=gt.0`, "DELETE"), // Added carousel
+          secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE", null, {
+            authRequired: true,
+          }),
+          secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE", null, {
+            authRequired: true,
+          }),
+          secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE", null, {
+            authRequired: true,
+          }),
+          secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=gt.0`, "DELETE", null, {
+            authRequired: true,
+          }), // Added carousel
         ]);
 
         clearDataCache();
@@ -3007,6 +3315,7 @@ function setupEventListeners() {
           renderGalleryItems(),
           renderCarouselItems(), // Added carousel
         ]);
+        await populateFeaturedMenuSelect();
         await updateItemCounts();
 
         dataSync.notifyDataChanged("reset", "all");
@@ -3019,6 +3328,15 @@ function setupEventListeners() {
 }
 
 // Make functions available globally - ADDED CAROUSEL
+window.AdminSession = {
+  getSession: () => getStoredSession(),
+  getAccessToken: async () => {
+    const session = await ensureValidSession();
+    return session?.access_token || null;
+  },
+  secureRequest,
+};
+
 window.editFeaturedItem = editFeaturedItem;
 window.deleteFeaturedItem = deleteFeaturedItem;
 window.editMenuItem = editMenuItem;
@@ -3051,4 +3369,5 @@ function setupConnectionMonitor() {
 // Add to initAdminPanel
 setupConnectionMonitor();
 
-console.log("✅ Toke Bakes Admin Panel v2.1 - WITH CAROUSEL SUCCESS");
+debugLog("✅ Toke Bakes Admin Panel v2.1 - WITH CAROUSEL SUCCESS");
+

@@ -1,4 +1,4 @@
-﻿/* ================== EMERGENCY PATCH - PREVENT ERRORS ================== */
+/* ================== EMERGENCY PATCH - PREVENT ERRORS ================== */
 // These functions were removed but might still be called
 if (typeof initFooterTheme === "undefined") {
   window.initFooterTheme = function () {
@@ -24,24 +24,27 @@ if (typeof initThemeToggle === "undefined") {
 class WebsiteAutoUpdater {
   constructor() {
     this.lastUpdateKey = "toke_bakes_last_update";
+    this.dbLastUpdateKey = "toke_bakes_db_last_updated";
+    this.dbCheckInterval = 60000;
+    this.lastDbCheck = 0;
     this.broadcastChannel = null;
     this.pollingInterval = null;
     this.init();
   }
 
   init() {
-    console.log("🔧 Initializing Enhanced WebsiteAutoUpdater...");
+    debugLog("Initializing Enhanced WebsiteAutoUpdater...");
 
     // 1. Setup BroadcastChannel for instant sync (same browser tabs)
     if (typeof BroadcastChannel !== "undefined") {
       this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
       this.broadcastChannel.onmessage = (event) => {
         if (event.data.type === "DATA_UPDATED") {
-          console.log("📡 BroadcastChannel update received!", event.data);
+          debugLog("BroadcastChannel update received!", event.data);
           this.refreshDataWithUI();
         }
       };
-      console.log("✅ BroadcastChannel ready for instant sync");
+      debugLog("BroadcastChannel ready for instant sync");
     }
 
     // 2. Check for updates every 25 seconds
@@ -50,7 +53,7 @@ class WebsiteAutoUpdater {
     // 3. Check when user returns to tab
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) {
-        console.log("👁️ Tab became visible, checking for updates...");
+        debugLog("Tab became visible, checking for updates...");
         this.checkForUpdates();
       }
     });
@@ -64,7 +67,7 @@ class WebsiteAutoUpdater {
     this.pollingInterval = setInterval(() => {
       this.checkForUpdates();
     }, interval);
-    console.log(`✅ Polling started (every ${interval / 1000}s)`);
+    debugLog(`Polling started (every ${interval / 1000}s)`);
   }
 
   async checkForUpdates() {
@@ -72,11 +75,64 @@ class WebsiteAutoUpdater {
     const myLastCheck = localStorage.getItem("my_last_check") || "0";
 
     if (lastUpdate && lastUpdate > myLastCheck) {
-      console.log("🔄 Update detected via localStorage/timestamp");
+      debugLog("Update detected via localStorage/timestamp");
       localStorage.setItem("my_last_check", lastUpdate);
       await this.refreshDataWithUI();
       return true;
     }
+
+    const dbUpdated = await this.checkDatabaseForUpdates();
+    return dbUpdated;
+  }
+
+  async checkDatabaseForUpdates() {
+    if (!window.SUPABASE_CONFIG?.URL || !window.SUPABASE_CONFIG?.ANON_KEY) {
+      return false;
+    }
+
+    const now = Date.now();
+    if (now - this.lastDbCheck < this.dbCheckInterval) {
+      return false;
+    }
+    this.lastDbCheck = now;
+
+    try {
+      const response = await fetch(
+        `${SUPABASE_CONFIG.URL}/rest/v1/rpc/site_last_updated`,
+        {
+          method: "POST",
+          headers: {
+            apikey: SUPABASE_CONFIG.ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        return false;
+      }
+
+      const data = await response.json();
+      const value = Array.isArray(data) ? data[0] : data;
+      if (!value) return false;
+
+      const parsed = Date.parse(value);
+      if (Number.isNaN(parsed)) return false;
+
+      const lastKnown = Number(
+        localStorage.getItem(this.dbLastUpdateKey) || "0"
+      );
+
+      if (parsed > lastKnown) {
+        localStorage.setItem(this.dbLastUpdateKey, parsed.toString());
+        await this.refreshDataWithUI();
+        return true;
+      }
+    } catch (error) {
+      debugWarn("Database update check failed:", error);
+    }
+
     return false;
   }
 
@@ -85,23 +141,19 @@ class WebsiteAutoUpdater {
     this.showSyncIndicator("syncing");
 
     try {
-      console.log("🔄 Refreshing website data...");
+      debugLog("Refreshing website data...");
 
-      // Clear ALL caches aggressively
-      if (window.cachedMenuItems) {
-        window.cachedMenuItems = null;
-        window.cacheTimestamp = null;
-      }
-
-      // Clear dataCache if it exists (from admin.js)
-      if (window.dataCache && window.dataCache.clear) {
-        window.dataCache.clear();
-      }
+      // Keep cached content for smooth refresh
 
       // Reload content based on current page
       if (typeof loadDynamicContent === "function") {
-        await loadDynamicContent();
-        console.log("✅ Dynamic content reloaded");
+        await loadDynamicContent(true, true);
+        debugLog("Dynamic content reloaded");
+      }
+
+      // Reload carousel if present (homepage)
+      if (window.heroCarousel && typeof window.heroCarousel.reload === "function") {
+        await window.heroCarousel.reload(true, true);
       }
 
       // Also refresh cart if on order page
@@ -110,7 +162,7 @@ class WebsiteAutoUpdater {
         typeof renderCartOnOrderPage === "function"
       ) {
         await renderCartOnOrderPage(true);
-        console.log("✅ Cart refreshed");
+        debugLog("Cart refreshed");
       }
 
       // Show success indicator
@@ -124,7 +176,7 @@ class WebsiteAutoUpdater {
         this.hideSyncIndicator();
       }, 2000);
     } catch (error) {
-      console.error("❌ Sync refresh failed:", error);
+      console.error("Sync refresh failed:", error);
       this.hideSyncIndicator();
 
       // Show error state briefly
@@ -149,11 +201,11 @@ class WebsiteAutoUpdater {
     // Set state
     if (state === "syncing") {
       indicator.classList.add("syncing");
-      indicator.innerHTML = "⟳";
+      indicator.textContent = '...';
       indicator.title = "Updating content...";
     } else if (state === "updated") {
       indicator.classList.add("updated");
-      indicator.innerHTML = "✓";
+      indicator.textContent = '...';
       indicator.title = "Content updated!";
     } else if (state === "error") {
       indicator.style.cssText = `
@@ -179,7 +231,7 @@ class WebsiteAutoUpdater {
   showUpdateNotification() {
     // Optional: You can enable this for visual toast
     // For now, just log to console
-    console.log("✅ Website content updated successfully!");
+    debugLog("Website content updated successfully!");
 
     // If you want a toast notification later, uncomment:
     /*
@@ -192,6 +244,15 @@ class WebsiteAutoUpdater {
 
 const useSupabase = true; // Always use Supabase
 
+// Debug logger (disabled for production)
+const DEBUG = false;
+const debugLog = (...args) => {
+  if (DEBUG) debugLog(...args);
+};
+const debugWarn = (...args) => {
+  if (DEBUG) debugWarn(...args);
+};
+
 // ================== DATA LOADING FUNCTIONS ==================
 
 // Cache for menu items to reduce API calls
@@ -202,17 +263,53 @@ const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 // General cache for all data
 const dataCache = new Map();
 const CACHE_DURATION_GENERAL = 24 * 60 * 60 * 1000; // 24 hours
+const MENU_CACHE_KEY = "toke_bakes_menu_cache_v1";
+
+function normalizeQuery(query) {
+  if (!query) {
+    return "?select=*&order=created_at.desc";
+  }
+  return query.startsWith("?") ? query : `?${query}`;
+}
+
+function todayISO() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function buildFeaturedQuery() {
+  const today = todayISO();
+  return `?select=*&is_active=eq.true&start_date=lte.${today}&end_date=gte.${today}&order=display_order.asc,created_at.desc`;
+}
+
+function buildMenuQuery() {
+  return `?select=*&is_available=eq.true&order=display_order.asc,created_at.desc`;
+}
+
+function buildGalleryQuery() {
+  return `?select=*&order=display_order.asc,created_at.desc`;
+}
+
+function isFeaturedActive(item) {
+  if (item.is_active === false || item.is_active === 0 || item.is_active === "false") {
+    return false;
+  }
+  const today = todayISO();
+  const startDate = item.start_date || today;
+  const endDate = item.end_date || today;
+  return startDate <= today && endDate >= today;
+}
 
 // Load from Supabase with caching
-async function loadFromSupabase(endpoint) {
-  const cacheKey = endpoint;
+async function loadFromSupabase(endpoint, query = "") {
+  const normalizedQuery = normalizeQuery(query);
+  const cacheKey = `${endpoint}${normalizedQuery}`;
   const now = Date.now();
 
   // Check cache
   if (dataCache.has(cacheKey)) {
     const { data, timestamp } = dataCache.get(cacheKey);
     if (now - timestamp < CACHE_DURATION_GENERAL) {
-      console.log(`Using cached data for ${endpoint}`);
+      debugLog(`Using cached data for ${endpoint}`);
       return data;
     } else {
       dataCache.delete(cacheKey);
@@ -231,19 +328,19 @@ async function loadFromSupabase(endpoint) {
     }
 
     const response = await fetch(
-      `${SUPABASE_CONFIG.URL}${endpoint}?select=*&order=created_at.desc`,
+      `${SUPABASE_CONFIG.URL}${endpoint}${normalizedQuery}`,
       {
         headers: {
           apikey: SUPABASE_CONFIG.ANON_KEY,
           Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
           "Content-Type": "application/json",
         },
-        cache: "no-cache",
+        cache: "no-store",
       }
     );
 
     if (!response.ok) {
-      console.warn(`Failed to load from ${endpoint}:`, response.status);
+      debugWarn(`Failed to load from ${endpoint}:`, response.status);
       return [];
     }
 
@@ -252,7 +349,7 @@ async function loadFromSupabase(endpoint) {
 
     // Cache the result
     dataCache.set(cacheKey, { data: result, timestamp: now });
-    console.log(`Cached data for ${endpoint}`);
+    debugLog(`Cached data for ${endpoint}`);
 
     return result;
   } catch (error) {
@@ -273,40 +370,95 @@ async function getMenuItems() {
     return cachedMenuItems;
   }
 
-  cachedMenuItems = await loadFromSupabase(API_ENDPOINTS.MENU);
+  const freshItems = await loadFromSupabase(
+    API_ENDPOINTS.MENU,
+    buildMenuQuery()
+  );
+  const filteredFresh = Array.isArray(freshItems)
+    ? freshItems.filter(isMenuItemAvailable)
+    : [];
+
+  if (filteredFresh.length > 0) {
+    cachedMenuItems = filteredFresh;
+    cacheTimestamp = now;
+    return cachedMenuItems;
+  }
+
+  // Fallback to localStorage cache if available
+  try {
+    const cached = localStorage.getItem(MENU_CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (
+        parsed &&
+        Array.isArray(parsed.data) &&
+        parsed.data.length > 0 &&
+        Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL
+      ) {
+        debugLog("Using localStorage cached menu items (fallback)");
+        cachedMenuItems = parsed.data.filter(isMenuItemAvailable);
+        cacheTimestamp = parsed.timestamp || now;
+        return cachedMenuItems;
+      }
+    }
+  } catch (err) {
+    debugLog("Could not read menu cache (fallback)");
+  }
+
+  // Keep stale in-memory cache if fetch failed to avoid false "unavailable"
+  if (cachedMenuItems && cachedMenuItems.length > 0) {
+    debugLog("Using stale in-memory menu cache (fallback)");
+    return cachedMenuItems;
+  }
+
+  cachedMenuItems = Array.isArray(freshItems) ? freshItems : [];
   cacheTimestamp = now;
   return cachedMenuItems;
 }
 
-// ================== LOAD FEATURED ITEMS - IMPROVED VERSION ==================
-async function loadFeaturedItems() {
+// ================== LOAD FEATURED ITEMS - FIXED VERSION ==================
+async function loadFeaturedItems(forceReload = false, silentRefresh = false) {
   const container = document.getElementById("featured-container");
   if (!container) return;
 
-  const cacheKey = "featured_loaded";
-  const isFirstLoad = (() => {
-    try {
-      return !localStorage.getItem(cacheKey);
-    } catch (e) {
-      return false;
-    }
-  })();
+  // Check if we already have content to prevent flash
+  if (
+    container.children.length > 0 &&
+    !container.querySelector(".loading-message") &&
+    !forceReload
+  ) {
+    debugLog("Featured items already loaded, skipping");
+    return;
+  }
 
-  // Check if featured data is cached
+  // Check cache first - don't show loading if we have cached data
   const dataCacheKey = `${API_ENDPOINTS.FEATURED}_data`;
-  let hasCachedData = false;
-  try {
-    const cached = localStorage.getItem(dataCacheKey);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL) {
-        hasCachedData = true;
-      }
-    }
-  } catch (e) {}
+  let cachedData = null;
 
-  if (isFirstLoad || !hasCachedData) {
-    // Show loading state only on first visit or when data not cached
+  if (!forceReload) {
+    try {
+      const cached = localStorage.getItem(dataCacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL) {
+          cachedData = parsed.data;
+          debugLog("Using cached featured items");
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (cachedData) {
+    renderFeaturedItems(container, cachedData.filter(isFeaturedActive));
+    setContainerLoading(container, false);
+    if (!forceReload) return;
+  }
+
+  const shouldShowLoading = !cachedData && !silentRefresh;
+
+  // Only show loading if no cache
+  if (shouldShowLoading) {
+    setContainerLoading(container, true);
     container.innerHTML = `
       <div class="loading-message">
         <div class="loading-spinner"></div>
@@ -315,24 +467,19 @@ async function loadFeaturedItems() {
     `;
   }
 
-  const startTime = Date.now();
-
   try {
-    const items = await loadFromSupabase(API_ENDPOINTS.FEATURED);
+    // Try to load fresh data
+    let items = await loadFromSupabase(
+      API_ENDPOINTS.FEATURED,
+      buildFeaturedQuery()
+    );
+    items = Array.isArray(items) ? items.filter(isFeaturedActive) : [];
 
-    if (isFirstLoad) {
-      // Ensure minimum loading time for smooth UX on first load
-      const elapsed = Date.now() - startTime;
-      const minLoadingTime = 300; // 300ms minimum
-      if (elapsed < minLoadingTime) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, minLoadingTime - elapsed)
-        );
-      }
+    // If fresh load failed but we have cache, use cache
+    if ((!items || items.length === 0) && cachedData) {
+      items = cachedData.filter(isFeaturedActive);
+      debugLog("Using cached data (fresh fetch empty)");
     }
-
-    // Mark as loaded
-    localStorage.setItem(cacheKey, "true");
 
     if (!items || items.length === 0) {
       container.innerHTML = `
@@ -345,60 +492,94 @@ async function loadFeaturedItems() {
       return;
     }
 
-    // Generate HTML from data
-    container.innerHTML = items
-      .map(
-        (item) => `
-          <article class="featured-item">
-            <img src="${item.image}" alt="${item.title}" loading="lazy"
-                 onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkZlYXR1cmVkPC90ZXh0Pjwvc3ZnPg==';">
-            <h4>${escapeHtml(item.title)}</h4>
-            <p>${escapeHtml(item.description)}</p>
-          </article>
-        `
-      )
-      .join("");
+    renderFeaturedItems(container, items);
+
+    // Cache successful response
+    try {
+      localStorage.setItem(
+        dataCacheKey,
+        JSON.stringify({ data: items, timestamp: Date.now() })
+      );
+    } catch (e) {}
   } catch (error) {
     console.error("Error loading featured items:", error);
-    container.innerHTML = `
-      <div class="empty-state error">
-        <i class="fas fa-exclamation-triangle"></i>
-        <p>Unable to load featured items.</p>
-        <p class="small">Please check your connection</p>
-      </div>
-    `;
+
+    // If error but we have cached data, show it
+    if (cachedData && cachedData.length > 0) {
+      debugLog("Using cached data due to error");
+      renderFeaturedItems(container, cachedData.filter(isFeaturedActive));
+    } else {
+      container.innerHTML = `
+        <div class="empty-state error">
+          <i class="fas fa-exclamation-triangle"></i>
+          <p>Unable to load featured items.</p>
+          <p class="small">Please check your connection</p>
+        </div>
+      `;
+    }
+  } finally {
+    if (shouldShowLoading) {
+      setContainerLoading(container, false);
+    }
   }
 }
 
-// ================== LOAD MENU ITEMS - IMPROVED VERSION ==================
-async function loadMenuItems() {
+// ================== LOAD MENU ITEMS - FIXED VERSION ==================
+async function loadMenuItems(forceReload = false, silentRefresh = false) {
   const container = document.getElementById("menu-container");
   if (!container) return;
 
-  const cacheKey = "menu_loaded";
-  const isFirstLoad = (() => {
-    try {
-      return !localStorage.getItem(cacheKey);
-    } catch (e) {
-      return false; // no loading if localStorage fails
-    }
-  })();
+  // Check if we already have content to prevent flash
+  if (
+    container.children.length > 0 &&
+    !container.querySelector(".loading-message") &&
+    !forceReload
+  ) {
+    debugLog("Menu items already loaded, skipping");
+    return;
+  }
 
-  // Check if menu data is cached
-  const dataCacheKey = `${API_ENDPOINTS.MENU}_data`;
-  let hasCachedData = false;
-  try {
-    const cached = localStorage.getItem(dataCacheKey);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL) {
-        hasCachedData = true;
+  // Check cache first
+  let cachedData = null;
+  const now = Date.now();
+
+  if (!forceReload) {
+    if (
+      cachedMenuItems &&
+      cacheTimestamp &&
+      now - cacheTimestamp < CACHE_DURATION
+    ) {
+      cachedData = cachedMenuItems;
+      debugLog("Using cached menu items");
+    }
+
+    if (!cachedData) {
+      try {
+        const cached = localStorage.getItem(MENU_CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL) {
+            cachedData = parsed.data;
+            debugLog("Using localStorage cached menu items");
+          }
+        }
+      } catch (err) {
+        debugLog("Could not read menu cache");
       }
     }
-  } catch (e) {}
+  }
 
-  if (isFirstLoad || !hasCachedData) {
-    // Show loading state only on first visit or when data not cached
+  if (cachedData) {
+    renderMenuItems(container, cachedData.filter(isMenuItemAvailable));
+    setContainerLoading(container, false);
+    if (!forceReload) return;
+  }
+
+  const shouldShowLoading = !cachedData && !silentRefresh;
+
+  // Only show loading if no cache
+  if (shouldShowLoading) {
+    setContainerLoading(container, true);
     container.innerHTML = `
       <div class="loading-message">
         <div class="loading-spinner"></div>
@@ -407,28 +588,10 @@ async function loadMenuItems() {
     `;
   }
 
-  const startTime = Date.now();
-
   try {
-    const items = await getMenuItems();
-
-    if (isFirstLoad) {
-      // Ensure minimum loading time for smooth UX on first load
-      const elapsed = Date.now() - startTime;
-      const minLoadingTime = 300; // 300ms minimum
-      if (elapsed < minLoadingTime) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, minLoadingTime - elapsed)
-        );
-      }
-    }
-
-    // Mark as loaded
-    try {
-      localStorage.setItem(cacheKey, "true");
-    } catch (e) {
-      // ignore
-    }
+    // Try to load fresh data
+    let items = await getMenuItems();
+    items = Array.isArray(items) ? items.filter(isMenuItemAvailable) : [];
 
     if (!items || items.length === 0) {
       container.innerHTML = `
@@ -441,67 +604,88 @@ async function loadMenuItems() {
       return;
     }
 
-    // Generate HTML from data
-    container.innerHTML = items
-      .map(
-        (item) => `
-          <div class="menu-item" data-item="${escapeHtml(
-            item.title
-          )}" data-price="${item.price}" data-id="${item.id || ""}">
-            <img src="${item.image}" alt="${
-          item.title
-        }" loading="eager" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4='">
-            <h3>${escapeHtml(item.title)}</h3>
-            <p>${escapeHtml(item.description)}</p>
-            <div class="popup">
-              <button class="add-cart" style="background: #e67a00; border: none; color: #fff; padding: 0.5rem 0.875rem; border-radius: 8px; cursor: pointer; font-size: 0.95rem; font-weight: 600; position: relative; overflow: hidden; transition: all 0.3s ease; line-height: 1.4; min-width: 100px;">Add to Cart</button>
-              <a class="order-now" href="#" style="background: #444; border: none; color: #fff; padding: 0.5rem 0.875rem; border-radius: 8px; cursor: pointer; font-size: 0.95rem; font-weight: 600; position: relative; overflow: hidden; transition: all 0.3s ease; line-height: 1.4; min-width: 100px; text-decoration: none; display: inline-block;">Order Now</a>
-            </div>
-          </div>
-        `
-      )
-      .join("");
+    renderMenuItems(container, items);
+
+    // Update cache
+    cachedMenuItems = items;
+    cacheTimestamp = Date.now();
+    try {
+      localStorage.setItem(
+        MENU_CACHE_KEY,
+        JSON.stringify({ data: items, timestamp: Date.now() })
+      );
+    } catch (err) {
+      debugLog("Could not write menu cache");
+    }
   } catch (error) {
     console.error("Error loading menu items:", error);
-    container.innerHTML = `
-      <div class="empty-state error">
-        <i class="fas fa-exclamation-triangle"></i>
-        <p>Unable to load menu.</p>
-        <p class="small">Please try again later</p>
-      </div>
-    `;
+
+    // If error but we have cached data, show it
+    if (cachedData && cachedData.length > 0) {
+      debugLog("Using cached data due to error");
+      renderMenuItems(container, cachedData.filter(isMenuItemAvailable));
+    } else {
+      container.innerHTML = `
+        <div class="empty-state error">
+          <i class="fas fa-exclamation-triangle"></i>
+          <p>Unable to load menu.</p>
+          <p class="small">Please try again later</p>
+        </div>
+      `;
+    }
+  } finally {
+    if (shouldShowLoading) {
+      setContainerLoading(container, false);
+    }
   }
 }
 
-// ================== LOAD GALLERY IMAGES - IMPROVED VERSION ==================
-async function loadGalleryImages() {
+// ================== LOAD GALLERY IMAGES - FIXED VERSION ==================
+async function loadGalleryImages(forceReload = false, silentRefresh = false) {
   const container = document.getElementById("gallery-container");
   if (!container) return;
 
-  const cacheKey = "gallery_loaded";
-  const isFirstLoad = (() => {
-    try {
-      return !localStorage.getItem(cacheKey);
-    } catch (e) {
-      return false;
-    }
-  })();
+  // Check if we already have content to prevent flash
+  if (
+    container.children.length > 0 &&
+    !container.querySelector(".loading-message") &&
+    !forceReload
+  ) {
+    debugLog("Gallery images already loaded, skipping");
+    return;
+  }
 
-  // Check if gallery data is cached
+  // Check cache first
   const dataCacheKey = `${API_ENDPOINTS.GALLERY}_data`;
-  let hasCachedData = false;
-  try {
-    const cached = localStorage.getItem(dataCacheKey);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL) {
-        hasCachedData = true;
-      }
-    }
-  } catch (e) {}
+  let cachedData = null;
 
-  if (isFirstLoad || !hasCachedData) {
-    // Show loading state only on first visit or when data not cached
+  if (!forceReload) {
+    try {
+      const cached = localStorage.getItem(dataCacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL) {
+          cachedData = parsed.data;
+          debugLog("Using cached gallery images");
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (cachedData) {
+    renderGalleryImages(
+      container,
+      cachedData.filter((item) => item.image)
+    );
+    setContainerLoading(container, false);
+    if (!forceReload) return;
+  }
+
+  const shouldShowLoading = !cachedData && !silentRefresh;
+
+  // Only show loading if no cache
+  if (shouldShowLoading) {
+    setContainerLoading(container, true);
     container.innerHTML = `
       <div class="loading-message">
         <div class="loading-spinner"></div>
@@ -510,24 +694,19 @@ async function loadGalleryImages() {
     `;
   }
 
-  const startTime = Date.now();
-
   try {
-    const items = await loadFromSupabase(API_ENDPOINTS.GALLERY);
+    // Try to load fresh data
+    let items = await loadFromSupabase(
+      API_ENDPOINTS.GALLERY,
+      buildGalleryQuery()
+    );
+    items = Array.isArray(items) ? items.filter((item) => item.image) : [];
 
-    if (isFirstLoad) {
-      // Ensure minimum loading time for smooth UX
-      const elapsed = Date.now() - startTime;
-      const minLoadingTime = 300; // 300ms minimum
-      if (elapsed < minLoadingTime) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, minLoadingTime - elapsed)
-        );
-      }
+    // If fresh load failed but we have cache, use cache
+    if ((!items || items.length === 0) && cachedData) {
+      items = cachedData;
+      debugLog("Using cached data (fresh fetch empty)");
     }
-
-    // Mark as loaded
-    localStorage.setItem(cacheKey, "true");
 
     if (!items || items.length === 0) {
       container.innerHTML = `
@@ -540,64 +719,107 @@ async function loadGalleryImages() {
       return;
     }
 
-    // Generate HTML from data
-    container.innerHTML = items
-      .map(
-        (item) => `
-          <img src="${item.image}" alt="${item.alt}" loading="lazy" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+='">
-        `
-      )
-      .join("");
+    renderGalleryImages(container, items);
+
+    // Cache successful response
+    try {
+      localStorage.setItem(
+        dataCacheKey,
+        JSON.stringify({ data: items, timestamp: Date.now() })
+      );
+    } catch (e) {}
   } catch (error) {
     console.error("Error loading gallery images:", error);
-    container.innerHTML = `
-      <div class="empty-state error">
-        <i class="fas fa-exclamation-triangle"></i>
-        <p>Unable to load gallery.</p>
-        <p class="small">Please check your connection</p>
-      </div>
-    `;
+
+    // If error but we have cached data, show it
+    if (cachedData && cachedData.length > 0) {
+      debugLog("Using cached data due to error");
+      renderGalleryImages(
+        container,
+        cachedData.filter((item) => item.image)
+      );
+    } else {
+      container.innerHTML = `
+        <div class="empty-state error">
+          <i class="fas fa-exclamation-triangle"></i>
+          <p>Unable to load gallery.</p>
+          <p class="small">Please check your connection</p>
+        </div>
+      `;
+    }
+  } finally {
+    if (shouldShowLoading) {
+      setContainerLoading(container, false);
+    }
   }
 }
 
-// ================== LOAD DYNAMIC CONTENT - IMPROVED VERSION ==================
-async function loadDynamicContent(forceReload = false) {
+// ================== LOAD DYNAMIC CONTENT - FIXED VERSION ==================
+async function loadDynamicContent(forceReload = false, silentRefresh = false) {
+  await waitForThemeReady();
   const currentPage = window.location.pathname.split("/").pop() || "index.html";
 
-  console.log("📱 Loading content for page:", currentPage);
+  debugLog("Loading content for page:", currentPage);
 
-  // Clear any existing loading states FIRST
-  clearLoadingStates();
-
-  // Check if Supabase config exists
-  if (!window.SUPABASE_CONFIG || !window.API_ENDPOINTS) {
-    console.error("Supabase configuration not loaded");
-    showConfigError();
-    return;
+  const showLoading = !silentRefresh;
+  if (showLoading) {
+    document.body.classList.add("cms-loading");
   }
 
-  if (
-    currentPage.includes("index") ||
-    currentPage === "" ||
-    currentPage === "/" ||
-    currentPage === "index.html"
-  ) {
-    console.log("🔍 Loading featured items for homepage");
-    await loadFeaturedItems();
-  } else if (currentPage.includes("menu")) {
-    console.log("🔍 Loading menu items");
-    await loadMenuItems();
-  } else if (currentPage.includes("gallery")) {
-    console.log("🔍 Loading gallery images");
-    await loadGalleryImages();
-  }
+  try {
+    // Clear any existing loading states FIRST
+    clearLoadingStates();
 
-  console.log("✅ Content loading complete for:", currentPage);
+    if (forceReload && !silentRefresh) {
+      clearContentCaches();
+    }
+
+    // Check if Supabase config exists
+    if (!window.SUPABASE_CONFIG || !window.API_ENDPOINTS) {
+      console.error("Supabase configuration not loaded");
+      showConfigError();
+      return;
+    }
+
+    if (
+      currentPage.includes("index") ||
+      currentPage === "" ||
+      currentPage === "/" ||
+      currentPage === "index.html"
+    ) {
+      debugLog("Loading featured items for homepage");
+      await loadFeaturedItems(forceReload, silentRefresh);
+    } else if (currentPage.includes("menu")) {
+      debugLog("Loading menu items");
+      await loadMenuItems(forceReload, silentRefresh);
+    } else if (currentPage.includes("gallery")) {
+      debugLog("Loading gallery images");
+      await loadGalleryImages(forceReload, silentRefresh);
+    }
+
+    debugLog("Content loading complete for:", currentPage);
+  } finally {
+    if (showLoading) {
+      document.body.classList.remove("cms-loading");
+    }
+
+    // Home-only UI (scroll reveal + scroll-to-top) should refresh after content loads
+    refreshHomeEnhancements();
+  }
 }
 
 // ================== HELPER FUNCTIONS ==================
+function setContainerLoading(container, isLoading) {
+  if (!container) return;
+  if (isLoading) {
+    container.setAttribute("data-loading", "true");
+  } else {
+    container.removeAttribute("data-loading");
+  }
+}
+
 function clearLoadingStates() {
-  console.log("🧹 Clearing loading states");
+  debugLog("Clearing loading states");
 
   const containers = [
     "featured-container",
@@ -608,10 +830,63 @@ function clearLoadingStates() {
   containers.forEach((containerId) => {
     const container = document.getElementById(containerId);
     if (container) {
-      // Only clear if it exists on this page
-      console.log(`Found container: ${containerId}`);
+      const existingLoader = container.querySelector(".loading-message");
+
+      // If this container is still on its initial stub loader, keep it masked to prevent flashing.
+      const hasOnlyLoader =
+        existingLoader && container.children && container.children.length === 1;
+
+      if (hasOnlyLoader) {
+        container.setAttribute("data-loading", "true");
+        return;
+      }
+
+      container.removeAttribute("data-loading");
+      if (existingLoader) existingLoader.remove();
     }
   });
+}
+
+function waitForThemeReady(timeoutMs = 1200) {
+  return new Promise((resolve) => {
+    const link = document.getElementById("theme-stylesheet");
+    const alreadyReady =
+      !document.documentElement.classList.contains("theme-loading") ||
+      (link && link.dataset.loaded === "true");
+
+    if (alreadyReady) {
+      resolve();
+      return;
+    }
+
+    const done = () => {
+      window.removeEventListener("theme:ready", done);
+      resolve();
+    };
+
+    window.addEventListener("theme:ready", done, { once: true });
+    setTimeout(done, timeoutMs);
+  });
+}
+
+function clearContentCaches() {
+  cachedMenuItems = null;
+  cacheTimestamp = null;
+
+  if (dataCache && dataCache.clear) {
+    dataCache.clear();
+  }
+
+  try {
+    localStorage.removeItem(MENU_CACHE_KEY);
+    if (window.API_ENDPOINTS?.FEATURED) {
+      localStorage.removeItem(`${window.API_ENDPOINTS.FEATURED}_data`);
+    }
+    if (window.API_ENDPOINTS?.GALLERY) {
+      localStorage.removeItem(`${window.API_ENDPOINTS.GALLERY}_data`);
+    }
+    localStorage.removeItem("hero_carousel_data");
+  } catch (e) {}
 }
 
 function showConfigError() {
@@ -631,12 +906,91 @@ function showConfigError() {
   });
 }
 
+function renderFeaturedItems(container, items) {
+  container.innerHTML = items
+    .map(
+      (item) => `
+          <article class="featured-card" data-ripple="true">
+            <div class="featured-card-media">
+              <img src="${item.image}" alt="${escapeHtml(
+                item.title
+              )}" loading="lazy" decoding="async"
+                   onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkZlYXR1cmVkPC90ZXh0Pjwvc3ZnPg==';">
+              <span class="featured-card-glow" aria-hidden="true"></span>
+            </div>
+            <div class="featured-card-body">
+              <h4>${escapeHtml(item.title)}</h4>
+              <p>${escapeHtml(item.description)}</p>
+            </div>
+          </article>
+        `
+    )
+    .join("");
+
+}
+
+function renderMenuItems(container, items) {
+  container.innerHTML = items
+    .map(
+      (item) => `
+          <div class="menu-item" data-ripple="true" data-item="${escapeHtml(
+            item.title
+          )}" data-price="${item.price}" data-id="${item.id || ""}">
+            <img src="${item.image}" alt="${escapeHtml(
+        item.title
+      )}" loading="lazy" decoding="async" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4='">
+            <h3>${escapeHtml(item.title)}</h3>
+            <p>${escapeHtml(item.description)}</p>
+            <div class="popup">
+              <button class="add-cart">Add to Cart</button>
+              <a class="order-now" href="#">Order Now</a>
+            </div>
+          </div>
+        `
+    )
+    .join("");
+
+}
+
+function renderGalleryImages(container, items) {
+  container.innerHTML = items
+    .map(
+      (item) => {
+        const widthAttr = item.width ? `width=\"${item.width}\"` : "";
+        const heightAttr = item.height ? `height=\"${item.height}\"` : "";
+        return `
+            <figure class="gallery-card" data-ripple="true">
+              <div class="gallery-card-media">
+                <img src="${item.image}" alt="${escapeHtml(
+                  item.alt || ""
+                )}" loading="lazy" decoding="async" ${widthAttr} ${heightAttr}
+                     onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+='">
+              </div>
+              <figcaption>${escapeHtml(item.alt || "Gallery image")}</figcaption>
+            </figure>
+          `;
+      }
+    )
+    .join("");
+
+}
+
 // ================== ORIGINAL TOKE BAKES CODE ==================
 
-const currentPage = (() => {
+function computeCurrentPage() {
   const p = window.location.pathname.split("/").pop();
   return p === "" ? "index.html" : p;
-})();
+}
+
+let currentPage = computeCurrentPage();
+
+// Keep page detection accurate during SPA navigation (script.js is not reloaded)
+window.addEventListener("spa:navigated", () => {
+  currentPage = computeCurrentPage();
+});
+window.addEventListener("popstate", () => {
+  currentPage = computeCurrentPage();
+});
 
 /* Storage keys */
 const CART_KEY = "toke_bakes_cart_v1";
@@ -659,10 +1013,46 @@ function readCart() {
 function saveCart(cart) {
   localStorage.setItem(CART_KEY, JSON.stringify(cart));
   refreshCartCount();
+
+  // Let any page (including SPA-swapped pages) react immediately to cart changes
+  try {
+    window.dispatchEvent(new CustomEvent("cart:updated", { detail: { cart } }));
+  } catch {}
 }
 
 function formatPrice(num) {
   return Number(num).toLocaleString("en-NG");
+}
+
+function isMenuItemAvailable(item) {
+  return (
+    item.is_available === undefined ||
+    item.is_available === null ||
+    item.is_available === true ||
+    item.is_available === 1 ||
+    item.is_available === "true"
+  );
+}
+
+function decodeHtml(value) {
+  if (value === null || value === undefined) return "";
+  const text = String(value);
+  if (!/[&<>"']/.test(text)) return text;
+  const textarea = document.createElement("textarea");
+  textarea.innerHTML = text;
+  return textarea.value;
+}
+
+function normalizeItemName(value) {
+  return decodeHtml(value)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function normalizeItemId(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
 }
 
 // Escape HTML for security (already defined in admin.js, but defined here too)
@@ -681,19 +1071,31 @@ async function validateCartItems() {
 
     const currentMenu = await getMenuItems();
 
+    if (!currentMenu || currentMenu.length === 0) {
+      return { valid: true, hasChanges: false, hasRemovals: false, results: [] };
+    }
+
     const validationResults = [];
     let hasChanges = false;
     let hasRemovals = false;
 
-    cart.forEach((cartItem, index) => {
+  cart.forEach((cartItem, index) => {
       let currentItem = null;
 
-      // Prioritize matching by title (more reliable than id)
-      currentItem = currentMenu.find((item) => item.title === cartItem.name);
+      const cartName = normalizeItemName(cartItem.name);
+      const cartId = normalizeItemId(cartItem.id);
 
-      // If not found by title, try id
-      if (!currentItem && cartItem.id) {
-        currentItem = currentMenu.find((item) => item.id === cartItem.id);
+      // Prefer id match (more stable), fallback to normalized name match
+      if (cartId) {
+        currentItem = currentMenu.find(
+          (item) => normalizeItemId(item.id) === cartId
+        );
+      }
+
+      if (!currentItem && cartName) {
+        currentItem = currentMenu.find(
+          (item) => normalizeItemName(item.title) === cartName
+        );
       }
 
       if (!currentItem) {
@@ -707,27 +1109,49 @@ async function validateCartItems() {
         });
         hasRemovals = true;
         hasChanges = true;
-      } else if (currentItem.price !== cartItem.price) {
-        validationResults.push({
-          index,
-          name: cartItem.name,
-          status: "price_changed",
-          message: `Price updated from ₦${formatPrice(
-            cartItem.price
-          )} to ₦${formatPrice(currentItem.price)}`,
-          oldPrice: cartItem.price,
-          newPrice: currentItem.price,
-        });
-        hasChanges = true;
       } else {
-        validationResults.push({
-          index,
-          name: cartItem.name,
-          status: "valid",
-          message: null,
-          oldPrice: cartItem.price,
-          newPrice: currentItem.price,
-        });
+        if (!isMenuItemAvailable(currentItem)) {
+          validationResults.push({
+            index,
+            name: cartItem.name,
+            status: "unavailable",
+            message: "This item is currently unavailable",
+            oldPrice: cartItem.price,
+            newPrice: cartItem.price,
+          });
+          hasChanges = true;
+          return;
+        }
+
+        const currentPrice = Number(currentItem.price);
+        const cartPrice = Number(cartItem.price);
+
+        if (
+          !Number.isNaN(currentPrice) &&
+          !Number.isNaN(cartPrice) &&
+          currentPrice !== cartPrice
+        ) {
+          validationResults.push({
+            index,
+            name: cartItem.name,
+            status: "price_changed",
+            message: `Price updated from NGN ${formatPrice(
+              cartItem.price
+            )} to NGN ${formatPrice(currentItem.price)}`,
+            oldPrice: cartItem.price,
+            newPrice: currentPrice,
+          });
+          hasChanges = true;
+        } else {
+          validationResults.push({
+            index,
+            name: cartItem.name,
+            status: "valid",
+            message: null,
+            oldPrice: cartItem.price,
+            newPrice: Number.isNaN(currentPrice) ? cartItem.price : currentPrice,
+          });
+        }
       }
     });
 
@@ -749,11 +1173,24 @@ function updateCartWithValidation(validationResults) {
   let changesMade = false;
 
   validationResults.forEach((result) => {
+    const item = updatedCart[result.index];
+    if (!item) return;
+
     if (result.status === "price_changed" && result.newPrice !== null) {
-      updatedCart[result.index].price = result.newPrice;
+      item.price = result.newPrice;
       changesMade = true;
-    } else if (result.status === "removed") {
-      updatedCart[result.index].unavailable = true;
+    }
+
+    if (result.status === "removed" || result.status === "unavailable") {
+      if (!item.unavailable) {
+        item.unavailable = true;
+        changesMade = true;
+      }
+      return;
+    }
+
+    if (item.unavailable) {
+      delete item.unavailable;
       changesMade = true;
     }
   });
@@ -840,56 +1277,22 @@ if (!document.querySelector("#notification-styles")) {
     return;
   }
 
-  // Session tracking (more intelligent than daily)
-  const SESSION_KEY = "toke_bakes_session";
-  const sessionData = JSON.parse(localStorage.getItem(SESSION_KEY) || "{}");
-  const now = Date.now();
-  const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+  // Show loader only on first-ever visit (per device/browser)
+  const LOADER_KEY = "toke_bakes_loader_seen";
+  const hasSeenLoader = localStorage.getItem(LOADER_KEY) === "true";
 
-  // Check if user is in an active "session"
-  const hasActiveSession =
-    sessionData.timestamp && now - sessionData.timestamp < SESSION_TIMEOUT;
-
-  if (hasActiveSession) {
-    // User is in active session (visited within 30 minutes)
+  if (hasSeenLoader) {
     loader.style.display = "none";
-    console.log("🔁 Active session - seamless experience");
-  } else {
-    // New session or session expired
-    sessionData.timestamp = now;
-    sessionData.visitCount = (sessionData.visitCount || 0) + 1;
-    localStorage.setItem(SESSION_KEY, JSON.stringify(sessionData));
-
-    // Show loader on first 2 visits, then never again
-    if (sessionData.visitCount <= 2) {
-      window.addEventListener("load", () => {
-        // Shorter loader on second visit
-        const duration = sessionData.visitCount === 1 ? 1200 : 600;
-
-        setTimeout(() => {
-          loader.style.opacity = "0";
-          setTimeout(() => (loader.style.display = "none"), 800);
-        }, duration);
-      });
-    } else {
-      // Experienced user - no loader at all
-      loader.style.display = "none";
-    }
+    return;
   }
 
-  // Update session timestamp on user activity
-  ["click", "scroll", "mousemove", "keypress"].forEach((event) => {
-    document.addEventListener(
-      event,
-      () => {
-        const updatedData = JSON.parse(
-          localStorage.getItem(SESSION_KEY) || "{}"
-        );
-        updatedData.timestamp = Date.now();
-        localStorage.setItem(SESSION_KEY, JSON.stringify(updatedData));
-      },
-      { passive: true }
-    );
+  localStorage.setItem(LOADER_KEY, "true");
+  window.addEventListener("load", () => {
+    const duration = 900;
+    setTimeout(() => {
+      loader.style.opacity = "0";
+      setTimeout(() => (loader.style.display = "none"), 800);
+    }, duration);
   });
 })();
 
@@ -901,7 +1304,7 @@ if (!document.querySelector("#notification-styles")) {
     document.querySelector(".admin-dashboard") ||
     document.querySelector(".admin-login-container")
   ) {
-    console.log("⏭️ Skipping nav highlight on admin page");
+    debugLog("Skipping nav highlight on admin page");
     return;
   }
 
@@ -923,7 +1326,7 @@ if (!document.querySelector("#notification-styles")) {
   currentPage = currentPage.replace(/\.(html|htm)$/, "").split("?")[0];
   if (currentPage === "") currentPage = "index";
 
-  console.log(
+  debugLog(
     `Nav Debug: Current page="${currentPage}", Path="${loc.pathname}", Local=${isLocal}`
   );
 
@@ -944,35 +1347,35 @@ if (!document.querySelector("#notification-styles")) {
     // 1. Home page check
     if (linkPage === "index" && currentPage === "index") {
       link.classList.add("active");
-      console.log(`✓ Link ${index} (${href}) activated as HOME`);
+      debugLog(`Link ${index} (${href}) activated as HOME`);
       return;
     }
 
     // 2. Direct match
     if (linkPage === currentPage && linkPage !== "index") {
       link.classList.add("active");
-      console.log(`✓ Link ${index} (${href}) activated as DIRECT MATCH`);
+      debugLog(`Link ${index} (${href}) activated as DIRECT MATCH`);
       return;
     }
 
     // 3. For online (Netlify) - check if current path contains page name
     if (!isLocal && loc.pathname.includes(linkPage) && linkPage !== "index") {
       link.classList.add("active");
-      console.log(`✓ Link ${index} (${href}) activated as PATH CONTAINS`);
+      debugLog(`Link ${index} (${href}) activated as PATH CONTAINS`);
       return;
     }
 
     // 4. For local - check full path
     if (isLocal && loc.href.endsWith(href)) {
       link.classList.add("active");
-      console.log(`✓ Link ${index} (${href}) activated as LOCAL MATCH`);
+      debugLog(`Link ${index} (${href}) activated as LOCAL MATCH`);
       return;
     }
 
-    console.log(`✗ Link ${index} (${href}) NOT activated`);
+    debugLog(`Link ${index} (${href}) NOT activated`);
   });
 
-  console.log("--- Navigation Highlight Complete ---");
+  debugLog("--- Navigation Highlight Complete ---");
 })();
 
 /* ================== FIXED CART COUNT - NO ZERO FLASH ================== */
@@ -1016,6 +1419,11 @@ function initMobileMenu() {
       freshNavList.classList.toggle("show");
     });
 
+    // Mobile UX: keep menu open by default on small screens
+    if (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) {
+      freshNavList.classList.add("show");
+    }
+
     // Close when clicking outside
     document.addEventListener("click", (e) => {
       if (
@@ -1034,18 +1442,25 @@ function initMobileMenu() {
       });
     });
 
-    console.log("✅ Mobile menu initialized");
+    debugLog("Mobile menu initialized");
   }
 }
 
 /* ================== FIXED MENU INTERACTIONS ================== */
 function initMenuInteractions() {
-  // Prevent multiple initializations
-  if (window.menuInteractionsInitialized) return;
-  window.menuInteractionsInitialized = true;
+  // Rebind safely to avoid duplicate handlers after SPA navigation
+  if (window.menuInteractionsClickHandler) {
+    document.removeEventListener("click", window.menuInteractionsClickHandler);
+  }
+  if (window.menuInteractionsTouchHandler) {
+    document.removeEventListener(
+      "touchstart",
+      window.menuInteractionsTouchHandler
+    );
+  }
 
   // Handle click events for menu items
-  document.addEventListener("click", function (e) {
+  const clickHandler = function (e) {
     // Close all popups when clicking outside menu items
     if (!e.target.closest(".menu-item")) {
       document.querySelectorAll(".menu-item.show-popup").forEach((el) => {
@@ -1073,10 +1488,17 @@ function initMenuInteractions() {
       if (!name) return;
 
       const cart = readCart();
-      const existing = cart.find((it) => it.name.trim() === name);
+      const normalizedName = normalizeItemName(name);
+      const existing = cart.find(
+        (it) => normalizeItemName(it.name) === normalizedName
+      );
       if (existing) {
         existing.quantity = (existing.quantity || 1) + 1;
         existing.id = id;
+        existing.price = price;
+        if (existing.unavailable) {
+          delete existing.unavailable;
+        }
       } else {
         cart.push({ name: name.trim(), price, quantity: 1, image, id });
       }
@@ -1084,15 +1506,15 @@ function initMenuInteractions() {
 
       // Visual feedback for adding to cart
       const prevText = addBtn.textContent;
-      addBtn.textContent = "Added ✓";
-      addBtn.style.backgroundColor = "#4CAF50";
+      addBtn.textContent = "Added";
+      addBtn.classList.add("is-added");
       addBtn.disabled = true;
 
       setTimeout(() => {
         addBtn.textContent = prevText;
-        addBtn.style.backgroundColor = "#e67a00";
+        addBtn.classList.remove("is-added");
         addBtn.disabled = false;
-      }, 1500);
+      }, 900);
 
       // DON'T RETURN HERE - let the click continue to ripple function
       return;
@@ -1139,31 +1561,35 @@ function initMenuInteractions() {
     } else {
       menuItem.classList.add("show-popup");
     }
-  });
+  };
 
   // Also add touch events for better mobile support
-  document.addEventListener(
-    "touchstart",
-    function (e) {
+  const touchHandler = function (e) {
       // Close popups when touching outside
       if (!e.target.closest(".menu-item")) {
         document.querySelectorAll(".menu-item.show-popup").forEach((el) => {
           el.classList.remove("show-popup");
         });
       }
-    },
-    { passive: true }
-  );
+    };
+
+  document.addEventListener("click", clickHandler);
+  document.addEventListener("touchstart", touchHandler, { passive: true });
+
+  window.menuInteractionsClickHandler = clickHandler;
+  window.menuInteractionsTouchHandler = touchHandler;
+  window.menuInteractionsInitialized = true;
 }
 
 /* ================== ORDER FUNCTIONALITY ================== */
 function initOrderFunctionality() {
-  // Prevent multiple initializations
-  if (window.orderFunctionalityInitialized) return;
-  window.orderFunctionalityInitialized = true;
+  // Rebind safely to avoid duplicate handlers after SPA navigation
+  if (window.orderFunctionalityHandler) {
+    document.removeEventListener("click", window.orderFunctionalityHandler);
+  }
 
   // Proceed to order button
-  document.addEventListener("click", async (e) => {
+  const handler = async (e) => {
     if (!e.target || e.target.id !== "proceed-order") return;
 
     const cart = readCart();
@@ -1197,7 +1623,11 @@ function initOrderFunctionality() {
       subject: "New Order from Website",
     };
     showOrderOptions(orderData);
-  });
+  };
+
+  document.addEventListener("click", handler);
+  window.orderFunctionalityHandler = handler;
+  window.orderFunctionalityInitialized = true;
 }
 
 function showOrderOptions(orderData) {
@@ -1216,7 +1646,7 @@ function showOrderOptions(orderData) {
       if (it.qty > 1) {
         row.innerHTML = `
           <div class="s-left">${escapeHtml(it.name)}</div>
-          <div class="s-right">${it.qty}× NGN ${formatPrice(it.price)}</div>
+          <div class="s-right">${it.qty}x NGN ${formatPrice(it.price)}</div>
         `;
       } else {
         row.innerHTML = `
@@ -1266,7 +1696,7 @@ function initBottomSheet() {
     <div id="order-bottom-sheet" class="order-bottom-sheet" aria-hidden="true">
       <div class="sheet-backdrop"></div>
       <div class="sheet-panel" role="dialog" aria-modal="true" aria-label="Choose order method">
-        <button class="sheet-close" aria-label="Close">✕</button>
+        <button class="sheet-close" aria-label="Close">x</button>
         <h3>Place your order</h3>
         <div class="order-summary" aria-live="polite"></div>
         <div class="sheet-actions">
@@ -1382,101 +1812,121 @@ function initBottomSheet() {
   });
 }
 
-/* ================== FIXED CART QUANTITY FUNCTION ================== */
+/* ================== FIXED CART RENDERING WITH CLEAR BUTTON ================== */
 async function renderCartOnOrderPage(shouldValidate = true) {
   const cartContainer = document.getElementById("cart-container");
+  const clearCartBtn = document.getElementById("clear-cart");
+
   if (!cartContainer) return;
 
-  let validation = null;
   let cart = readCart();
 
-  // Only validate on initial load
-  if (shouldValidate) {
-    validation = await validateCartItems();
-    cart = updateCartWithValidation(validation.results);
-  }
+  const renderCartUI = (currentCart) => {
+    // Clear container first
+    cartContainer.innerHTML = "";
 
-  cartContainer.innerHTML = "";
+    if (currentCart.length === 0) {
+      cartContainer.innerHTML =
+        '<p class="empty-cart">Your cart is empty. Visit the <a href="menu.html">menu</a> to add items.</p>';
 
-  if (cart.length === 0) {
-    cartContainer.innerHTML =
-      '<p class="empty-cart">Your cart is empty. Visit the <a href="menu.html">menu</a> to add items.</p>';
+      // Hide clear cart button if cart is empty
+      if (clearCartBtn) {
+        clearCartBtn.style.display = "none";
+        // Remove any existing event listener
+        clearCartBtn.onclick = null;
+      }
+      return;
+    }
 
-    const clearCartBtn = document.getElementById("clear-cart");
-    if (clearCartBtn) clearCartBtn.style.display = "none";
-    return;
-  }
+    // Show clear cart button only if there are items
+    if (clearCartBtn) {
+      clearCartBtn.style.display = "block";
+      // Remove previous event listener and add new one
+      const newClearCartBtn = clearCartBtn.cloneNode(true);
+      clearCartBtn.parentNode.replaceChild(newClearCartBtn, clearCartBtn);
 
-  // Show clear cart button
-  const clearCartBtn = document.getElementById("clear-cart");
-  if (clearCartBtn) {
-    clearCartBtn.style.display = "block";
-    clearCartBtn.onclick = (e) => {
-      e.preventDefault();
-      saveCart([]);
-      renderCartOnOrderPage(false);
-      showNotification("Cart cleared successfully", "success");
-    };
-  }
+      // Get fresh reference
+      const freshClearCartBtn = document.getElementById("clear-cart");
+      freshClearCartBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        saveCart([]);
+        renderCartOnOrderPage(false);
+        showNotification("Cart cleared", "success");
+      });
+    }
 
-  // Render cart items
-  cart.forEach((item, index) => {
-    const row = document.createElement("div");
-    row.className = "cart-row";
-    row.dataset.index = index;
+    // Render cart items
+    currentCart.forEach((item, index) => {
+      const row = document.createElement("div");
+      row.className = "cart-row";
+      row.dataset.index = index;
 
-    // Check if item is unavailable
-    const isUnavailable = item.unavailable;
+      // Check if item is unavailable
+      const isUnavailable = item.unavailable;
 
-    row.innerHTML = `
-      <img src="${
-        item.image ||
-        "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iI2ZmZTVjYyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiMzMzMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5DYXJ0PC90ZXh0Pjwvc3ZnPg=="
-      }"
-           alt="${escapeHtml(item.name)}" loading="lazy" />
-      <div class="item-info">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <strong>${escapeHtml(item.name)}</strong>
-          <button class="remove-item">Remove</button>
-        </div>
-        ${
-          isUnavailable
-            ? `
-          <div style="color:#dc3545;font-size:0.9rem;margin-top:4px;margin-bottom:8px;">
-            <i class="fas fa-exclamation-circle"></i> This item is no longer available
+      row.innerHTML = `
+        <img src="${
+          item.image ||
+          "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAiIGhlaWdodD0iODAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iI2ZmZTVjYyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiMzMzMiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5DYXJ0PC90ZXh0Pjwvc3ZnPg=="
+        }"
+             alt="${escapeHtml(item.name)}" loading="lazy" />
+        <div class="item-info">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <strong>${escapeHtml(item.name)}</strong>
+            <button class="remove-item">Remove</button>
           </div>
-        `
-            : ""
-        }
-        <div class="qty-controls">
-          <button class="qty-btn decrease" ${
-            isUnavailable ? "disabled" : ""
-          }>-</button>
-          <span class="qty-display">${item.quantity}</span>
-          <button class="qty-btn increase" ${
-            isUnavailable ? "disabled" : ""
-          }>+</button>
-          <div style="margin-left:auto;font-weight:700;">NGN ${formatPrice(
-            (item.price || 0) * (item.quantity || 1)
-          )}</div>
+          ${
+            isUnavailable
+              ? `
+            <div style="color:#dc3545;font-size:0.9rem;margin-top:4px;margin-bottom:8px;">
+              <i class="fas fa-exclamation-circle"></i> This item is no longer available
+            </div>
+          `
+              : ""
+          }
+          <div class="qty-controls">
+            <button class="qty-btn decrease" ${
+              isUnavailable || (item.quantity || 1) <= 1 ? "disabled" : ""
+            }>-</button>
+            <span class="qty-display">${item.quantity}</span>
+            <button class="qty-btn increase" ${
+              isUnavailable ? "disabled" : ""
+            }>+</button>
+            <div style="margin-left:auto;font-weight:700;">NGN ${formatPrice(
+              (item.price || 0) * (item.quantity || 1)
+            )}</div>
+          </div>
         </div>
-      </div>
-    `;
+      `;
 
-    cartContainer.appendChild(row);
-  });
+      cartContainer.appendChild(row);
+    });
 
-  // Add event listeners
-  setupCartEventListeners();
+    // Add event listeners for cart items
+    setupCartEventListeners();
+  };
+
+  // Render immediately so cart appears without delay
+  renderCartUI(cart);
+
+  // Validate in the background, then re-render if needed
+  if (shouldValidate && cart.length > 0) {
+    const validation = await validateCartItems();
+    const validatedCart = updateCartWithValidation(validation.results);
+    if (JSON.stringify(validatedCart) !== JSON.stringify(cart)) {
+      renderCartUI(validatedCart);
+    }
+  }
 }
 
 /* ================== RIPPLE EFFECT ================== */
 function initRipple(selector) {
   document.addEventListener(
-    "click",
+    "pointerdown",
     function (e) {
       const el = e.target.closest(selector);
       if (!el) return;
+      if (e.button && e.button !== 0) return;
 
       const rect = el.getBoundingClientRect();
       const ripple = document.createElement("span");
@@ -1487,6 +1937,7 @@ function initRipple(selector) {
       ripple.style.top = e.clientY - rect.top - size / 2 + "px";
 
       el.style.position = el.style.position || "relative";
+      el.style.overflow = "hidden";
       el.appendChild(ripple);
       setTimeout(() => ripple.remove(), 600);
     },
@@ -1494,17 +1945,163 @@ function initRipple(selector) {
   );
 }
 
+/* ================== HOME UX ENHANCEMENTS (HOME ONLY) ================== */
+let homeRevealObserver = null;
+let homeScrollListenerAttached = false;
+let homeScrollTicking = false;
+
+function isHomePageRuntime() {
+  const page = window.location.pathname.split("/").pop() || "index.html";
+  return page === "" || page === "/" || page === "index.html" || page === "index";
+}
+
+function ensureScrollTopButton() {
+  const existing = document.getElementById("scroll-top-btn");
+
+  let btn = existing;
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.id = "scroll-top-btn";
+    btn.type = "button";
+    btn.className = "scroll-top-btn";
+    btn.setAttribute("aria-label", "Scroll to top");
+    btn.innerHTML = '<i class="fas fa-arrow-up"></i>';
+    document.body.appendChild(btn);
+  }
+
+  if (!btn.dataset.bound) {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const scrollingElement =
+        document.scrollingElement || document.documentElement;
+      if (scrollingElement && typeof scrollingElement.scrollTo === "function") {
+        scrollingElement.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+      }
+      window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+    });
+    btn.dataset.bound = "true";
+  }
+
+  const getScrollTop = () => {
+    const scrollingElement =
+      document.scrollingElement || document.documentElement;
+    if (scrollingElement && typeof scrollingElement.scrollTop === "number") {
+      return scrollingElement.scrollTop;
+    }
+    return window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+  };
+
+  const update = () => {
+    const shouldShow = getScrollTop() > 300;
+    btn.classList.toggle("show", shouldShow);
+    // Inline fallback to avoid browser-specific style overrides
+    btn.style.opacity = shouldShow ? "1" : "";
+    btn.style.pointerEvents = shouldShow ? "auto" : "";
+  };
+
+  update();
+
+  if (!homeScrollListenerAttached) {
+    homeScrollListenerAttached = true;
+    window.addEventListener(
+      "scroll",
+      () => {
+        if (homeScrollTicking) return;
+        homeScrollTicking = true;
+        requestAnimationFrame(() => {
+          homeScrollTicking = false;
+          const el = document.getElementById("scroll-top-btn");
+          if (!el) return;
+          const shouldShow = getScrollTop() > 300;
+          el.classList.toggle("show", shouldShow);
+          el.style.opacity = shouldShow ? "1" : "";
+          el.style.pointerEvents = shouldShow ? "auto" : "";
+        });
+      },
+      { passive: true }
+    );
+    window.addEventListener("resize", update, { passive: true });
+  }
+}
+
+function setupHomeScrollReveal() {
+  if (!isHomePageRuntime()) {
+    if (homeRevealObserver) {
+      homeRevealObserver.disconnect();
+      homeRevealObserver = null;
+    }
+    document.querySelectorAll("[data-reveal='true']").forEach((el) => {
+      el.removeAttribute("data-reveal");
+      el.classList.remove("reveal", "is-visible");
+      el.style.transitionDelay = "";
+    });
+    return;
+  }
+
+  const targets = [
+    document.querySelector(".about-preview"),
+    ...Array.from(document.querySelectorAll(".about-features .feature")),
+    ...Array.from(document.querySelectorAll("#featured-container .featured-card")),
+  ].filter(Boolean);
+
+  if (!("IntersectionObserver" in window)) {
+    targets.forEach((el) => el.classList.add("is-visible"));
+    return;
+  }
+
+  if (!homeRevealObserver) {
+    homeRevealObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          // Toggle so animations can replay when scrolling back up/down
+          entry.target.classList.toggle("is-visible", entry.isIntersecting);
+        });
+      },
+      { threshold: 0.15, rootMargin: "0px 0px -10% 0px" }
+    );
+  }
+
+  targets.forEach((el, idx) => {
+    if (el.getAttribute("data-reveal") === "true") return;
+    el.setAttribute("data-reveal", "true");
+    el.classList.add("reveal");
+    el.style.transitionDelay = `${Math.min(idx * 60, 240)}ms`;
+
+    // Prevent "invisible for a frame" on above-the-fold elements
+    const rect = el.getBoundingClientRect();
+    if (rect.top < window.innerHeight * 0.9) {
+      el.classList.add("is-visible");
+      // Keep observing so it can toggle later
+    }
+
+    homeRevealObserver.observe(el);
+  });
+}
+
+function refreshHomeEnhancements() {
+  ensureScrollTopButton();
+  setupHomeScrollReveal();
+}
+
+// Refresh enhancements after SPA navigation swaps the DOM
+window.addEventListener("spa:navigated", () => {
+  setTimeout(refreshHomeEnhancements, 0);
+});
+
+window.addEventListener("spa:reinitialized", () => {
+  setTimeout(refreshHomeEnhancements, 0);
+});
+
 /* ================== FIXED CART EVENT HANDLING ================== */
 function setupCartEventListeners() {
   const cartContainer = document.getElementById("cart-container");
   if (!cartContainer) return;
 
-  // Remove old listeners to prevent duplicates
-  cartContainer.replaceWith(cartContainer.cloneNode(true));
-  const freshContainer = document.getElementById("cart-container");
+  if (cartContainer.dataset.listenersAttached === "true") return;
+  cartContainer.dataset.listenersAttached = "true";
 
   // Add fresh event listener
-  freshContainer.addEventListener("click", function (e) {
+  cartContainer.addEventListener("click", function (e) {
     const target = e.target;
     const row = target.closest(".cart-row");
 
@@ -1523,9 +2120,15 @@ function setupCartEventListeners() {
       if (target.classList.contains("increase")) {
         cart[index].quantity = (cart[index].quantity || 1) + 1;
       } else if (target.classList.contains("decrease")) {
-        // Only decrease if quantity is greater than 1
+        // Do not allow quantity to drop below 1
         if (cart[index].quantity > 1) {
           cart[index].quantity = cart[index].quantity - 1;
+        } else {
+          row.classList.remove("qty-bump");
+          // Force reflow so animation retriggers
+          void row.offsetWidth;
+          row.classList.add("qty-bump");
+          return;
         }
       }
 
@@ -1546,39 +2149,49 @@ function setupCartEventListeners() {
   });
 }
 
+// Keep cart UI in sync across SPA navigation and immediate cart adds
+let cartUpdatedRaf = 0;
+window.addEventListener("cart:updated", () => {
+  if (cartUpdatedRaf) return;
+  cartUpdatedRaf = requestAnimationFrame(() => {
+    cartUpdatedRaf = 0;
+    if (document.getElementById("cart-container")) {
+      Promise.resolve(renderCartOnOrderPage(false)).catch(() => {});
+    }
+  });
+});
+
 // Initialize when DOM is loaded
 document.addEventListener("DOMContentLoaded", async () => {
-  console.log("🚀 Initializing Toke Bakes with Enhanced Sync...");
+  debugLog("Initializing Toke Bakes with Enhanced Sync...");
 
-  // STEP 2: Initialize sync system FIRST (IMPORTANT!)
-  window.websiteUpdater = new WebsiteAutoUpdater();
-
-  // STEP 3: Tiny delay for sync to initialize (using requestAnimationFrame - faster)
-  await new Promise((resolve) => requestAnimationFrame(resolve));
-
-  // STEP 4: NOW load cart (after sync is ready)
+  // Initialize cart count immediately to prevent flash
   refreshCartCount();
 
-  // STEP 5: Load dynamic content
-  try {
-    await loadDynamicContent();
-  } catch (error) {
-    console.error("Failed to load initial content:", error);
-  }
+  // STEP 2: Initialize sync system
+  window.websiteUpdater = new WebsiteAutoUpdater();
 
-  // STEP 6: Initialize everything else
+  // STEP 3: Initialize everything else
   initMobileMenu();
-  initThemeToggle();
-  initFooterTheme();
   initMenuInteractions();
   initOrderFunctionality();
   initBottomSheet();
 
   // Initialize ripple - EXACT WORKING SELECTOR
   initRipple(
-    ".btn, .add-cart, .order-now, .qty-btn, .order-option-btn, .remove-item, .theme-toggle"
+    ".btn, .add-cart, .order-now, .qty-btn, .order-option-btn, .remove-item, .theme-toggle, .menu-item, .featured-card, .gallery-card, .carousel-dot, .carousel-prev, .carousel-next, [data-ripple]"
   );
 
+  // STEP 4: Load dynamic content (this will use cache first)
+  try {
+    await loadDynamicContent();
+  } catch (error) {
+    console.error("Failed to load initial content:", error);
+  }
+
+  refreshHomeEnhancements();
+
+  // If on order page, render cart
   if (currentPage.includes("order")) {
     await renderCartOnOrderPage(true);
   }
@@ -1589,15 +2202,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     yearElement.textContent = new Date().getFullYear();
   }
 
-  console.log("✅ Toke Bakes fully initialized");
+  debugLog("Toke Bakes fully initialized");
 });
 
-// Global event listener for clear cart button (fallback)
-document.addEventListener("click", (e) => {
-  if (e.target && e.target.id === "clear-cart") {
-    e.preventDefault();
-    saveCart([]);
-    renderCartOnOrderPage(false);
-    showNotification("Cart cleared successfully", "success");
-  }
+// Ensure scroll-to-top is available even if another initializer throws
+document.addEventListener("DOMContentLoaded", () => {
+  try {
+    ensureScrollTopButton();
+  } catch {}
 });
+

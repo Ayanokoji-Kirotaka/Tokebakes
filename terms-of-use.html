@@ -11,88 +11,6 @@
         localStorage.getItem("toke_bakes_theme_mode") || "light";
       document.documentElement.setAttribute("data-theme", savedMode);
     </script>
-    <style>
-      /* Prevent FOUC for navbar links */
-      .navbar a {
-        color: #333;
-        text-decoration: none;
-        transition: color 0.3s ease;
-      }
-      [data-theme="dark"] .navbar a {
-        color: #fff;
-      }
-      /* Critical CSS for header and navbar */
-      header {
-        width: 100%;
-        background: rgba(255, 255, 255, 0.95);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        position: sticky;
-        top: 0;
-        z-index: 1000;
-      }
-      [data-theme="dark"] header {
-        background: rgba(45, 45, 45, 0.95);
-      }
-      .header-inner {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 1rem 1.25rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .navbar {
-        display: flex;
-        align-items: center;
-        gap: 1.25rem;
-      }
-      .navbar ul {
-        display: flex;
-        list-style: none;
-        gap: 1.75rem;
-        margin: 0;
-        padding: 0;
-        align-items: center;
-      }
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-      }
-      .brand h1 {
-        font-size: 1.5rem;
-        font-weight: 600;
-      }
-      .logo-sm {
-        width: 48px;
-        height: 48px;
-        border-radius: 50%;
-        object-fit: cover;
-      }
-      /* Font Awesome icons inline */
-      .fa {
-        font-family: "Font Awesome 6 Free";
-        font-style: normal;
-        font-variant: normal;
-        text-rendering: auto;
-        -webkit-font-smoothing: antialiased;
-      }
-      .fa-solid {
-        font-weight: 900;
-      }
-      .fa-shopping-cart::before {
-        content: "\f07a";
-      }
-      .fa-sun::before {
-        content: "\f185";
-      }
-      .fa-moon::before {
-        content: "\f186";
-      }
-      .fa-bars::before {
-        content: "\f0c9";
-      }
-    </style>
     <link rel="icon" href="images/logo.webp" type="image/png" />
     <link
       rel="preload"
@@ -125,15 +43,15 @@
         </div>
         <nav class="navbar">
           <!-- Navigation links (visible on desktop) -->
-          <ul>
+          <ul class="show">
             <li>
-              <a href="index.html" style="text-decoration: none">Home</a>
+              <a href="index.html">Home</a>
             </li>
             <li>
-              <a href="menu.html" style="text-decoration: none">Menu</a>
+              <a href="menu.html">Menu</a>
             </li>
             <li>
-              <a href="gallery.html" style="text-decoration: none">Gallery</a>
+              <a href="gallery.html">Gallery</a>
             </li>
           </ul>
 

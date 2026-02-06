@@ -1,26 +1,40 @@
-﻿/* ==================== THEME MANAGER - UPDATED FOR AUTO-UPDATE ==================== */
+/* ==================== THEME MANAGER - UPDATED FOR AUTO-UPDATE ==================== */
+const THEME_DEBUG = false;
+const themeDebugLog = (...args) => {
+  if (THEME_DEBUG) console.log(...args);
+};
+const themeDebugWarn = (...args) => {
+  if (THEME_DEBUG) console.warn(...args);
+};
 const ThemeManager = {
   currentTheme: "styles/style.css",
   currentMode: "light",
+  currentLogo: "images/logo.webp",
   lastThemeUpdate: 0,
+  lastDbCheck: 0,
+  dbCheckInterval: 60000,
 
   /* ================== INITIALIZATION ================== */
   init() {
-    console.log("🎨 Theme Manager Initialized - FIXED VERSION");
+    themeDebugLog("?? Theme Manager Initialized - FIXED VERSION");
 
     // Load saved preferences
     const savedTheme =
       localStorage.getItem("toke_bakes_css_theme") || "styles/style.css";
     const savedMode = localStorage.getItem("toke_bakes_theme_mode") || "light";
+    const savedLogo =
+      localStorage.getItem("toke_bakes_theme_logo") ||
+      this.getLogoForTheme(savedTheme);
 
     this.currentTheme = savedTheme;
     this.currentMode = savedMode;
+    this.currentLogo = savedLogo;
 
     // Apply dark/light mode
     document.documentElement.setAttribute("data-theme", savedMode);
 
     // Apply saved theme WITHOUT modifying the path
-    this.applyTheme(savedTheme, false);
+    this.applyTheme(savedTheme, false, false, { logoFile: savedLogo });
 
     // Setup admin panel
     if (this.isAdminPanel()) {
@@ -36,6 +50,17 @@ const ThemeManager = {
 
     // Setup theme auto-update detection
     this.setupThemeAutoUpdate();
+
+    // Sync with database active theme on startup
+    this.fetchActiveThemeFromDatabase(true).then((dbTheme) => {
+      if (dbTheme && dbTheme.css_file) {
+        this.applyTheme(dbTheme.css_file, false, false, {
+          logoFile: dbTheme.logo_file,
+          persist: true,
+          updatedAt: dbTheme.updated_at,
+        });
+      }
+    });
   },
 
   /* ================== NEW: THEME AUTO-UPDATE SYSTEM ================== */
@@ -55,23 +80,23 @@ const ThemeManager = {
       this.themeChannel = new BroadcastChannel("toke_bakes_theme_updates");
       this.themeChannel.onmessage = (event) => {
         if (event.data.type === "THEME_CHANGED") {
-          console.log("📡 Theme update received via BroadcastChannel");
+          themeDebugLog("?? Theme update received via BroadcastChannel");
           this.applyTheme(event.data.themeFile, false);
         }
       };
     }
 
-    // Check localStorage for theme updates
+    // Check localStorage + database for theme updates
     this.checkForThemeUpdates();
   },
 
-  checkForThemeUpdates() {
+  async checkForThemeUpdates() {
     // Get the last theme update timestamp from localStorage
     const lastUpdate = localStorage.getItem("toke_bakes_theme_last_update");
     const myLastCheck = localStorage.getItem("my_theme_check") || "0";
 
     if (lastUpdate && lastUpdate > myLastCheck) {
-      console.log("🔄 Theme update detected!");
+      themeDebugLog("?? Theme update detected!");
 
       // Get the new theme
       const newTheme =
@@ -82,31 +107,47 @@ const ThemeManager = {
 
       // Apply the new theme
       if (newTheme !== this.currentTheme) {
-        this.applyTheme(newTheme, false);
+        this.applyTheme(newTheme, false, false, { persist: true });
       }
       return true;
     }
+
+    // Fallback: check database for active theme (cross-device changes)
+    const dbTheme = await this.fetchActiveThemeFromDatabase();
+    if (dbTheme && dbTheme.css_file && dbTheme.css_file !== this.currentTheme) {
+      this.applyTheme(dbTheme.css_file, false, false, {
+        logoFile: dbTheme.logo_file,
+        persist: true,
+        updatedAt: dbTheme.updated_at,
+      });
+      return true;
+    }
+
     return false;
   },
 
   /* ================== FIXED: APPLY THEME FUNCTION ================== */
-  applyTheme(cssFile, saveToDB = true, isAdminChange = false) {
-    console.log("🎨 Applying theme:", cssFile, "isAdminChange:", isAdminChange);
+  applyTheme(cssFile, saveToStorage = true, isAdminChange = false, options = {}) {
+    themeDebugLog("?? Applying theme:", cssFile, "isAdminChange:", isAdminChange);
 
-    // ⚠️ CRITICAL FIX: DO NOT modify the cssFile path here!
-    // The path should already be correct (e.g., "styles/style.css")
-    // Your HTML files already point to the correct location
+    const { logoFile = null, persist = false, updatedAt = null } = options || {};
+    const resolvedLogo = logoFile || this.getLogoForTheme(cssFile);
 
-    // Store the exact path as provided
+    // ?? CRITICAL FIX: DO NOT modify the cssFile path here!
     this.currentTheme = cssFile;
+    this.currentLogo = resolvedLogo;
 
     // Save to localStorage (exact path)
-    if (saveToDB) {
+    let timestamp = localStorage.getItem("toke_bakes_theme_last_update") || "";
+    const shouldPersist = saveToStorage || persist;
+    if (shouldPersist) {
       localStorage.setItem("toke_bakes_css_theme", cssFile);
+      localStorage.setItem("toke_bakes_theme_logo", resolvedLogo);
 
-      // Set update timestamp for auto-update system
-      const timestamp = Date.now().toString();
+      const parsed = updatedAt ? Date.parse(updatedAt) : NaN;
+      timestamp = Number.isNaN(parsed) ? Date.now().toString() : `${parsed}`;
       localStorage.setItem("toke_bakes_theme_last_update", timestamp);
+      localStorage.setItem("my_theme_check", timestamp);
 
       // Broadcast to other tabs if admin is making the change
       if (isAdminChange && this.themeChannel) {
@@ -123,13 +164,34 @@ const ThemeManager = {
     try {
       const link = document.getElementById("theme-stylesheet");
       if (link) {
-        // Add cache-busting parameter but keep the path as-is
-        link.href = cssFile + "?v=" + Date.now();
-        console.log("✅ Theme CSS updated to:", cssFile);
+        const cacheSuffix = timestamp ? `?v=${timestamp}` : "";
+        const nextHref = `${cssFile}${cacheSuffix}`;
+
+        if (link.getAttribute("href") !== nextHref) {
+          document.documentElement.classList.add("theme-loading");
+          link.dataset.loaded = "false";
+
+          const onLoad = () => {
+            link.dataset.loaded = "true";
+            document.documentElement.classList.remove("theme-loading");
+            window.dispatchEvent(new CustomEvent("theme:ready"));
+          };
+
+          link.addEventListener("load", onLoad, { once: true });
+          link.href = nextHref;
+          themeDebugLog("Theme CSS updated to:", nextHref);
+        } else {
+          link.dataset.loaded = "true";
+          document.documentElement.classList.remove("theme-loading");
+          window.dispatchEvent(new CustomEvent("theme:ready"));
+        }
       }
     } catch (error) {
-      console.error("❌ Error applying theme:", error);
+      console.error("Error applying theme:", error);
     }
+
+    // Update theme logo
+    this.updateThemeLogo(resolvedLogo);
 
     // Update footer to match current mode
     this.updateFooterTheme(this.currentMode);
@@ -137,6 +199,13 @@ const ThemeManager = {
     // Update admin UI
     if (this.isAdminPanel()) {
       this.updateAdminUI(cssFile);
+    }
+
+    // Persist theme choice to database when admin activates a theme
+    if (isAdminChange) {
+      this.persistThemeToDatabase(cssFile, resolvedLogo).catch((error) => {
+        themeDebugWarn("Theme database update failed:", error);
+      });
     }
 
     // Show notification ONLY for admin theme changes (not dark/light toggle)
@@ -166,14 +235,156 @@ const ThemeManager = {
 
         const card = btn.closest(".theme-card");
         if (card && card.dataset.themeFile) {
-          // ⚠️ CRITICAL: Use the exact theme file from data attribute
+          // ?? CRITICAL: Use the exact theme file from data attribute
           // Admin panel cards MUST have correct paths like "styles/style.css"
           const themeFile = card.dataset.themeFile;
-          console.log("Admin theme activation:", themeFile);
-          this.applyTheme(themeFile, true, true);
+          const logoFile =
+            card.dataset.themeLogo || this.getLogoForTheme(themeFile);
+          themeDebugLog("Admin theme activation:", themeFile);
+          this.applyTheme(themeFile, true, true, { logoFile });
         }
       }
     });
+  },
+
+  /* ================== THEME LOGOS + DB SYNC ================== */
+  getLogoForTheme(cssFile) {
+    const logos = {
+      "styles/style.css": "images/logo.webp",
+      "styles/theme-valentine.css": "images/valantine-logo.webp",
+      "styles/theme-ramadan.css": "images/ramadan-logo.webp",
+      "styles/theme-halloween.css": "images/halloween-logo.webp",
+      "styles/theme-independenceday.css": "images/independence-day-logo.webp",
+      "styles/theme-christmas.css": "images/christmas-logo.webp",
+    };
+    return logos[cssFile] || "images/logo.webp";
+  },
+
+  updateThemeLogo(logoFile) {
+    if (!logoFile) return;
+    const logoTargets = document.querySelectorAll(
+      "[data-theme-logo], img.logo-sm, img.hero-logo, img.admin-logo, #loader img"
+    );
+    logoTargets.forEach((img) => {
+      if (img && img.getAttribute("src") !== logoFile) {
+        img.setAttribute("src", logoFile);
+      }
+    });
+  },
+
+  getThemeRecordName(cssFile) {
+    const themeKeys = {
+      "styles/style.css": "Default",
+      "styles/theme-valentine.css": "Valentine",
+      "styles/theme-ramadan.css": "Ramadan",
+      "styles/theme-halloween.css": "Halloween",
+      "styles/theme-independenceday.css": "Independence Day",
+      "styles/theme-christmas.css": "Christmas",
+    };
+    return themeKeys[cssFile] || null;
+  },
+
+  async getAdminAccessToken() {
+    if (window.AdminSession && window.AdminSession.getAccessToken) {
+      return window.AdminSession.getAccessToken();
+    }
+
+    try {
+      const raw = sessionStorage.getItem("secure_session");
+      if (raw) {
+        const parsed = JSON.parse(atob(raw));
+        return parsed && parsed.access_token ? parsed.access_token : null;
+      }
+    } catch (error) {
+      themeDebugWarn("Admin token read failed:", error);
+    }
+
+    return null;
+  },
+
+  async persistThemeToDatabase(cssFile, logoFile) {
+    if (!window.SUPABASE_CONFIG?.URL || !window.SUPABASE_CONFIG?.ANON_KEY) {
+      return false;
+    }
+
+    const accessToken = await this.getAdminAccessToken();
+    if (!accessToken) {
+      themeDebugWarn("No admin access token available for theme update.");
+      return false;
+    }
+
+    const themeName = this.getThemeRecordName(cssFile);
+    if (!themeName) {
+      themeDebugWarn("Unknown theme name for:", cssFile);
+      return false;
+    }
+
+    const baseHeaders = {
+      apikey: SUPABASE_CONFIG.ANON_KEY,
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    };
+
+    const deactivateUrl = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?theme_name=neq.${encodeURIComponent(
+      themeName
+    )}`;
+    await fetch(deactivateUrl, {
+      method: "PATCH",
+      headers: { ...baseHeaders, Prefer: "return=representation" },
+      body: JSON.stringify({ is_active: false }),
+    });
+
+    const upsertBody = {
+      theme_name: themeName,
+      css_file: cssFile,
+      logo_file: logoFile || this.getLogoForTheme(cssFile),
+      is_active: true,
+    };
+
+    const upsertUrl = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes`;
+    await fetch(upsertUrl, {
+      method: "POST",
+      headers: {
+        ...baseHeaders,
+        Prefer: "resolution=merge-duplicates,return=representation",
+      },
+      body: JSON.stringify(upsertBody),
+    });
+
+    return true;
+  },
+
+  async fetchActiveThemeFromDatabase(force = false) {
+    if (!window.SUPABASE_CONFIG?.URL || !window.SUPABASE_CONFIG?.ANON_KEY) {
+      return null;
+    }
+
+    const now = Date.now();
+    if (!force && now - this.lastDbCheck < this.dbCheckInterval) {
+      return null;
+    }
+
+    this.lastDbCheck = now;
+
+    try {
+      const url = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?is_active=eq.true&select=css_file,logo_file,theme_name,updated_at&order=updated_at.desc&limit=1`;
+      const response = await fetch(url, {
+        headers: {
+          apikey: SUPABASE_CONFIG.ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+        },
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const data = await response.json();
+      return Array.isArray(data) && data.length ? data[0] : null;
+    } catch (error) {
+      themeDebugWarn("Theme DB fetch failed:", error);
+      return null;
+    }
   },
 
   /* ================== NEW: SPA REINITIALIZATION SUPPORT ================== */
@@ -181,8 +392,8 @@ const ThemeManager = {
   setupModeToggle() {
     const toggle = document.getElementById("themeToggle");
     if (!toggle) {
-      console.log(
-        "ℹ️ No theme toggle found - will retry on next SPA navigation"
+      themeDebugLog(
+        "?? No theme toggle found - will retry on next SPA navigation"
       );
       return;
     }
@@ -201,14 +412,14 @@ const ThemeManager = {
     });
 
     this.updateModeToggleUI();
-    console.log("✅ Theme toggle initialized");
+    themeDebugLog("? Theme toggle initialized");
   },
 
   /* ================== OTHER FUNCTIONS ================== */
   updateFooterTheme(theme) {
     const footer = document.querySelector(".bakes-footer");
     if (!footer) {
-      console.log("ℹ️ No .bakes-footer element found");
+      themeDebugLog("?? No .bakes-footer element found");
       return;
     }
 
@@ -237,7 +448,7 @@ const ThemeManager = {
     this.updateModeToggleUI();
     this.updateFooterTheme(newMode);
 
-    console.log(`🌓 Mode changed to ${newMode}`);
+    themeDebugLog(`?? Mode changed to ${newMode}`);
 
     return true;
   },
@@ -260,24 +471,12 @@ const ThemeManager = {
     }
   },
 
-  setupModeToggle() {
-    const toggle = document.getElementById("themeToggle");
-    if (!toggle) return;
-
-    toggle.addEventListener("click", (e) => {
-      e.preventDefault();
-      this.toggleMode();
-    });
-
-    this.updateModeToggleUI();
-  },
-
   isAdminPanel() {
     return document.querySelector(".theme-card") !== null;
   },
 
   updateAdminUI(cssFile) {
-    console.log("🔄 Updating admin UI for theme:", cssFile);
+    themeDebugLog("?? Updating admin UI for theme:", cssFile);
 
     const themeCards = document.querySelectorAll(".theme-card");
     if (themeCards.length === 0) return;
@@ -322,9 +521,9 @@ const ThemeManager = {
 
   getThemeName(cssFile) {
     const themeNames = {
-      "styles/style.css": "Default Theme",
+      "styles/style.css": "Default",
       "styles/theme-christmas.css": "Christmas",
-      "styles/theme-valentine.css": "Valentine's Day",
+      "styles/theme-valentine.css": "Valentine",
       "styles/theme-ramadan.css": "Ramadan",
       "styles/theme-independenceday.css": "Independence Day",
       "styles/theme-halloween.css": "Halloween",
@@ -351,6 +550,8 @@ const ThemeManager = {
     if (cssFile === "theme-halloween.css") return "styles/theme-halloween.css";
     if (cssFile === "theme-independenceday.css")
       return "styles/theme-independenceday.css";
+    if (cssFile === "theme-independence-day.css")
+      return "styles/theme-independenceday.css";
 
     // Otherwise return as-is
     return cssFile;
@@ -368,7 +569,7 @@ if (document.readyState === "loading") {
     if (savedTheme && !savedTheme.includes("styles/")) {
       const fixedTheme = ThemeManager.fixLegacyThemePath(savedTheme);
       if (fixedTheme !== savedTheme) {
-        console.log("🔄 Fixed legacy theme path:", savedTheme, "→", fixedTheme);
+        themeDebugLog("?? Fixed legacy theme path:", savedTheme, "?", fixedTheme);
         localStorage.setItem("toke_bakes_css_theme", fixedTheme);
       }
     }
@@ -380,11 +581,13 @@ if (document.readyState === "loading") {
   if (savedTheme && !savedTheme.includes("styles/")) {
     const fixedTheme = ThemeManager.fixLegacyThemePath(savedTheme);
     if (fixedTheme !== savedTheme) {
-      console.log("🔄 Fixed legacy theme path:", savedTheme, "→", fixedTheme);
+      themeDebugLog("?? Fixed legacy theme path:", savedTheme, "?", fixedTheme);
       localStorage.setItem("toke_bakes_css_theme", fixedTheme);
     }
   }
   ThemeManager.init();
 }
 
-console.log("✅ Theme Manager FIXED VERSION loaded!");
+themeDebugLog("? Theme Manager FIXED VERSION loaded!");
+
+

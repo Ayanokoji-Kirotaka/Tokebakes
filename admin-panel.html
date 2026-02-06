@@ -10,88 +10,6 @@
         localStorage.getItem("toke_bakes_theme_mode") || "light";
       document.documentElement.setAttribute("data-theme", savedMode);
     </script>
-    <style>
-      /* Prevent FOUC for navbar links */
-      .navbar a {
-        color: #333;
-        text-decoration: none;
-        transition: color 0.3s ease;
-      }
-      [data-theme="dark"] .navbar a {
-        color: #fff;
-      }
-      /* Critical CSS for header and navbar */
-      header {
-        width: 100%;
-        background: rgba(255, 255, 255, 0.95);
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        position: sticky;
-        top: 0;
-        z-index: 1000;
-      }
-      [data-theme="dark"] header {
-        background: rgba(45, 45, 45, 0.95);
-      }
-      .header-inner {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 1rem 1.25rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .navbar {
-        display: flex;
-        align-items: center;
-        gap: 1.25rem;
-      }
-      .navbar ul {
-        display: flex;
-        list-style: none;
-        gap: 1.75rem;
-        margin: 0;
-        padding: 0;
-        align-items: center;
-      }
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-      }
-      .brand h1 {
-        font-size: 1.5rem;
-        font-weight: 600;
-      }
-      .logo-sm {
-        width: 48px;
-        height: 48px;
-        border-radius: 50%;
-        object-fit: cover;
-      }
-      /* Font Awesome icons inline */
-      .fa {
-        font-family: "Font Awesome 6 Free";
-        font-style: normal;
-        font-variant: normal;
-        text-rendering: auto;
-        -webkit-font-smoothing: antialiased;
-      }
-      .fa-solid {
-        font-weight: 900;
-      }
-      .fa-shopping-cart::before {
-        content: "\f07a";
-      }
-      .fa-sun::before {
-        content: "\f185";
-      }
-      .fa-moon::before {
-        content: "\f186";
-      }
-      .fa-bars::before {
-        content: "\f0c9";
-      }
-    </style>
     <link rel="shortcut icon" href="images/favicon.webp" type="image/png" />
     <link
       rel="preload"
@@ -129,13 +47,14 @@
 
         <form id="login-form" class="admin-login-form">
           <div class="form-group">
-            <label for="admin-username"
-              ><i class="fas fa-user"></i> Username</label
+            <label for="admin-email"
+              ><i class="fas fa-user"></i> Admin Email</label
             >
             <input
-              type="text"
-              id="admin-username"
-              placeholder="Enter username"
+              type="email"
+              id="admin-email"
+              placeholder="admin@yourdomain.com"
+              autocomplete="username"
               required
             />
           </div>
@@ -148,6 +67,7 @@
               type="password"
               id="admin-password"
               placeholder="Enter password"
+              autocomplete="current-password"
               required
             />
           </div>
@@ -160,10 +80,10 @@
 
           <div class="login-note">
             <p>
-              <i class="fas fa-info-circle"></i> Default credentials: admin /
-              password123
+              <i class="fas fa-info-circle"></i> Use a Supabase Auth account
+              that is listed in <code>app_admins</code>.
             </p>
-            <p>You can change these after first login.</p>
+            <p>Passwords are managed in Supabase Auth.</p>
           </div>
         </form>
       </div>
@@ -289,6 +209,57 @@
 
                 <div class="form-row">
                   <div class="form-group">
+                    <label for="featured-menu-item"
+                      ><i class="fas fa-link"></i> Linked Menu Item
+                      (Optional)</label
+                    >
+                    <select id="featured-menu-item">
+                      <option value="">None</option>
+                    </select>
+                    <small class="form-help"
+                      >Optional: connect to a menu item for quick updates.</small
+                    >
+                  </div>
+                  <div class="form-group">
+                    <label for="featured-display-order"
+                      ><i class="fas fa-sort-numeric-down"></i> Display
+                      Order</label
+                    >
+                    <input
+                      type="number"
+                      id="featured-display-order"
+                      placeholder="0"
+                      min="0"
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="featured-active"
+                      ><i class="fas fa-toggle-on"></i> Status</label
+                    >
+                    <select id="featured-active">
+                      <option value="true">Active</option>
+                      <option value="false">Inactive</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="featured-start-date"
+                      ><i class="fas fa-calendar-alt"></i> Start Date</label
+                    >
+                    <input type="date" id="featured-start-date" />
+                  </div>
+                  <div class="form-group">
+                    <label for="featured-end-date"
+                      ><i class="fas fa-calendar-check"></i> End Date</label
+                    >
+                    <input type="date" id="featured-end-date" />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
                     <label for="featured-image"
                       ><i class="fas fa-image"></i> Image</label
                     >
@@ -382,8 +353,71 @@
                       type="number"
                       id="menu-price"
                       placeholder="1200"
-                      min="0"
+                      min="1"
+                      max="1000000"
+                      step="0.01"
                       required
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="menu-category"
+                      ><i class="fas fa-layer-group"></i> Category</label
+                    >
+                    <input
+                      type="text"
+                      id="menu-category"
+                      placeholder="pastries"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="menu-tags"
+                      ><i class="fas fa-tags"></i> Tags</label
+                    >
+                    <input
+                      type="text"
+                      id="menu-tags"
+                      placeholder="chocolate, vegan"
+                    />
+                    <small class="form-help"
+                      >Comma-separated tags (optional).</small
+                    >
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="menu-available"
+                      ><i class="fas fa-toggle-on"></i> Availability</label
+                    >
+                    <select id="menu-available">
+                      <option value="true">Available</option>
+                      <option value="false">Unavailable</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="menu-display-order"
+                      ><i class="fas fa-sort-numeric-down"></i> Display
+                      Order</label
+                    >
+                    <input
+                      type="number"
+                      id="menu-display-order"
+                      placeholder="0"
+                      min="0"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="menu-calories"
+                      ><i class="fas fa-fire"></i> Calories (Optional)</label
+                    >
+                    <input
+                      type="number"
+                      id="menu-calories"
+                      placeholder="320"
+                      min="0"
                     />
                   </div>
                 </div>
@@ -459,6 +493,21 @@
 
                 <div class="form-row">
                   <div class="form-group">
+                    <label for="gallery-display-order"
+                      ><i class="fas fa-sort-numeric-down"></i> Display
+                      Order</label
+                    >
+                    <input
+                      type="number"
+                      id="gallery-display-order"
+                      placeholder="0"
+                      min="0"
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
                     <label for="gallery-image"
                       ><i class="fas fa-image"></i> Image</label
                     >
@@ -526,6 +575,54 @@
                       id="carousel-alt"
                       placeholder="Describe the image for accessibility"
                       required
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="carousel-title"
+                      ><i class="fas fa-heading"></i> Title (Optional)</label
+                    >
+                    <input
+                      type="text"
+                      id="carousel-title"
+                      placeholder="Hero headline"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="carousel-subtitle"
+                      ><i class="fas fa-align-left"></i> Subtitle
+                      (Optional)</label
+                    >
+                    <input
+                      type="text"
+                      id="carousel-subtitle"
+                      placeholder="Supporting line"
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="carousel-cta-text"
+                      ><i class="fas fa-bullhorn"></i> CTA Text
+                      (Optional)</label
+                    >
+                    <input
+                      type="text"
+                      id="carousel-cta-text"
+                      placeholder="Shop Now"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="carousel-cta-link"
+                      ><i class="fas fa-link"></i> CTA Link (Optional)</label
+                    >
+                    <input
+                      type="url"
+                      id="carousel-cta-link"
+                      placeholder="https://example.com/menu"
                     />
                   </div>
                 </div>
@@ -619,7 +716,7 @@
             <!-- Themes Grid -->
             <div class="themes-grid" id="themes-grid">
               <!-- DEFAULT THEME -->
-              <div class="theme-card active" data-theme-file="styles/style.css">
+              <div class="theme-card active" data-theme-file="styles/style.css" data-theme-logo="images/logo.webp">
                 <div class="theme-preview">
                   <img
                     src="images/theme-preview-default.jpg"
@@ -651,6 +748,7 @@
               <div
                 class="theme-card"
                 data-theme-file="styles/theme-valentine.css"
+                data-theme-logo="images/valantine-logo.webp"
               >
                 <div class="theme-preview">
                   <img
@@ -683,6 +781,7 @@
               <div
                 class="theme-card"
                 data-theme-file="styles/theme-ramadan.css"
+                data-theme-logo="images/ramadan-logo.webp"
               >
                 <div class="theme-preview">
                   <img
@@ -715,6 +814,7 @@
               <div
                 class="theme-card"
                 data-theme-file="styles/theme-christmas.css"
+                data-theme-logo="images/christmas-logo.webp"
               >
                 <div class="theme-preview">
                   <img
@@ -747,6 +847,7 @@
               <div
                 class="theme-card"
                 data-theme-file="styles/theme-halloween.css"
+                data-theme-logo="images/halloween-logo.webp"
               >
                 <div class="theme-preview">
                   <img
@@ -779,6 +880,7 @@
               <div
                 class="theme-card"
                 data-theme-file="styles/theme-independenceday.css"
+                data-theme-logo="images/independence-day-logo.webp"
               >
                 <div class="theme-preview">
                   <img
@@ -877,6 +979,36 @@
                   >Export saves your data as a JSON file. Import replaces all
                   current data.</small
                 >
+              </div>
+
+              <div class="settings-card">
+                <h3><i class="fas fa-user-plus"></i> Admin Access Helper</h3>
+                <p class="form-help">
+                  Add an existing Supabase Auth user to <code>app_admins</code>
+                  by pasting their user ID.
+                </p>
+                <form id="add-admin-form" class="admin-form">
+                  <div class="form-group">
+                    <label for="admin-user-id"
+                      ><i class="fas fa-id-card"></i> Auth User ID</label
+                    >
+                    <input
+                      type="text"
+                      id="admin-user-id"
+                      placeholder="UUID from Supabase Auth Users"
+                      required
+                    />
+                  </div>
+                  <div class="form-actions">
+                    <button type="submit" class="btn btn-admin">
+                      <i class="fas fa-user-shield"></i> Grant Admin Access
+                    </button>
+                  </div>
+                </form>
+                <small class="form-help">
+                  Create the user first in Supabase Auth, then copy their UUID
+                  here.
+                </small>
               </div>
 
               <div class="settings-card">
