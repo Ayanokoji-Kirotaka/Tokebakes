@@ -4115,6 +4115,18 @@ body.spa-navigating button {
   pointer-events: none;
 }
 
+body.spa-navigating #main-content {
+  pointer-events: none;
+}
+
+/* Keep top controls responsive during transitions */
+body.spa-navigating header a,
+body.spa-navigating header button,
+body.spa-navigating .navbar a,
+body.spa-navigating .navbar button {
+  pointer-events: auto;
+}
+
 .spa-progress {
   position: fixed;
   top: 0;

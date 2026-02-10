@@ -7,16 +7,42 @@ class DataSyncManager {
   constructor() {
     this.lastUpdateKey = "toke_bakes_last_update";
     this.broadcastChannel = null;
+    this.syncBus = null;
+    this.destroyBound = false;
     this.init();
   }
 
   init() {
-    if (typeof BroadcastChannel !== "undefined") {
-      this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
+    if (window.TokeUpdateSync) {
+      this.syncBus = window.TokeUpdateSync;
+    } else if (typeof BroadcastChannel !== "undefined") {
+      try {
+        this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
+      } catch (error) {
+        this.broadcastChannel = null;
+      }
+    }
+
+    if (!this.destroyBound) {
+      this.destroyBound = true;
+      window.addEventListener(
+        "beforeunload",
+        () => {
+          this.destroy();
+        },
+        { once: true }
+      );
     }
   }
 
   notifyDataChanged(operationType, itemType) {
+    if (this.syncBus && typeof this.syncBus.publishDataUpdate === "function") {
+      this.syncBus.publishDataUpdate(operationType, itemType, {
+        source: "admin",
+      });
+      return;
+    }
+
     const timestamp = Date.now().toString();
     localStorage.setItem(this.lastUpdateKey, timestamp);
 
@@ -28,6 +54,29 @@ class DataSyncManager {
         itemType: itemType,
       });
     }
+
+    // Same-tab fallback (BroadcastChannel does not fire in the same tab).
+    try {
+      window.dispatchEvent(
+        new CustomEvent("toke:data-updated", {
+          detail: {
+            type: "DATA_UPDATED",
+            timestamp,
+            operation: operationType,
+            itemType,
+          },
+        })
+      );
+    } catch {}
+  }
+
+  destroy() {
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.close();
+      } catch {}
+      this.broadcastChannel = null;
+    }
   }
 }
 
@@ -36,10 +85,10 @@ const dataSync = new DataSyncManager();
 // Debug logger (disabled for production)
 const DEBUG = false;
 const debugLog = (...args) => {
-  if (DEBUG) debugLog(...args);
+  if (DEBUG) console.log(...args);
 };
 const debugWarn = (...args) => {
-  if (DEBUG) debugWarn(...args);
+  if (DEBUG) console.warn(...args);
 };
 
 // Current admin state
@@ -47,6 +96,7 @@ let currentAdmin = null;
 let isEditing = false;
 let currentEditId = null;
 let sessionTimeout = null;
+let activityMonitoringAttached = false;
 const SESSION_TIMEOUT_MINUTES = 30;
 
 // Store for temporary image data
@@ -66,6 +116,146 @@ const STORAGE_LIMITS_KB = {
   gallery: 5000,
   carousel: 5000,
 };
+
+const ITEM_TYPES = ["featured", "menu", "gallery", "carousel"];
+const itemStateCache = ITEM_TYPES.reduce((acc, type) => {
+  acc[type] = new Map();
+  return acc;
+}, {});
+const loadedAdminTabs = new Set();
+
+function cacheItemsForType(itemType, items) {
+  const map = itemStateCache[itemType];
+  if (!map) return;
+  map.clear();
+
+  if (!Array.isArray(items)) return;
+  items.forEach((item) => {
+    if (item && item.id !== undefined && item.id !== null) {
+      map.set(String(item.id), item);
+    }
+  });
+}
+
+function getCachedItemForType(itemType, id) {
+  const map = itemStateCache[itemType];
+  if (!map) return null;
+  return map.get(String(id)) || null;
+}
+
+function removeCachedItemForType(itemType, id) {
+  const map = itemStateCache[itemType];
+  if (!map) return;
+  map.delete(String(id));
+}
+
+function clearAllItemStateCache() {
+  Object.values(itemStateCache).forEach((map) => map.clear());
+}
+
+function resetLoadedTabs() {
+  loadedAdminTabs.clear();
+}
+
+function getEndpointForType(itemType) {
+  const endpoints = {
+    featured: API_ENDPOINTS.FEATURED,
+    menu: API_ENDPOINTS.MENU,
+    gallery: API_ENDPOINTS.GALLERY,
+    carousel: API_ENDPOINTS.CAROUSEL,
+  };
+  return endpoints[itemType] || null;
+}
+
+function getBucketForType(itemType) {
+  const buckets = {
+    featured: STORAGE_BUCKETS.featured,
+    menu: STORAGE_BUCKETS.menu,
+    gallery: STORAGE_BUCKETS.gallery,
+    carousel: STORAGE_BUCKETS.carousel,
+  };
+  return buckets[itemType] || null;
+}
+
+function invalidateEndpointCache(endpoint) {
+  if (!endpoint) return;
+  dataCache.forEach((_value, key) => {
+    if (key.startsWith(endpoint)) {
+      dataCache.delete(key);
+    }
+  });
+}
+
+function buildItemDetailsFromRecord(itemType, item) {
+  if (!item) return null;
+  return {
+    id: item.id,
+    title: item.title || item.alt || "Item",
+    description: item.description || item.subtitle || "",
+    price: item.price || null,
+    created: item.created_at || null,
+    type: itemType,
+    image: item.image || null,
+  };
+}
+
+async function getEditableItem(itemType, id) {
+  const cached = getCachedItemForType(itemType, id);
+  if (cached) return cached;
+
+  const endpoint = getEndpointForType(itemType);
+  if (!endpoint) return null;
+  return loadDataFromSupabase(endpoint, id);
+}
+
+async function loadAdminTabData(tabId, force = false) {
+  if (!force && loadedAdminTabs.has(tabId)) return;
+
+  if (tabId === "featured") {
+    await Promise.all([renderFeaturedItems(), populateFeaturedMenuSelect()]);
+    loadedAdminTabs.add(tabId);
+    return;
+  }
+
+  if (tabId === "menu") {
+    await renderMenuItems();
+    loadedAdminTabs.add(tabId);
+    return;
+  }
+
+  if (tabId === "gallery") {
+    await renderGalleryItems();
+    loadedAdminTabs.add(tabId);
+    return;
+  }
+
+  if (tabId === "carousel") {
+    await renderCarouselItems();
+    loadedAdminTabs.add(tabId);
+    return;
+  }
+
+  if (tabId === "settings") {
+    await updateItemCounts();
+    return;
+  }
+}
+
+function preloadAdminTabsInBackground() {
+  const run = () => {
+    Promise.allSettled([
+      loadAdminTabData("menu"),
+      loadAdminTabData("gallery"),
+      loadAdminTabData("carousel"),
+    ]).catch(() => {});
+  };
+
+  if ("requestIdleCallback" in window) {
+    requestIdleCallback(run, { timeout: 1200 });
+  } else {
+    setTimeout(run, 350);
+  }
+}
 
 /* ================== MODERN CONFIRMATION DIALOG SYSTEM ================== */
 
@@ -203,27 +393,17 @@ const confirmationDialog = new ModernConfirmationDialog();
 
 // Helper function to get item details
 async function getItemDetails(itemId, itemType) {
-  try {
-    const endpoints = {
-      featured: API_ENDPOINTS.FEATURED,
-      menu: API_ENDPOINTS.MENU,
-      gallery: API_ENDPOINTS.GALLERY,
-      carousel: API_ENDPOINTS.CAROUSEL, // Added
-    };
+  const cachedItem = getCachedItemForType(itemType, itemId);
+  if (cachedItem) {
+    return buildItemDetailsFromRecord(itemType, cachedItem);
+  }
 
-    const endpoint = endpoints[itemType] || API_ENDPOINTS.FEATURED;
+  try {
+    const endpoint = getEndpointForType(itemType) || API_ENDPOINTS.FEATURED;
     const item = await loadDataFromSupabase(endpoint, itemId, true);
 
     if (item) {
-      return {
-        id: item.id,
-        title: item.title || item.alt || "Carousel Image",
-        description: item.description || "",
-        price: item.price || null,
-        created: item.created_at || null,
-        type: itemType,
-        image: item.image || null,
-      };
+      return buildItemDetailsFromRecord(itemType, item);
     }
   } catch (error) {
     console.error("Error fetching item details:", error);
@@ -243,9 +423,27 @@ function formatPrice(num) {
 }
 
 // Modified delete functions with modern confirmation dialog
-async function deleteFeaturedItem(id) {
+async function deleteItemByType(id, itemType) {
+  const endpoint = getEndpointForType(itemType);
+  const bucket = getBucketForType(itemType);
+  if (!endpoint || !bucket) {
+    showNotification("Unknown item type", "error");
+    return;
+  }
+
+  const labels = {
+    featured: "Featured item",
+    menu: "Menu item",
+    gallery: "Gallery image",
+    carousel: "Carousel image",
+  };
+  const label = labels[itemType] || "Item";
+
   try {
-    const itemDetails = await getItemDetails(id, "featured");
+    const cached = getCachedItemForType(itemType, id);
+    const itemDetails =
+      buildItemDetailsFromRecord(itemType, cached) ||
+      (await getItemDetails(id, itemType));
 
     const confirmed = await confirmationDialog.show(itemDetails);
 
@@ -254,138 +452,51 @@ async function deleteFeaturedItem(id) {
       return;
     }
 
-    await secureRequest(`${API_ENDPOINTS.FEATURED}?id=eq.${id}`, "DELETE", null, {
+    await secureRequest(`${endpoint}?id=eq.${id}`, "DELETE", null, {
       authRequired: true,
     });
-    const featuredPath = extractStoragePath(
-      itemDetails.image,
-      STORAGE_BUCKETS.featured
-    );
-    await deleteFromStorage(STORAGE_BUCKETS.featured, featuredPath);
-    showNotification("Featured item deleted!", "success");
 
-    // Clear from cache
+    const storagePath = extractStoragePath(itemDetails.image, bucket);
+    await deleteFromStorage(bucket, storagePath);
+    showNotification(`${label} deleted!`, "success");
+
     tempImageCache.delete(id);
-    clearDataCache();
+    removeCachedItemForType(itemType, id);
+    invalidateEndpointCache(endpoint);
 
-    await renderFeaturedItems();
+    if (itemType === "featured") {
+      await renderFeaturedItems();
+    } else if (itemType === "menu") {
+      await Promise.all([renderMenuItems(), populateFeaturedMenuSelect()]);
+    } else if (itemType === "gallery") {
+      await renderGalleryItems();
+    } else if (itemType === "carousel") {
+      await renderCarouselItems();
+    }
+
     await updateItemCounts();
-
-    dataSync.notifyDataChanged("delete", "featured");
+    dataSync.notifyDataChanged("delete", itemType);
   } catch (error) {
-    console.error("Error deleting featured item:", error);
-    showNotification("Failed to delete item", "error");
+    console.error(`Error deleting ${itemType} item:`, error);
+    showNotification(`Failed to delete ${label.toLowerCase()}`, "error");
   }
+}
+
+async function deleteFeaturedItem(id) {
+  return deleteItemByType(id, "featured");
 }
 
 async function deleteMenuItem(id) {
-  try {
-    const itemDetails = await getItemDetails(id, "menu");
-
-    const confirmed = await confirmationDialog.show(itemDetails);
-
-    if (!confirmed) {
-      showNotification("Deletion cancelled", "info");
-      return;
-    }
-
-    await secureRequest(`${API_ENDPOINTS.MENU}?id=eq.${id}`, "DELETE", null, {
-      authRequired: true,
-    });
-    const menuPath = extractStoragePath(
-      itemDetails.image,
-      STORAGE_BUCKETS.menu
-    );
-    await deleteFromStorage(STORAGE_BUCKETS.menu, menuPath);
-    showNotification("Menu item deleted!", "success");
-
-    // Clear from cache
-    tempImageCache.delete(id);
-    clearDataCache();
-
-    await renderMenuItems();
-    await populateFeaturedMenuSelect();
-    await updateItemCounts();
-
-    dataSync.notifyDataChanged("delete", "menu");
-  } catch (error) {
-    console.error("Error deleting menu item:", error);
-    showNotification("Failed to delete menu item", "error");
-  }
+  return deleteItemByType(id, "menu");
 }
 
 async function deleteGalleryItem(id) {
-  try {
-    const itemDetails = await getItemDetails(id, "gallery");
-
-    const confirmed = await confirmationDialog.show(itemDetails);
-
-    if (!confirmed) {
-      showNotification("Deletion cancelled", "info");
-      return;
-    }
-
-    await secureRequest(`${API_ENDPOINTS.GALLERY}?id=eq.${id}`, "DELETE", null, {
-      authRequired: true,
-    });
-    const galleryPath = extractStoragePath(
-      itemDetails.image,
-      STORAGE_BUCKETS.gallery
-    );
-    await deleteFromStorage(STORAGE_BUCKETS.gallery, galleryPath);
-    showNotification("Gallery image deleted!", "success");
-
-    // Clear from cache
-    tempImageCache.delete(id);
-    clearDataCache();
-
-    await renderGalleryItems();
-    await updateItemCounts();
-
-    dataSync.notifyDataChanged("delete", "gallery");
-  } catch (error) {
-    console.error("Error deleting gallery item:", error);
-    showNotification("Failed to delete gallery item", "error");
-  }
+  return deleteItemByType(id, "gallery");
 }
 
 /* ================== CAROUSEL DELETE FUNCTION ================== */
 async function deleteCarouselItem(id) {
-  try {
-    const itemDetails = await getItemDetails(id, "carousel");
-
-    const confirmed = await confirmationDialog.show(itemDetails);
-
-    if (!confirmed) {
-      showNotification("Deletion cancelled", "info");
-      return;
-    }
-
-    await secureRequest(
-      `${API_ENDPOINTS.CAROUSEL}?id=eq.${id}`,
-      "DELETE",
-      null,
-      { authRequired: true }
-    );
-    const carouselPath = extractStoragePath(
-      itemDetails.image,
-      STORAGE_BUCKETS.carousel
-    );
-    await deleteFromStorage(STORAGE_BUCKETS.carousel, carouselPath);
-    showNotification("Carousel image deleted!", "success");
-
-    // Clear from cache
-    tempImageCache.delete(id);
-    clearDataCache();
-
-    await renderCarouselItems();
-    await updateItemCounts();
-
-    dataSync.notifyDataChanged("delete", "carousel"); // Added sync
-  } catch (error) {
-    console.error("Error deleting carousel item:", error);
-    showNotification("Failed to delete carousel item", "error");
-  }
+  return deleteItemByType(id, "carousel");
 }
 
 /* ================== ENHANCED SECURITY FUNCTIONS ================== */
@@ -1636,6 +1747,7 @@ async function loadDataFromSupabase(endpoint, id = null, forceRefresh = false) {
 function clearDataCache() {
   dataCache.clear();
   tempImageCache.clear();
+  clearAllItemStateCache();
 }
 
 /* ================== FIXED AUTHENTICATION - KEY CHANGES ================== */
@@ -1782,6 +1894,8 @@ function clearSessionTimeout() {
 }
 
 function setupActivityMonitoring() {
+  if (activityMonitoringAttached) return;
+
   const resetSessionTimer = () => {
     if (sessionTimeout) {
       clearTimeout(sessionTimeout);
@@ -1792,6 +1906,8 @@ function setupActivityMonitoring() {
   ["click", "keypress", "mousemove", "scroll"].forEach((event) => {
     document.addEventListener(event, resetSessionTimer, { passive: true });
   });
+
+  activityMonitoringAttached = true;
 }
 
 async function signOutAdmin() {
@@ -1821,6 +1937,7 @@ function logoutAdmin() {
   currentEditId = null;
   clearSessionTimeout();
   clearDataCache();
+  resetLoadedTabs();
   signOutAdmin();
   clearSession();
 
@@ -1978,6 +2095,7 @@ async function renderFeaturedItems() {
     const items = await loadDataFromSupabase(API_ENDPOINTS.FEATURED);
 
     if (!items || items.length === 0) {
+      cacheItemsForType("featured", []);
       container.innerHTML = `
         <div class="empty-state">
           <i class="fas fa-star"></i>
@@ -2008,8 +2126,10 @@ async function renderFeaturedItems() {
     `
       )
       .join("");
+    cacheItemsForType("featured", items);
   } catch (error) {
     console.error(`Error rendering featured items:`, error);
+    cacheItemsForType("featured", []);
     container.innerHTML = `
       <div class="empty-state error">
         <i class="fas fa-exclamation-triangle"></i>
@@ -2066,13 +2186,13 @@ async function saveFeaturedItem(e) {
       existingUrl
     );
 
-    const menuItemId = menuItemIdRaw ? Number(menuItemIdRaw) : null;
+    const menuItemId = menuItemIdRaw ? String(menuItemIdRaw).trim() : "";
 
     const formData = {
       title,
       description,
       image: upload.url,
-      menu_item_id: Number.isFinite(menuItemId) ? menuItemId : null,
+      menu_item_id: menuItemId || null,
       display_order: displayOrder,
       is_active: isActive,
       start_date: startDate || null,
@@ -2096,7 +2216,7 @@ async function saveFeaturedItem(e) {
 
 async function editFeaturedItem(id) {
   try {
-    const item = await loadDataFromSupabase(API_ENDPOINTS.FEATURED, id);
+    const item = await getEditableItem("featured", id);
 
     if (!item) {
       showNotification("Item not found", "error");
@@ -2144,6 +2264,7 @@ async function renderMenuItems() {
     const items = await loadDataFromSupabase(API_ENDPOINTS.MENU);
 
     if (!items || items.length === 0) {
+      cacheItemsForType("menu", []);
       container.innerHTML = `
         <div class="empty-state">
           <i class="fas fa-utensils"></i>
@@ -2179,8 +2300,10 @@ async function renderMenuItems() {
     `
       )
       .join("");
+    cacheItemsForType("menu", items);
   } catch (error) {
     console.error(`Error rendering menu items:`, error);
+    cacheItemsForType("menu", []);
     container.innerHTML = `
       <div class="empty-state error">
         <i class="fas fa-exclamation-triangle"></i>
@@ -2301,7 +2424,7 @@ async function saveMenuItem(e) {
 
 async function editMenuItem(id) {
   try {
-    const item = await loadDataFromSupabase(API_ENDPOINTS.MENU, id);
+    const item = await getEditableItem("menu", id);
 
     if (!item) {
       showNotification("Menu item not found", "error");
@@ -2352,6 +2475,7 @@ async function renderGalleryItems() {
     const items = await loadDataFromSupabase(API_ENDPOINTS.GALLERY);
 
     if (!items || items.length === 0) {
+      cacheItemsForType("gallery", []);
       container.innerHTML = `
         <div class="empty-state">
           <i class="fas fa-images"></i>
@@ -2382,8 +2506,10 @@ async function renderGalleryItems() {
     `
       )
       .join("");
+    cacheItemsForType("gallery", items);
   } catch (error) {
     console.error(`Error rendering gallery items:`, error);
+    cacheItemsForType("gallery", []);
     container.innerHTML = `
       <div class="empty-state error">
         <i class="fas fa-exclamation-triangle"></i>
@@ -2453,7 +2579,7 @@ async function saveGalleryItem(e) {
 
 async function editGalleryItem(id) {
   try {
-    const item = await loadDataFromSupabase(API_ENDPOINTS.GALLERY, id);
+    const item = await getEditableItem("gallery", id);
 
     if (!item) {
       showNotification("Gallery item not found", "error");
@@ -2491,6 +2617,7 @@ async function renderCarouselItems() {
     const items = await loadDataFromSupabase(API_ENDPOINTS.CAROUSEL);
 
     if (!items || items.length === 0) {
+      cacheItemsForType("carousel", []);
       container.innerHTML = `
         <div class="empty-state">
           <i class="fas fa-images"></i>
@@ -2536,8 +2663,10 @@ async function renderCarouselItems() {
     `;
       })
       .join("");
+    cacheItemsForType("carousel", items);
   } catch (error) {
     console.error(`Error rendering carousel items:`, error);
+    cacheItemsForType("carousel", []);
     container.innerHTML = `
       <div class="empty-state error">
         <i class="fas fa-exclamation-triangle"></i>
@@ -2639,7 +2768,7 @@ async function saveCarouselItem(e) {
 
 async function editCarouselItem(id) {
   try {
-    const item = await loadDataFromSupabase(API_ENDPOINTS.CAROUSEL, id);
+    const item = await getEditableItem("carousel", id);
 
     if (!item) {
       showNotification("Carousel item not found", "error");
@@ -2992,23 +3121,19 @@ async function initAdminPanel() {
     yearElement.textContent = new Date().getFullYear();
   }
 
-  // Load initial data if logged in - UPDATED WITH CAROUSEL
+  // Setup event listeners
+  setupEventListeners();
+
+  // Load initial data if logged in
   if (currentAdmin) {
     try {
-      await Promise.all([
-        renderFeaturedItems(),
-        renderMenuItems(),
-        renderGalleryItems(),
-        renderCarouselItems(), // Added carousel
-      ]);
+      await loadAdminTabData("featured", true);
       await updateItemCounts();
+      preloadAdminTabsInBackground();
     } catch (error) {
       console.error("Error loading initial data:", error);
     }
   }
-
-  // Setup event listeners
-  setupEventListeners();
 }
 
 function setupEventListeners() {
@@ -3016,7 +3141,7 @@ function setupEventListeners() {
 
   // Tab switching - UPDATED TO RESET CAROUSEL FORM
   document.querySelectorAll(".admin-tab").forEach((tab) => {
-    tab.addEventListener("click", function () {
+    tab.addEventListener("click", async function () {
       const tabId = this.dataset.tab;
 
       // Update active tab
@@ -3032,11 +3157,7 @@ function setupEventListeners() {
       const targetTab = document.getElementById(`${tabId}-tab`);
       if (targetTab) {
         targetTab.classList.add("active");
-
-        // Refresh storage analysis when settings tab is opened
-        if (tabId === "settings") {
-          updateItemCounts();
-        }
+        await loadAdminTabData(tabId);
       }
 
       // Reset any open forms - ADDED CAROUSEL
@@ -3068,15 +3189,10 @@ function setupEventListeners() {
         document.getElementById("admin-dashboard").style.display = "block";
         showNotification(`Welcome back, ${email}!`, "success");
 
-        // Load data after successful login - UPDATED WITH CAROUSEL
-        await Promise.all([
-          renderFeaturedItems(),
-          renderMenuItems(),
-          renderGalleryItems(),
-          renderCarouselItems(), // Added carousel
-        ]);
-        await populateFeaturedMenuSelect();
+        resetLoadedTabs();
+        await loadAdminTabData("featured", true);
         await updateItemCounts();
+        preloadAdminTabsInBackground();
       } else {
         showNotification("Invalid email or password", "error");
       }

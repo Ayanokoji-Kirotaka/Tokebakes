@@ -3,7 +3,59 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Home | Toke Bakes</title>
+    <title>Toke Bakes | Artisan Cakes, Cupcakes and Pastries</title>
+    <meta
+      name="description"
+      content="Toke Bakes crafts artisan cakes, cupcakes and pastries for celebrations and everyday treats. Explore our menu and order your favorites."
+    />
+    <meta
+      name="robots"
+      content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
+    />
+    <link rel="canonical" href="https://tokebakes-ten.vercel.app/" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Toke Bakes" />
+    <meta
+      property="og:title"
+      content="Toke Bakes | Artisan Cakes, Cupcakes and Pastries"
+    />
+    <meta
+      property="og:description"
+      content="Handcrafted cakes, cupcakes and pastries made with premium ingredients."
+    />
+    <meta property="og:url" content="https://tokebakes-ten.vercel.app/" />
+    <meta
+      property="og:image"
+      content="https://tokebakes-ten.vercel.app/images/logo.webp"
+    />
+    <meta property="og:image:alt" content="Toke Bakes logo" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Toke Bakes | Artisan Cakes, Cupcakes and Pastries"
+    />
+    <meta
+      name="twitter:description"
+      content="Explore handcrafted cakes, cupcakes and pastries from Toke Bakes."
+    />
+    <meta
+      name="twitter:image"
+      content="https://tokebakes-ten.vercel.app/images/logo.webp"
+    />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Bakery",
+        "name": "Toke Bakes",
+        "url": "https://tokebakes-ten.vercel.app/",
+        "logo": "https://tokebakes-ten.vercel.app/images/logo.webp",
+        "image": "https://tokebakes-ten.vercel.app/images/logo.webp",
+        "telephone": "+2347063466822",
+        "email": "tokebakes@gmail.com",
+        "priceRange": "$$"
+      }
+    </script>
     <script>
       (function () {
         const savedMode =
@@ -12,7 +64,15 @@
           localStorage.getItem("toke_bakes_css_theme") || "styles/style.css";
         const themeVersion =
           localStorage.getItem("toke_bakes_theme_last_update") || "";
+        let hasSeenLoader = false;
+        try {
+          hasSeenLoader =
+            sessionStorage.getItem("toke_bakes_home_loader_seen") === "1";
+        } catch {}
         document.documentElement.setAttribute("data-theme", savedMode);
+        if (hasSeenLoader) {
+          document.documentElement.setAttribute("data-loader-seen", "1");
+        }
         const link = document.createElement("link");
         link.rel = "stylesheet";
         link.id = "theme-stylesheet";
@@ -42,6 +102,7 @@
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
     />
     <script src="scripts/config.js"></script>
+    <script src="scripts/update-sync.js"></script>
     <script src="scripts/theme-manager.js"></script>
   </head>
   <body>

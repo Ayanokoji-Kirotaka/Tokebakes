@@ -1,20 +1,38 @@
-/* ================== carousel.js - SPA-ENHANCED VERSION ================== */
+﻿/* ================== carousel.js - SPA-ENHANCED VERSION ================== */
 
 const CAROUSEL_DEBUG = false;
+const CAROUSEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const CAROUSEL_READY_TIMEOUT_MS = 450;
 const carouselDebugLog = (...args) => {
-  if (CAROUSEL_DEBUG) carouselDebugLog(...args);
+  if (CAROUSEL_DEBUG) console.log(...args);
 };
 const carouselDebugWarn = (...args) => {
-  if (CAROUSEL_DEBUG) carouselDebugWarn(...args);
+  if (CAROUSEL_DEBUG) console.warn(...args);
 };
+const isCarouselSlideActive = (value) => {
+  if (value === null || value === undefined || value === "") return true;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "false" || normalized === "0" || normalized === "no") {
+    return false;
+  }
+  return true;
+};
+const normalizeCarouselAsset = (value) =>
+  value === null || value === undefined
+    ? ""
+    : String(value)
+        .trim()
+        .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
 
 class HeroCarousel {
   constructor() {
-    carouselDebugLog("🎠 HeroCarousel constructor called");
+    carouselDebugLog("ðŸŽ  HeroCarousel constructor called");
 
     this.container = document.querySelector(".hero-carousel");
     if (!this.container) {
-      carouselDebugLog("🎠 No carousel found on this page");
+      carouselDebugLog("ðŸŽ  No carousel found on this page");
       return;
     }
 
@@ -40,6 +58,7 @@ class HeroCarousel {
     // Touch/swipe support
     this.touchStartX = 0;
     this.touchEndX = 0;
+    this.boundHandlers = {};
 
     // Hero content elements
     this.heroContent = {
@@ -61,17 +80,85 @@ class HeroCarousel {
   }
 
   async init() {
-    carouselDebugLog("🎠 Initializing Hero Carousel...");
-    await this.loadCarouselData();
-    this.setupCarousel();
-    this.hideLoadingState();
-    this.setupEventListeners();
-    this.startAutoPlay();
+    carouselDebugLog("ðŸŽ  Initializing Hero Carousel...");
+    try {
+      const loadResult = await this.loadCarouselData(false, {
+        allowStaleCache: true,
+        showLoading: false,
+        cacheOnly: true,
+      });
+
+      if (!loadResult?.fromCache) {
+        this.slides = this.getFallbackSlides();
+      }
+
+      this.setupCarousel();
+      await this.waitForFirstSlideReady();
+      this.hideLoadingState();
+      this.setupEventListeners();
+      this.startAutoPlay();
+      const needsBackgroundRefresh =
+        !loadResult?.fromCache || !loadResult?.isFresh;
+      if (needsBackgroundRefresh) {
+        this.refresh(true, {
+          showLoading: false,
+          forceRebuild: !loadResult?.fromCache,
+        }).catch(() => {});
+      }
+    } finally {
+      this.announceReady();
+    }
+  }
+
+  announceReady() {
+    if (typeof window === "undefined") return;
+    try {
+      window.dispatchEvent(
+        new CustomEvent("carousel:ready", {
+          detail: {
+            slides: Array.isArray(this.slides) ? this.slides.length : 0,
+          },
+        })
+      );
+    } catch {}
+  }
+
+  async waitForFirstSlideReady() {
+    const firstSlideImage = this.track?.querySelector(".carousel-slide img");
+    if (!firstSlideImage) return;
+    if (firstSlideImage.complete) return;
+
+    if (typeof firstSlideImage.decode === "function") {
+      try {
+        await Promise.race([
+          firstSlideImage.decode(),
+          new Promise((resolve) =>
+            setTimeout(resolve, CAROUSEL_READY_TIMEOUT_MS)
+          ),
+        ]);
+        return;
+      } catch {}
+    }
+
+    await new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        firstSlideImage.removeEventListener("load", finish);
+        firstSlideImage.removeEventListener("error", finish);
+        resolve();
+      };
+
+      firstSlideImage.addEventListener("load", finish, { once: true });
+      firstSlideImage.addEventListener("error", finish, { once: true });
+      setTimeout(finish, CAROUSEL_READY_TIMEOUT_MS);
+    });
   }
 
   // NEW: Cleanup method for SPA navigation
   destroy() {
-    carouselDebugLog("🎠 Cleaning up carousel...");
+    carouselDebugLog("ðŸŽ  Cleaning up carousel...");
 
     // Stop auto-play
     this.stopAutoPlay();
@@ -83,21 +170,7 @@ class HeroCarousel {
     this.clearResumeTimer();
 
     // Remove event listeners
-    if (this.navContainer) {
-      const newNavContainer = this.navContainer.cloneNode(false);
-      this.navContainer.parentNode.replaceChild(
-        newNavContainer,
-        this.navContainer
-      );
-    }
-
-    if (this.dotsContainer) {
-      const newDotsContainer = this.dotsContainer.cloneNode(false);
-      this.dotsContainer.parentNode.replaceChild(
-        newDotsContainer,
-        this.dotsContainer
-      );
-    }
+    this.teardownEventListeners();
 
     // Clear references
     this.container = null;
@@ -105,117 +178,161 @@ class HeroCarousel {
     this.dotsContainer = null;
     this.navContainer = null;
     this.slides = [];
+    this.boundHandlers = {};
 
-    carouselDebugLog("🎠 Carousel cleanup complete");
+    carouselDebugLog("ðŸŽ  Carousel cleanup complete");
   }
 
-  async loadCarouselData() {
-    const cacheKey = "carousel_loaded";
-    const isFirstLoad = (() => {
-      try {
-        return !localStorage.getItem(cacheKey);
-      } catch (e) {
-        return false;
-      }
-    })();
+  getFallbackSlides() {
+    return [
+      {
+        id: "default",
+        image: "images/default-bg.jpg",
+        alt: "Toke Bakes Artisan Bakery",
+      },
+    ];
+  }
 
-    // Check if carousel data is cached
+  createSlidesSignature(slides = this.slides) {
+    if (!Array.isArray(slides) || slides.length === 0) return "";
+    return slides
+      .map(
+        (slide) =>
+          JSON.stringify({
+            id: slide?.id || "",
+            image: slide?.image || "",
+            alt: slide?.alt || "",
+            title: slide?.title || "",
+            subtitle: slide?.subtitle || "",
+            cta_text: slide?.cta_text || "",
+            cta_link: slide?.cta_link || "",
+            display_order: slide?.display_order ?? "",
+            is_active: slide?.is_active ?? "",
+            updated_at: slide?.updated_at || "",
+          })
+      )
+      .join("||");
+  }
+
+  async loadCarouselData(forceRefresh = false, options = {}) {
     const dataCacheKey = "hero_carousel_data";
-    let hasCachedData = false;
-    try {
-      const cached = localStorage.getItem(dataCacheKey);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
-          // 24 hours
-          hasCachedData = true;
-          this.slides = parsed.data;
-          carouselDebugLog(
-            `✅ Loaded ${this.slides.length} carousel slides from cache`
-          );
-          return;
-        }
-      }
-    } catch (e) {}
+    const allowStaleCache = options.allowStaleCache !== false;
+    const showLoading = options.showLoading !== false;
+    const cacheOnly = options.cacheOnly === true;
+    // Check if carousel data is cached
+    if (!forceRefresh) {
+      try {
+        const cached = localStorage.getItem(dataCacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          const cachedSlides = Array.isArray(parsed?.data)
+            ? parsed.data
+                .filter(
+                  (item) =>
+                    item &&
+                    normalizeCarouselAsset(item.image) &&
+                    isCarouselSlideActive(item.is_active)
+                )
+                .map((item) => ({
+                  ...item,
+                  image: normalizeCarouselAsset(item.image),
+                  alt:
+                    (item.alt && String(item.alt).trim()) ||
+                    (item.title && String(item.title).trim()) ||
+                    "Toke Bakes",
+                }))
+            : [];
 
-    if (isFirstLoad || !hasCachedData) {
-      // Show loading state only on first visit or when data not cached
+          if (cachedSlides.length > 0) {
+            const ageMs = Date.now() - Number(parsed.timestamp || 0);
+            const isFresh = ageMs >= 0 && ageMs < CAROUSEL_CACHE_TTL_MS;
+            if (isFresh || allowStaleCache) {
+              this.slides = cachedSlides;
+              carouselDebugLog(
+              `âœ… Loaded ${this.slides.length} carousel slides from cache`
+            );
+              return { fromCache: true, isFresh };
+            }
+          }
+        }
+      } catch {}
+    }
+
+    if (cacheOnly) {
+      return { fromCache: false, isFresh: false, cacheOnlyMiss: true };
+    }
+
+    if (showLoading) {
       this.showLoadingState();
     }
 
-    const startTime = Date.now();
-
     try {
-      carouselDebugLog("🔄 Loading carousel data...");
+      carouselDebugLog("ðŸ”„ Loading carousel data...");
 
       if (!window.SUPABASE_CONFIG || !window.SUPABASE_CONFIG.URL) {
         console.error("Supabase configuration not found");
-        return;
+        this.slides = this.getFallbackSlides();
+        return { fromCache: false, isFresh: false, error: true };
       }
 
-      const response = await fetch(
-        `${SUPABASE_CONFIG.URL}${API_ENDPOINTS.CAROUSEL}?is_active=eq.true&order=display_order.asc,created_at.desc&select=*`,
-        {
+      const requestUrl = `${SUPABASE_CONFIG.URL}${API_ENDPOINTS.CAROUSEL}?order=display_order.asc,created_at.desc&select=*${
+        forceRefresh ? `&_=${Date.now()}` : ""
+      }`;
+
+      const response = await fetch(requestUrl, {
+          cache: forceRefresh ? "no-store" : "default",
           headers: {
             apikey: SUPABASE_CONFIG.ANON_KEY,
             Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
             "Content-Type": "application/json",
           },
-        }
-      );
+        });
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
+      const slides = Array.isArray(data)
+        ? data
+            .filter(
+              (item) =>
+                item &&
+                normalizeCarouselAsset(item.image) &&
+                isCarouselSlideActive(item.is_active)
+            )
+            .map((item) => ({
+              ...item,
+              image: normalizeCarouselAsset(item.image),
+              alt:
+                (item.alt && String(item.alt).trim()) ||
+                (item.title && String(item.title).trim()) ||
+                "Toke Bakes",
+            }))
+        : [];
 
-      // Cache the data
+      if (slides.length === 0) {
+        carouselDebugWarn("No active carousel items found");
+        this.slides = this.getFallbackSlides();
+      } else {
+        this.slides = slides;
+        carouselDebugLog(`âœ… Loaded ${this.slides.length} carousel slides`);
+      }
+
       try {
         localStorage.setItem(
           dataCacheKey,
-          JSON.stringify({ data: data, timestamp: Date.now() })
+          JSON.stringify({ data: this.slides, timestamp: Date.now() })
         );
-      } catch (e) {}
+      } catch {}
 
-      if (isFirstLoad) {
-        // Ensure minimum loading time for smooth UX
-        const elapsed = Date.now() - startTime;
-        const minLoadingTime = 300; // 300ms minimum
-        if (elapsed < minLoadingTime) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, minLoadingTime - elapsed)
-          );
-        }
-      }
-
-      // Mark as loaded
-      try {
-        localStorage.setItem(cacheKey, "true");
-      } catch (e) {}
-
-      if (!data || data.length === 0) {
-        carouselDebugWarn("No active carousel items found");
-        this.slides = [
-          {
-            id: "default",
-            image: "images/default-bg.jpg",
-            alt: "Toke Bakes Artisan Bakery",
-          },
-        ];
-      } else {
-        this.slides = data;
-        carouselDebugLog(`✅ Loaded ${this.slides.length} carousel slides`);
-      }
+      return { fromCache: false, isFresh: true };
     } catch (error) {
       console.error("Error loading carousel data:", error);
-      this.slides = [
-        {
-          id: "default",
-          image: "images/default-bg.jpg",
-          alt: "Toke Bakes Artisan Bakery",
-        },
-      ];
+      if (!Array.isArray(this.slides) || this.slides.length === 0) {
+        this.slides = this.getFallbackSlides();
+      }
+      return { fromCache: false, isFresh: false, error: true };
     }
   }
 
@@ -267,6 +384,7 @@ class HeroCarousel {
     // Clear existing content
     this.track.innerHTML = "";
     this.dotsContainer.innerHTML = "";
+    this.navContainer.innerHTML = "";
 
     // Create slides
     this.slides.forEach((slide, index) => {
@@ -283,6 +401,8 @@ class HeroCarousel {
              alt="${slide.alt || "Toke Bakes"}"
              class="slide-image"
              loading="${loading}"
+             decoding="async"
+             fetchpriority="${index === 0 ? "high" : "auto"}"
              onerror="this.onerror=null; this.src='images/default-bg.jpg';">
       `;
 
@@ -340,10 +460,11 @@ class HeroCarousel {
   }
 
   setupEventListeners() {
+    this.teardownEventListeners();
     if (this.slides.length <= 1) return;
 
     // Dots navigation
-    this.dotsContainer.addEventListener("click", (e) => {
+    this.boundHandlers.dotsClick = (e) => {
       const dot = e.target.closest(".carousel-dot");
       if (!dot || this.isTransitioning) return;
 
@@ -352,11 +473,12 @@ class HeroCarousel {
         this.goToSlide(index);
         this.pauseAutoPlay();
       }
-    });
+    };
+    this.dotsContainer.addEventListener("click", this.boundHandlers.dotsClick);
 
     // Arrow navigation
     if (this.navContainer) {
-      this.navContainer.addEventListener("click", (e) => {
+      this.boundHandlers.navClick = (e) => {
         e.stopPropagation();
 
         if (this.isTransitioning) return;
@@ -371,45 +493,50 @@ class HeroCarousel {
         }
 
         this.pauseAutoPlay();
-      });
+      };
+      this.navContainer.addEventListener("click", this.boundHandlers.navClick);
     }
 
     // Mouse hover handling
-    this.container.addEventListener("mouseenter", () => {
+    this.boundHandlers.mouseEnter = () => {
       this.isHovered = true;
       this.stopAutoPlay();
       this.clearResumeTimer();
-    });
+    };
+    this.container.addEventListener("mouseenter", this.boundHandlers.mouseEnter);
 
-    this.container.addEventListener("mouseleave", () => {
+    this.boundHandlers.mouseLeave = () => {
       this.isHovered = false;
       this.scheduleAutoPlayResume();
-    });
+    };
+    this.container.addEventListener("mouseleave", this.boundHandlers.mouseLeave);
 
     // Touch/swipe support
+    this.boundHandlers.touchStart = (e) => {
+      this.touchStartX = e.changedTouches[0].screenX;
+      this.stopAutoPlay();
+      this.clearResumeTimer();
+    };
     this.track.addEventListener(
       "touchstart",
-      (e) => {
-        this.touchStartX = e.changedTouches[0].screenX;
-        this.stopAutoPlay();
-        this.clearResumeTimer();
-      },
+      this.boundHandlers.touchStart,
       { passive: true }
     );
 
+    this.boundHandlers.touchEnd = (e) => {
+      this.touchEndX = e.changedTouches[0].screenX;
+      this.handleSwipe();
+      this.scheduleAutoPlayResume(this.resumeDelay + 1000);
+    };
     this.track.addEventListener(
       "touchend",
-      (e) => {
-        this.touchEndX = e.changedTouches[0].screenX;
-        this.handleSwipe();
-        this.scheduleAutoPlayResume(this.resumeDelay + 1000);
-      },
+      this.boundHandlers.touchEnd,
       { passive: true }
     );
 
     // Keyboard navigation
-    document.addEventListener("keydown", (e) => {
-      if (
+    this.boundHandlers.keydown = (e) => {
+        if (
         !this.container ||
         this.isTransitioning ||
         e.target.tagName === "INPUT" ||
@@ -426,7 +553,32 @@ class HeroCarousel {
         this.nextSlide();
         this.pauseAutoPlay();
       }
-    });
+    };
+    document.addEventListener("keydown", this.boundHandlers.keydown);
+  }
+
+  teardownEventListeners() {
+    if (this.dotsContainer && this.boundHandlers.dotsClick) {
+      this.dotsContainer.removeEventListener("click", this.boundHandlers.dotsClick);
+    }
+    if (this.navContainer && this.boundHandlers.navClick) {
+      this.navContainer.removeEventListener("click", this.boundHandlers.navClick);
+    }
+    if (this.container && this.boundHandlers.mouseEnter) {
+      this.container.removeEventListener("mouseenter", this.boundHandlers.mouseEnter);
+    }
+    if (this.container && this.boundHandlers.mouseLeave) {
+      this.container.removeEventListener("mouseleave", this.boundHandlers.mouseLeave);
+    }
+    if (this.track && this.boundHandlers.touchStart) {
+      this.track.removeEventListener("touchstart", this.boundHandlers.touchStart);
+    }
+    if (this.track && this.boundHandlers.touchEnd) {
+      this.track.removeEventListener("touchend", this.boundHandlers.touchEnd);
+    }
+    if (this.boundHandlers.keydown) {
+      document.removeEventListener("keydown", this.boundHandlers.keydown);
+    }
   }
 
   handleSwipe() {
@@ -565,16 +717,105 @@ class HeroCarousel {
   }
 
   // Refresh when admin updates data
-  async refresh() {
-    carouselDebugLog("🔄 Refreshing carousel...");
-    await this.loadCarouselData();
+  async refresh(forceRefresh = false, options = {}) {
+    carouselDebugLog("Refreshing carousel...");
+    const previousSignature = this.createSlidesSignature();
+    const loadResult = await this.loadCarouselData(forceRefresh, options);
+    const nextSignature = this.createSlidesSignature();
+
+    if (
+      previousSignature &&
+      previousSignature === nextSignature &&
+      !options.forceRebuild
+    ) {
+      this.announceReady();
+      return loadResult;
+    }
+
     this.setupCarousel();
+    await this.waitForFirstSlideReady();
     this.setupEventListeners();
 
     if (this.autoPlayEnabled) {
       this.startAutoPlay();
     }
+
+    this.announceReady();
+    return loadResult;
   }
+
+  // Backward compatibility with older update callers.
+  async reload(forceRefresh = false, options = {}) {
+    return this.refresh(forceRefresh, options);
+  }
+}
+
+function refreshCarouselFromSync(payload = {}) {
+  if (!window.heroCarousel || typeof window.heroCarousel.refresh !== "function") {
+    return;
+  }
+
+  if (payload.type !== "DATA_UPDATED") return;
+  if (payload.itemType !== "carousel" && payload.itemType !== "all") return;
+
+  carouselDebugLog("Refreshing carousel from sync payload", payload);
+  window.heroCarousel.refresh(true, { showLoading: false });
+}
+
+function bindCarouselUpdateSync() {
+  if (window.carouselUpdateUnsubscribe) {
+    try {
+      window.carouselUpdateUnsubscribe();
+    } catch {}
+    window.carouselUpdateUnsubscribe = null;
+  }
+
+  if (window.carouselUpdateChannel) {
+    try {
+      window.carouselUpdateChannel.close();
+    } catch {}
+    window.carouselUpdateChannel = null;
+  }
+
+  if (window.carouselLocalUpdateHandler) {
+    window.removeEventListener("toke:data-updated", window.carouselLocalUpdateHandler);
+    window.carouselLocalUpdateHandler = null;
+  }
+
+  if (
+    window.TokeUpdateSync &&
+    typeof window.TokeUpdateSync.subscribe === "function"
+  ) {
+    window.carouselUpdateUnsubscribe = window.TokeUpdateSync.subscribe(
+      refreshCarouselFromSync
+    );
+    return;
+  }
+
+  // Legacy fallback path when shared sync bus is unavailable.
+  if (typeof BroadcastChannel !== "undefined") {
+    if (window.carouselUpdateChannel) {
+      try {
+        window.carouselUpdateChannel.close();
+      } catch {}
+    }
+
+    try {
+      const channel = new BroadcastChannel("toke_bakes_data_updates");
+      window.carouselUpdateChannel = channel;
+      channel.onmessage = (event) => {
+        refreshCarouselFromSync(event && event.data ? event.data : {});
+      };
+    } catch (error) {
+      carouselDebugWarn("BroadcastChannel unavailable for carousel sync:", error);
+      window.carouselUpdateChannel = null;
+    }
+  }
+
+  window.carouselLocalUpdateHandler = (event) => {
+    refreshCarouselFromSync((event && event.detail) || {});
+  };
+  window.addEventListener("toke:data-updated", window.carouselLocalUpdateHandler);
 }
 
 // Initialize carousel - UPDATED FOR SPA
@@ -585,7 +826,7 @@ function initializeCarousel() {
     document.querySelector(".admin-dashboard") ||
     document.querySelector(".admin-login-container")
   ) {
-    carouselDebugLog("⏭️ Skipping carousel on admin page");
+    carouselDebugLog("Skipping carousel on admin page");
     return;
   }
 
@@ -599,21 +840,7 @@ function initializeCarousel() {
 
   // Initialize new carousel
   window.heroCarousel = new HeroCarousel();
-
-  // Listen for updates from admin panel
-  if (typeof BroadcastChannel !== "undefined") {
-    const channel = new BroadcastChannel("toke_bakes_data_updates");
-    channel.onmessage = (event) => {
-      if (
-        event.data.type === "DATA_UPDATED" &&
-        event.data.itemType === "carousel" &&
-        window.heroCarousel
-      ) {
-        carouselDebugLog("🔄 Carousel update detected from admin panel");
-        window.heroCarousel.refresh();
-      }
-    };
-  }
+  bindCarouselUpdateSync();
 }
 
 // Start initialization
@@ -626,5 +853,7 @@ if (document.readyState === "loading") {
 // Export for SPA manager
 if (typeof window !== "undefined") {
   window.initializeCarousel = initializeCarousel;
+  window.HeroCarousel = HeroCarousel;
 }
+
 

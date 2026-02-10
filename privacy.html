@@ -4,13 +4,51 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Privacy Policy — Toke Bakes</title>
+    <title>Privacy Policy | Toke Bakes</title>
+    <meta
+      name="description"
+      content="Read the Toke Bakes privacy policy to understand how we collect, use, and protect your order and contact information."
+    />
+    <meta
+      name="robots"
+      content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
+    />
+    <link rel="canonical" href="https://tokebakes-ten.vercel.app/privacy.html" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Toke Bakes" />
+    <meta property="og:title" content="Privacy Policy | Toke Bakes" />
+    <meta
+      property="og:description"
+      content="Learn how Toke Bakes handles your personal information and order details."
+    />
+    <meta property="og:url" content="https://tokebakes-ten.vercel.app/privacy.html" />
+    <meta property="og:image" content="https://tokebakes-ten.vercel.app/images/logo.webp" />
+    <meta property="og:image:alt" content="Toke Bakes logo" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Privacy Policy | Toke Bakes" />
+    <meta
+      name="twitter:description"
+      content="Understand how Toke Bakes protects your data and order information."
+    />
+    <meta name="twitter:image" content="https://tokebakes-ten.vercel.app/images/logo.webp" />
     <script>
-      // Prevent theme flashing by applying saved theme immediately
-      const savedMode = localStorage.getItem('toke_bakes_theme_mode') || 'light';
-      document.documentElement.setAttribute('data-theme', savedMode);
+      (function () {
+        const savedMode =
+          localStorage.getItem("toke_bakes_theme_mode") || "light";
+        const savedTheme =
+          localStorage.getItem("toke_bakes_css_theme") || "styles/style.css";
+        const themeVersion =
+          localStorage.getItem("toke_bakes_theme_last_update") || "";
+        document.documentElement.setAttribute("data-theme", savedMode);
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.id = "theme-stylesheet";
+        link.href = savedTheme + (themeVersion ? `?v=${themeVersion}` : "");
+        document.head.appendChild(link);
+      })();
     </script>
-    <link rel="icon" href="images/logo.webp" type="image/webp" />
+    <link rel="icon" href="images/favicon.webp" type="image/webp" />
     <link
       rel="preload"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-solid-900.woff2"
@@ -18,17 +56,21 @@
       type="font/woff2"
       crossorigin="anonymous"
     />
-    <link rel="preload" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <link
+      rel="preload"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+      as="style"
+      onload="this.onload=null;this.rel='stylesheet'"
+    />
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
     />
-    <link id="theme-stylesheet" rel="stylesheet" href="styles/style.css" />
     <script src="scripts/config.js"></script>
+    <script src="scripts/update-sync.js"></script>
     <script src="scripts/theme-manager.js"></script>
   </head>
   <body>
-    <!-- Header -->
     <header id="site-header">
       <div class="header-inner">
         <div class="brand">
@@ -36,30 +78,19 @@
           <h1>Toke Bakes</h1>
         </div>
         <nav class="navbar">
-          <!-- Navigation links (visible on desktop) -->
           <ul class="show">
             <li><a href="index.html">Home</a></li>
             <li><a href="menu.html">Menu</a></li>
             <li><a href="gallery.html">Gallery</a></li>
           </ul>
-
-          <!-- Cart -->
           <a href="order.html" class="cart-link">
             <i class="fas fa-shopping-cart"></i>
             <span id="cart-count"></span>
           </a>
-
-          <!-- Theme toggle -->
-          <button
-            class="theme-toggle"
-            id="themeToggle"
-            aria-label="Toggle theme"
-          >
+          <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
             <i class="fas fa-sun icon sun"></i>
             <i class="fas fa-moon icon moon"></i>
           </button>
-
-          <!-- Hamburger menu (visible on mobile only) -->
           <button class="navbar-toggle" id="navbarToggle">
             <i class="fas fa-bars"></i>
           </button>
@@ -67,24 +98,20 @@
       </div>
     </header>
 
-    <!-- Main Content -->
     <main id="main-content" class="content-wrapper legal-content">
       <h1>Privacy Policy</h1>
       <p><strong>Last updated:</strong> November 2025</p>
-
       <p>
         At <strong>Toke Bakes</strong>, we respect your privacy. We collect only
-        the information necessary to process orders and contact you. Requests
-        for access, correction or deletion may be sent to
+        the information necessary to process orders and contact you. Requests for
+        access, correction, or deletion may be sent to
         <a href="mailto:hello@tokebakes.com">hello@tokebakes.com</a>.
       </p>
-
       <h2>Information We Collect</h2>
       <p>
         Contact and order details provided when you place an order, such as your
         name, email address, delivery information, and order preferences.
       </p>
-
       <h2>How We Use Information</h2>
       <p>
         To process orders, respond to enquiries, and send updates if you opt in.
@@ -92,21 +119,17 @@
       </p>
     </main>
 
-    <!-- Footer -->
     <footer id="site-footer" class="bakes-footer">
       <div class="footer-content">
         <div class="footer-brand">
           <h3>Toke Bakes</h3>
           <p class="tagline">Taking Love, One Slice at a Time</p>
         </div>
-
         <div class="footer-info">
-          <!-- Phone should be a clickable link, not just text -->
           <a href="tel:07063466822" class="phone-link">
             <i class="fas fa-phone"></i>
             <span>07063466822</span>
           </a>
-
           <div class="social-links">
             <span class="follow-text">Follow Us</span>
             <div class="social-icons">
@@ -122,7 +145,6 @@
       </div>
 
       <div class="footer-bottom">
-        <!-- Add legal-link class to these -->
         <div class="legal-links">
           <a href="privacy.html" class="legal-link">Privacy Policy</a>
           <a href="terms-of-use.html" class="legal-link">Terms of Use</a>
@@ -134,13 +156,8 @@
       </div>
     </footer>
 
-
-
-
-
-
     <script src="scripts/spa-manager.js"></script>
     <script src="scripts/script.js"></script>
-</body>
-</body>
+    <script src="scripts/sw-register.js"></script>
+  </body>
 </html>

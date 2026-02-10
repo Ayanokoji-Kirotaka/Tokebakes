@@ -13,6 +13,8 @@ const ThemeManager = {
   lastThemeUpdate: 0,
   lastDbCheck: 0,
   dbCheckInterval: 60000,
+  spaHooksBound: false,
+  themeSyncUnsubscribe: null,
 
   /* ================== INITIALIZATION ================== */
   init() {
@@ -51,6 +53,9 @@ const ThemeManager = {
     // Setup theme auto-update detection
     this.setupThemeAutoUpdate();
 
+    // Keep themed assets (logo/footer/toggle) in sync after SPA DOM swaps
+    this.bindSpaReapplyHooks();
+
     // Sync with database active theme on startup
     this.fetchActiveThemeFromDatabase(true).then((dbTheme) => {
       if (dbTheme && dbTheme.css_file) {
@@ -75,15 +80,42 @@ const ThemeManager = {
       }
     });
 
-    // Listen for broadcast channel messages about theme changes
-    if (typeof BroadcastChannel !== "undefined") {
-      this.themeChannel = new BroadcastChannel("toke_bakes_theme_updates");
-      this.themeChannel.onmessage = (event) => {
-        if (event.data.type === "THEME_CHANGED") {
-          themeDebugLog("?? Theme update received via BroadcastChannel");
-          this.applyTheme(event.data.themeFile, false);
-        }
-      };
+    // Listen for theme updates via shared sync bus
+    if (
+      window.TokeUpdateSync &&
+      typeof window.TokeUpdateSync.subscribe === "function"
+    ) {
+      if (this.themeSyncUnsubscribe) {
+        try {
+          this.themeSyncUnsubscribe();
+        } catch {}
+        this.themeSyncUnsubscribe = null;
+      }
+
+      this.themeSyncUnsubscribe = window.TokeUpdateSync.subscribe((payload) => {
+        if (payload?.type !== "THEME_CHANGED") return;
+        if (payload.sourceId === window.TokeUpdateSync.sourceId) return;
+        themeDebugLog("?? Theme update received via shared sync bus");
+        this.applyTheme(payload.themeFile, false, false, {
+          logoFile: payload.logoFile || null,
+        });
+      });
+    } else if (typeof BroadcastChannel !== "undefined") {
+      // Legacy BroadcastChannel fallback
+      try {
+        this.themeChannel = new BroadcastChannel("toke_bakes_theme_updates");
+        this.themeChannel.onmessage = (event) => {
+          if (event?.data?.type === "THEME_CHANGED") {
+            themeDebugLog("?? Theme update received via BroadcastChannel");
+            this.applyTheme(event.data.themeFile, false, false, {
+              logoFile: event.data.logoFile || null,
+            });
+          }
+        };
+      } catch (error) {
+        themeDebugWarn("Theme BroadcastChannel unavailable:", error);
+        this.themeChannel = null;
+      }
     }
 
     // Check localStorage + database for theme updates
@@ -101,22 +133,36 @@ const ThemeManager = {
       // Get the new theme
       const newTheme =
         localStorage.getItem("toke_bakes_css_theme") || "styles/style.css";
+      const newLogo =
+        localStorage.getItem("toke_bakes_theme_logo") ||
+        this.getLogoForTheme(newTheme);
 
       // Update my last check timestamp
       localStorage.setItem("my_theme_check", lastUpdate);
 
       // Apply the new theme
-      if (newTheme !== this.currentTheme) {
-        this.applyTheme(newTheme, false, false, { persist: true });
+      if (newTheme !== this.currentTheme || newLogo !== this.currentLogo) {
+        this.applyTheme(newTheme, false, false, {
+          logoFile: newLogo,
+          persist: true,
+        });
       }
       return true;
     }
 
     // Fallback: check database for active theme (cross-device changes)
     const dbTheme = await this.fetchActiveThemeFromDatabase();
-    if (dbTheme && dbTheme.css_file && dbTheme.css_file !== this.currentTheme) {
+    const dbLogo =
+      dbTheme && dbTheme.css_file
+        ? this.resolveLogoFile(dbTheme.css_file, dbTheme.logo_file)
+        : null;
+    if (
+      dbTheme &&
+      dbTheme.css_file &&
+      (dbTheme.css_file !== this.currentTheme || dbLogo !== this.currentLogo)
+    ) {
       this.applyTheme(dbTheme.css_file, false, false, {
-        logoFile: dbTheme.logo_file,
+        logoFile: dbLogo,
         persist: true,
         updatedAt: dbTheme.updated_at,
       });
@@ -131,17 +177,20 @@ const ThemeManager = {
     themeDebugLog("?? Applying theme:", cssFile, "isAdminChange:", isAdminChange);
 
     const { logoFile = null, persist = false, updatedAt = null } = options || {};
-    const resolvedLogo = logoFile || this.getLogoForTheme(cssFile);
+    const normalizedCssFile = this.fixLegacyThemePath(
+      this.normalizeAssetPath(cssFile) || "styles/style.css"
+    );
+    const resolvedLogo = this.resolveLogoFile(normalizedCssFile, logoFile);
 
     // ?? CRITICAL FIX: DO NOT modify the cssFile path here!
-    this.currentTheme = cssFile;
+    this.currentTheme = normalizedCssFile;
     this.currentLogo = resolvedLogo;
 
     // Save to localStorage (exact path)
     let timestamp = localStorage.getItem("toke_bakes_theme_last_update") || "";
     const shouldPersist = saveToStorage || persist;
     if (shouldPersist) {
-      localStorage.setItem("toke_bakes_css_theme", cssFile);
+      localStorage.setItem("toke_bakes_css_theme", normalizedCssFile);
       localStorage.setItem("toke_bakes_theme_logo", resolvedLogo);
 
       const parsed = updatedAt ? Date.parse(updatedAt) : NaN;
@@ -150,13 +199,28 @@ const ThemeManager = {
       localStorage.setItem("my_theme_check", timestamp);
 
       // Broadcast to other tabs if admin is making the change
-      if (isAdminChange && this.themeChannel) {
-        this.themeChannel.postMessage({
-          type: "THEME_CHANGED",
-          themeFile: cssFile,
-          themeName: this.getThemeName(cssFile),
-          timestamp: timestamp,
-        });
+      if (isAdminChange) {
+        if (
+          window.TokeUpdateSync &&
+          typeof window.TokeUpdateSync.publish === "function"
+        ) {
+          window.TokeUpdateSync.publish({
+            type: "THEME_CHANGED",
+            themeFile: normalizedCssFile,
+            logoFile: resolvedLogo,
+            themeName: this.getThemeName(normalizedCssFile),
+            timestamp: Number(timestamp),
+            source: "admin-theme",
+          });
+        } else if (this.themeChannel) {
+          this.themeChannel.postMessage({
+            type: "THEME_CHANGED",
+            themeFile: normalizedCssFile,
+            logoFile: resolvedLogo,
+            themeName: this.getThemeName(normalizedCssFile),
+            timestamp: timestamp,
+          });
+        }
       }
     }
 
@@ -165,7 +229,7 @@ const ThemeManager = {
       const link = document.getElementById("theme-stylesheet");
       if (link) {
         const cacheSuffix = timestamp ? `?v=${timestamp}` : "";
-        const nextHref = `${cssFile}${cacheSuffix}`;
+        const nextHref = `${normalizedCssFile}${cacheSuffix}`;
 
         if (link.getAttribute("href") !== nextHref) {
           document.documentElement.classList.add("theme-loading");
@@ -198,12 +262,12 @@ const ThemeManager = {
 
     // Update admin UI
     if (this.isAdminPanel()) {
-      this.updateAdminUI(cssFile);
+      this.updateAdminUI(normalizedCssFile);
     }
 
     // Persist theme choice to database when admin activates a theme
     if (isAdminChange) {
-      this.persistThemeToDatabase(cssFile, resolvedLogo).catch((error) => {
+      this.persistThemeToDatabase(normalizedCssFile, resolvedLogo).catch((error) => {
         themeDebugWarn("Theme database update failed:", error);
       });
     }
@@ -211,12 +275,12 @@ const ThemeManager = {
     // Show notification ONLY for admin theme changes (not dark/light toggle)
     if (
       typeof showNotification === "function" &&
-      cssFile !== "styles/style.css" &&
+      normalizedCssFile !== "styles/style.css" &&
       isAdminChange
     ) {
       showNotification(
         `${this.getThemeName(
-          cssFile
+          normalizedCssFile
         )} theme activated! Visitors will see this change automatically.`,
         "success"
       );
@@ -260,15 +324,49 @@ const ThemeManager = {
     return logos[cssFile] || "images/logo.webp";
   },
 
+  normalizeAssetPath(value) {
+    if (value === null || value === undefined) return "";
+    return String(value)
+      .trim()
+      .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
+  },
+
+  resolveLogoFile(cssFile, logoFile) {
+    const cleanedLogo = this.normalizeAssetPath(logoFile);
+    if (cleanedLogo) {
+      return cleanedLogo;
+    }
+    return this.getLogoForTheme(cssFile);
+  },
+
   updateThemeLogo(logoFile) {
-    if (!logoFile) return;
+    const normalizedLogo = this.normalizeAssetPath(logoFile);
+    if (!normalizedLogo) return;
     const logoTargets = document.querySelectorAll(
-      "[data-theme-logo], img.logo-sm, img.hero-logo, img.admin-logo, #loader img"
+      "[data-theme-logo], img.logo-sm, img.hero-logo, img.admin-logo, #loader img, .brand img"
     );
     logoTargets.forEach((img) => {
-      if (img && img.getAttribute("src") !== logoFile) {
-        img.setAttribute("src", logoFile);
+      if (img && img.getAttribute("src") !== normalizedLogo) {
+        img.setAttribute("src", normalizedLogo);
       }
+    });
+  },
+
+  bindSpaReapplyHooks() {
+    if (this.spaHooksBound) return;
+    this.spaHooksBound = true;
+
+    const reapply = () => {
+      this.updateThemeLogo(this.currentLogo);
+      this.updateFooterTheme(this.currentMode);
+      this.setupModeToggle();
+    };
+
+    window.addEventListener("spa:navigated", () => {
+      requestAnimationFrame(reapply);
+    });
+    window.addEventListener("spa:reinitialized", () => {
+      requestAnimationFrame(reapply);
     });
   },
 

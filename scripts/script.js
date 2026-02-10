@@ -24,28 +24,27 @@ if (typeof initThemeToggle === "undefined") {
 class WebsiteAutoUpdater {
   constructor() {
     this.lastUpdateKey = "toke_bakes_last_update";
+    this.lastPayloadKey = "toke_bakes_last_update_payload";
     this.dbLastUpdateKey = "toke_bakes_db_last_updated";
     this.dbCheckInterval = 60000;
     this.lastDbCheck = 0;
     this.broadcastChannel = null;
+    this.syncBus = null;
+    this.unsubscribeSync = null;
+    this.boundStorageFallback = null;
+    this.boundCustomFallback = null;
     this.pollingInterval = null;
+    this.isRefreshing = false;
+    this.pendingRefresh = false;
+    this.lastRefreshAt = 0;
+    this.minRefreshGapMs = 1200;
     this.init();
   }
 
   init() {
     debugLog("Initializing Enhanced WebsiteAutoUpdater...");
 
-    // 1. Setup BroadcastChannel for instant sync (same browser tabs)
-    if (typeof BroadcastChannel !== "undefined") {
-      this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
-      this.broadcastChannel.onmessage = (event) => {
-        if (event.data.type === "DATA_UPDATED") {
-          debugLog("BroadcastChannel update received!", event.data);
-          this.refreshDataWithUI();
-        }
-      };
-      debugLog("BroadcastChannel ready for instant sync");
-    }
+    this.setupRealtimeSync();
 
     // 2. Check for updates every 25 seconds
     this.startPolling(25000); // 25 seconds
@@ -58,25 +57,150 @@ class WebsiteAutoUpdater {
       }
     });
 
-    // 4. Initial check on page load
-    setTimeout(() => this.checkForUpdates(), 3000);
+    // 4. Initial check on page load (faster so recent admin edits appear sooner)
+    setTimeout(() => this.checkForUpdates(), 800);
+
+    window.addEventListener(
+      "beforeunload",
+      () => {
+        this.destroy();
+      },
+      { once: true }
+    );
+  }
+
+  setupRealtimeSync() {
+    if (window.TokeUpdateSync && typeof window.TokeUpdateSync.subscribe === "function") {
+      this.syncBus = window.TokeUpdateSync;
+      this.unsubscribeSync = this.syncBus.subscribe((payload) => {
+        if (!payload || payload.type !== "DATA_UPDATED") return;
+        debugLog("Update received via shared sync bus", payload);
+        this.handleExternalUpdate(payload);
+      });
+      return;
+    }
+
+    // Legacy fallback path when shared sync bus is not loaded.
+    if (typeof BroadcastChannel !== "undefined") {
+      try {
+        this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
+        this.broadcastChannel.onmessage = (event) => {
+          if (event?.data?.type === "DATA_UPDATED") {
+            debugLog("BroadcastChannel update received!", event.data);
+            this.handleExternalUpdate(event.data);
+          }
+        };
+        debugLog("BroadcastChannel ready for legacy sync");
+      } catch (error) {
+        debugWarn("BroadcastChannel unavailable; using fallback sync:", error);
+        this.broadcastChannel = null;
+      }
+    }
+
+    this.boundStorageFallback = (event) => {
+      if (event.key === this.lastPayloadKey && event.newValue) {
+        try {
+          const parsed = JSON.parse(event.newValue);
+          if (parsed?.type === "DATA_UPDATED") {
+            this.handleExternalUpdate(parsed);
+          }
+          return;
+        } catch {}
+      }
+
+      if (event.key === this.lastUpdateKey && event.newValue) {
+        this.handleExternalUpdate({
+          type: "DATA_UPDATED",
+          timestamp: event.newValue,
+        });
+      }
+    };
+    window.addEventListener("storage", this.boundStorageFallback);
+
+    this.boundCustomFallback = (event) => {
+      const detail = event?.detail || {};
+      if (detail.type === "DATA_UPDATED") {
+        this.handleExternalUpdate(detail);
+      }
+    };
+    window.addEventListener("toke:data-updated", this.boundCustomFallback);
+  }
+
+  destroy() {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+    }
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.close();
+      } catch {}
+      this.broadcastChannel = null;
+    }
+
+    if (this.unsubscribeSync) {
+      try {
+        this.unsubscribeSync();
+      } catch {}
+      this.unsubscribeSync = null;
+    }
+
+    if (this.boundStorageFallback) {
+      window.removeEventListener("storage", this.boundStorageFallback);
+      this.boundStorageFallback = null;
+    }
+
+    if (this.boundCustomFallback) {
+      window.removeEventListener("toke:data-updated", this.boundCustomFallback);
+      this.boundCustomFallback = null;
+    }
+  }
+
+  handleExternalUpdate(payload = {}) {
+    const tsNumber = Number(payload.timestamp) || Date.now();
+    const myLastCheck = Number(localStorage.getItem("my_last_check") || "0");
+    if (tsNumber <= myLastCheck) {
+      return;
+    }
+
+    const ts = String(tsNumber);
+    localStorage.setItem("my_last_check", ts);
+    this.refreshDataWithUI();
   }
 
   startPolling(interval = 25000) {
     if (this.pollingInterval) clearInterval(this.pollingInterval);
     this.pollingInterval = setInterval(() => {
+      if (document.hidden) {
+        return;
+      }
       this.checkForUpdates();
     }, interval);
     debugLog(`Polling started (every ${interval / 1000}s)`);
   }
 
+  getLatestUpdateTimestamp() {
+    const localTs = Number(localStorage.getItem(this.lastUpdateKey) || "0");
+
+    let payloadTs = 0;
+    try {
+      const payloadRaw = localStorage.getItem(this.lastPayloadKey);
+      if (payloadRaw) {
+        const parsed = JSON.parse(payloadRaw);
+        payloadTs = Number(parsed?.timestamp) || 0;
+      }
+    } catch {}
+
+    return Math.max(localTs, payloadTs);
+  }
+
   async checkForUpdates() {
-    const lastUpdate = localStorage.getItem(this.lastUpdateKey);
-    const myLastCheck = localStorage.getItem("my_last_check") || "0";
+    const lastUpdate = this.getLatestUpdateTimestamp();
+    const myLastCheck = Number(localStorage.getItem("my_last_check") || "0");
 
     if (lastUpdate && lastUpdate > myLastCheck) {
       debugLog("Update detected via localStorage/timestamp");
-      localStorage.setItem("my_last_check", lastUpdate);
+      localStorage.setItem("my_last_check", String(lastUpdate));
       await this.refreshDataWithUI();
       return true;
     }
@@ -137,6 +261,28 @@ class WebsiteAutoUpdater {
   }
 
   async refreshDataWithUI() {
+    const now = Date.now();
+    if (this.isRefreshing) {
+      this.pendingRefresh = true;
+      return;
+    }
+
+    const sinceLast = now - this.lastRefreshAt;
+    if (sinceLast < this.minRefreshGapMs) {
+      if (!this.pendingRefresh) {
+        this.pendingRefresh = true;
+        setTimeout(() => {
+          if (!this.pendingRefresh) return;
+          this.pendingRefresh = false;
+          this.refreshDataWithUI();
+        }, this.minRefreshGapMs - sinceLast);
+      }
+      return;
+    }
+
+    this.isRefreshing = true;
+    this.lastRefreshAt = now;
+
     // Show syncing indicator
     this.showSyncIndicator("syncing");
 
@@ -152,8 +298,17 @@ class WebsiteAutoUpdater {
       }
 
       // Reload carousel if present (homepage)
-      if (window.heroCarousel && typeof window.heroCarousel.reload === "function") {
-        await window.heroCarousel.reload(true, true);
+      if (window.heroCarousel) {
+        if (typeof window.heroCarousel.refresh === "function") {
+          await window.heroCarousel.refresh(true, { showLoading: false });
+        } else if (typeof window.heroCarousel.init === "function") {
+          await window.heroCarousel.init();
+        }
+      } else if (
+        document.querySelector(".hero-carousel") &&
+        typeof window.initializeCarousel === "function"
+      ) {
+        window.initializeCarousel();
       }
 
       // Also refresh cart if on order page
@@ -182,6 +337,13 @@ class WebsiteAutoUpdater {
       // Show error state briefly
       this.showSyncIndicator("error");
       setTimeout(() => this.hideSyncIndicator(), 3000);
+    } finally {
+      this.isRefreshing = false;
+
+      if (this.pendingRefresh) {
+        this.pendingRefresh = false;
+        queueMicrotask(() => this.refreshDataWithUI());
+      }
     }
   }
 
@@ -195,17 +357,22 @@ class WebsiteAutoUpdater {
       document.body.appendChild(indicator);
     }
 
+    indicator.style.display = "";
+
     // Reset classes
     indicator.className = "";
+    if (state !== "error") {
+      indicator.style.cssText = "";
+    }
 
     // Set state
     if (state === "syncing") {
       indicator.classList.add("syncing");
-      indicator.textContent = '...';
+      indicator.textContent = "\u27F3";
       indicator.title = "Updating content...";
     } else if (state === "updated") {
       indicator.classList.add("updated");
-      indicator.textContent = '...';
+      indicator.textContent = "\u2713";
       indicator.title = "Content updated!";
     } else if (state === "error") {
       indicator.style.cssText = `
@@ -247,10 +414,10 @@ const useSupabase = true; // Always use Supabase
 // Debug logger (disabled for production)
 const DEBUG = false;
 const debugLog = (...args) => {
-  if (DEBUG) debugLog(...args);
+  if (DEBUG) console.log(...args);
 };
 const debugWarn = (...args) => {
-  if (DEBUG) debugWarn(...args);
+  if (DEBUG) console.warn(...args);
 };
 
 // ================== DATA LOADING FUNCTIONS ==================
@@ -264,6 +431,160 @@ const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 const dataCache = new Map();
 const CACHE_DURATION_GENERAL = 24 * 60 * 60 * 1000; // 24 hours
 const MENU_CACHE_KEY = "toke_bakes_menu_cache_v1";
+const CONTENT_CONTAINER_IDS = [
+  "featured-container",
+  "menu-container",
+  "gallery-container",
+];
+
+function toArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function toSafeString(value, fallback = "") {
+  if (value === null || value === undefined) return fallback;
+  const text = String(value).trim();
+  return text || fallback;
+}
+
+function normalizeAssetPath(value) {
+  const raw = toSafeString(value);
+  if (!raw) return "";
+  return raw.replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
+}
+
+function parseNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function parseBoolean(value, fallback = true) {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "true" || normalized === "1" || normalized === "yes") {
+    return true;
+  }
+  if (normalized === "false" || normalized === "0" || normalized === "no") {
+    return false;
+  }
+  return fallback;
+}
+
+function normalizeDateOnly(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const parsed = Date.parse(text);
+  if (Number.isNaN(parsed)) return null;
+  return new Date(parsed).toISOString().split("T")[0];
+}
+
+function sortByDisplayAndCreated(items) {
+  return [...items].sort((a, b) => {
+    const aOrder = parseNumber(a.display_order, 0);
+    const bOrder = parseNumber(b.display_order, 0);
+    if (aOrder !== bOrder) return aOrder - bOrder;
+
+    const aCreated = Date.parse(a.created_at || "") || 0;
+    const bCreated = Date.parse(b.created_at || "") || 0;
+    return bCreated - aCreated;
+  });
+}
+
+function normalizeFeaturedItem(rawItem = {}, index = 0) {
+  return {
+    id: rawItem.id ?? `featured-${index}`,
+    title: toSafeString(rawItem.title || rawItem.name, "Featured Item"),
+    description: toSafeString(
+      rawItem.description || rawItem.subtitle || rawItem.summary,
+      ""
+    ),
+    image:
+      normalizeAssetPath(rawItem.image || rawItem.image_url || rawItem.src) ||
+      "images/logo.webp",
+    display_order: parseNumber(rawItem.display_order, index),
+    is_active: parseBoolean(rawItem.is_active ?? rawItem.active, true),
+    start_date: normalizeDateOnly(rawItem.start_date || rawItem.startDate),
+    end_date: normalizeDateOnly(rawItem.end_date || rawItem.endDate),
+    created_at: rawItem.created_at || rawItem.createdAt || null,
+  };
+}
+
+function normalizeMenuItem(rawItem = {}, index = 0) {
+  return {
+    id: rawItem.id ?? `menu-${index}`,
+    title: toSafeString(rawItem.title || rawItem.name, "Menu Item"),
+    description: toSafeString(
+      rawItem.description || rawItem.details || rawItem.subtitle,
+      ""
+    ),
+    price: parseNumber(rawItem.price ?? rawItem.amount ?? rawItem.cost, 0),
+    image:
+      normalizeAssetPath(rawItem.image || rawItem.image_url || rawItem.src) ||
+      "images/logo.webp",
+    is_available: parseBoolean(
+      rawItem.is_available ?? rawItem.available ?? rawItem.is_active,
+      true
+    ),
+    display_order: parseNumber(rawItem.display_order, index),
+    created_at: rawItem.created_at || rawItem.createdAt || null,
+    category: toSafeString(rawItem.category || "pastries", "pastries"),
+    tags: Array.isArray(rawItem.tags)
+      ? rawItem.tags
+      : toSafeString(rawItem.tags)
+      ? toSafeString(rawItem.tags)
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean)
+      : [],
+    calories:
+      rawItem.calories === null || rawItem.calories === undefined
+        ? null
+        : parseNumber(rawItem.calories, null),
+  };
+}
+
+function normalizeGalleryItem(rawItem = {}, index = 0) {
+  const width = parseNumber(rawItem.width, null);
+  const height = parseNumber(rawItem.height, null);
+  return {
+    id: rawItem.id ?? `gallery-${index}`,
+    alt: toSafeString(rawItem.alt || rawItem.title || rawItem.caption, "Gallery image"),
+    image:
+      normalizeAssetPath(rawItem.image || rawItem.image_url || rawItem.src) ||
+      "images/logo.webp",
+    width: Number.isFinite(width) && width > 0 ? Math.round(width) : null,
+    height: Number.isFinite(height) && height > 0 ? Math.round(height) : null,
+    display_order: parseNumber(rawItem.display_order, index),
+    created_at: rawItem.created_at || rawItem.createdAt || null,
+  };
+}
+
+function normalizeFeaturedItems(items) {
+  const normalized = toArray(items).map((item, index) =>
+    normalizeFeaturedItem(item, index)
+  );
+  return sortByDisplayAndCreated(normalized);
+}
+
+function normalizeMenuItems(items) {
+  const normalized = toArray(items).map((item, index) =>
+    normalizeMenuItem(item, index)
+  );
+  return sortByDisplayAndCreated(normalized);
+}
+
+function normalizeGalleryItems(items) {
+  const normalized = toArray(items).map((item, index) =>
+    normalizeGalleryItem(item, index)
+  );
+  return sortByDisplayAndCreated(normalized);
+}
 
 function normalizeQuery(query) {
   if (!query) {
@@ -277,12 +598,11 @@ function todayISO() {
 }
 
 function buildFeaturedQuery() {
-  const today = todayISO();
-  return `?select=*&is_active=eq.true&start_date=lte.${today}&end_date=gte.${today}&order=display_order.asc,created_at.desc`;
+  return `?select=*&order=display_order.asc,created_at.desc`;
 }
 
 function buildMenuQuery() {
-  return `?select=*&is_available=eq.true&order=display_order.asc,created_at.desc`;
+  return `?select=*&order=display_order.asc,created_at.desc`;
 }
 
 function buildGalleryQuery() {
@@ -290,23 +610,33 @@ function buildGalleryQuery() {
 }
 
 function isFeaturedActive(item) {
-  if (item.is_active === false || item.is_active === 0 || item.is_active === "false") {
+  if (!parseBoolean(item?.is_active, true)) {
     return false;
   }
+
   const today = todayISO();
-  const startDate = item.start_date || today;
-  const endDate = item.end_date || today;
-  return startDate <= today && endDate >= today;
+  const startDate = normalizeDateOnly(item?.start_date);
+  const endDate = normalizeDateOnly(item?.end_date);
+
+  if (startDate && startDate > today) {
+    return false;
+  }
+  if (endDate && endDate < today) {
+    return false;
+  }
+
+  return true;
 }
 
 // Load from Supabase with caching
-async function loadFromSupabase(endpoint, query = "") {
+async function loadFromSupabase(endpoint, query = "", options = {}) {
   const normalizedQuery = normalizeQuery(query);
   const cacheKey = `${endpoint}${normalizedQuery}`;
   const now = Date.now();
+  const forceRefresh = Boolean(options.forceRefresh);
 
   // Check cache
-  if (dataCache.has(cacheKey)) {
+  if (!forceRefresh && dataCache.has(cacheKey)) {
     const { data, timestamp } = dataCache.get(cacheKey);
     if (now - timestamp < CACHE_DURATION_GENERAL) {
       debugLog(`Using cached data for ${endpoint}`);
@@ -327,8 +657,14 @@ async function loadFromSupabase(endpoint, query = "") {
       return [];
     }
 
+    const requestUrl = forceRefresh
+      ? `${SUPABASE_CONFIG.URL}${endpoint}${normalizedQuery}${
+          normalizedQuery.includes("?") ? "&" : "?"
+        }_=${now}`
+      : `${SUPABASE_CONFIG.URL}${endpoint}${normalizedQuery}`;
+
     const response = await fetch(
-      `${SUPABASE_CONFIG.URL}${endpoint}${normalizedQuery}`,
+      requestUrl,
       {
         headers: {
           apikey: SUPABASE_CONFIG.ANON_KEY,
@@ -359,10 +695,11 @@ async function loadFromSupabase(endpoint, query = "") {
 }
 
 // Get menu items with caching
-async function getMenuItems() {
+async function getMenuItems(forceRefresh = false) {
   const now = Date.now();
 
   if (
+    !forceRefresh &&
     cachedMenuItems &&
     cacheTimestamp &&
     now - cacheTimestamp < CACHE_DURATION
@@ -370,48 +707,49 @@ async function getMenuItems() {
     return cachedMenuItems;
   }
 
-  const freshItems = await loadFromSupabase(
+  const freshItems = normalizeMenuItems(
+    await loadFromSupabase(
     API_ENDPOINTS.MENU,
-    buildMenuQuery()
+    buildMenuQuery(),
+    { forceRefresh }
+    )
   );
-  const filteredFresh = Array.isArray(freshItems)
-    ? freshItems.filter(isMenuItemAvailable)
-    : [];
 
-  if (filteredFresh.length > 0) {
-    cachedMenuItems = filteredFresh;
+  if (freshItems.length > 0) {
+    cachedMenuItems = freshItems;
     cacheTimestamp = now;
     return cachedMenuItems;
   }
 
   // Fallback to localStorage cache if available
-  try {
-    const cached = localStorage.getItem(MENU_CACHE_KEY);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (
-        parsed &&
-        Array.isArray(parsed.data) &&
-        parsed.data.length > 0 &&
-        Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL
-      ) {
-        debugLog("Using localStorage cached menu items (fallback)");
-        cachedMenuItems = parsed.data.filter(isMenuItemAvailable);
-        cacheTimestamp = parsed.timestamp || now;
-        return cachedMenuItems;
+  if (!forceRefresh) {
+    try {
+      const cached = localStorage.getItem(MENU_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        const normalizedCached = normalizeMenuItems(parsed?.data);
+        if (
+          normalizedCached.length > 0 &&
+          Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL
+        ) {
+          debugLog("Using localStorage cached menu items (fallback)");
+          cachedMenuItems = normalizedCached;
+          cacheTimestamp = parsed.timestamp || now;
+          return cachedMenuItems;
+        }
       }
+    } catch (err) {
+      debugLog("Could not read menu cache (fallback)");
     }
-  } catch (err) {
-    debugLog("Could not read menu cache (fallback)");
   }
 
   // Keep stale in-memory cache if fetch failed to avoid false "unavailable"
-  if (cachedMenuItems && cachedMenuItems.length > 0) {
+  if (!forceRefresh && cachedMenuItems && cachedMenuItems.length > 0) {
     debugLog("Using stale in-memory menu cache (fallback)");
     return cachedMenuItems;
   }
 
-  cachedMenuItems = Array.isArray(freshItems) ? freshItems : [];
+  cachedMenuItems = freshItems;
   cacheTimestamp = now;
   return cachedMenuItems;
 }
@@ -436,12 +774,12 @@ async function loadFeaturedItems(forceReload = false, silentRefresh = false) {
   let cachedData = null;
 
   if (!forceReload) {
+    const cached = localStorage.getItem(dataCacheKey);
     try {
-      const cached = localStorage.getItem(dataCacheKey);
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL) {
-          cachedData = parsed.data;
+          cachedData = normalizeFeaturedItems(parsed.data);
           debugLog("Using cached featured items");
         }
       }
@@ -469,11 +807,14 @@ async function loadFeaturedItems(forceReload = false, silentRefresh = false) {
 
   try {
     // Try to load fresh data
-    let items = await loadFromSupabase(
+    const freshItems = normalizeFeaturedItems(
+      await loadFromSupabase(
       API_ENDPOINTS.FEATURED,
-      buildFeaturedQuery()
+      buildFeaturedQuery(),
+      { forceRefresh: forceReload }
+      )
     );
-    items = Array.isArray(items) ? items.filter(isFeaturedActive) : [];
+    let items = freshItems.filter(isFeaturedActive);
 
     // If fresh load failed but we have cache, use cache
     if ((!items || items.length === 0) && cachedData) {
@@ -498,7 +839,7 @@ async function loadFeaturedItems(forceReload = false, silentRefresh = false) {
     try {
       localStorage.setItem(
         dataCacheKey,
-        JSON.stringify({ data: items, timestamp: Date.now() })
+        JSON.stringify({ data: freshItems, timestamp: Date.now() })
       );
     } catch (e) {}
   } catch (error) {
@@ -559,7 +900,7 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
         if (cached) {
           const parsed = JSON.parse(cached);
           if (Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL) {
-            cachedData = parsed.data;
+            cachedData = normalizeMenuItems(parsed.data);
             debugLog("Using localStorage cached menu items");
           }
         }
@@ -590,8 +931,8 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
 
   try {
     // Try to load fresh data
-    let items = await getMenuItems();
-    items = Array.isArray(items) ? items.filter(isMenuItemAvailable) : [];
+    const allItems = normalizeMenuItems(await getMenuItems(forceReload));
+    const items = allItems.filter(isMenuItemAvailable);
 
     if (!items || items.length === 0) {
       container.innerHTML = `
@@ -607,12 +948,12 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
     renderMenuItems(container, items);
 
     // Update cache
-    cachedMenuItems = items;
+    cachedMenuItems = allItems;
     cacheTimestamp = Date.now();
     try {
       localStorage.setItem(
         MENU_CACHE_KEY,
-        JSON.stringify({ data: items, timestamp: Date.now() })
+        JSON.stringify({ data: allItems, timestamp: Date.now() })
       );
     } catch (err) {
       debugLog("Could not write menu cache");
@@ -665,7 +1006,7 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL) {
-          cachedData = parsed.data;
+          cachedData = normalizeGalleryItems(parsed.data);
           debugLog("Using cached gallery images");
         }
       }
@@ -673,10 +1014,7 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
   }
 
   if (cachedData) {
-    renderGalleryImages(
-      container,
-      cachedData.filter((item) => item.image)
-    );
+    renderGalleryImages(container, cachedData);
     setContainerLoading(container, false);
     if (!forceReload) return;
   }
@@ -696,11 +1034,13 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
 
   try {
     // Try to load fresh data
-    let items = await loadFromSupabase(
+    let items = normalizeGalleryItems(
+      await loadFromSupabase(
       API_ENDPOINTS.GALLERY,
-      buildGalleryQuery()
+      buildGalleryQuery(),
+      { forceRefresh: forceReload }
+      )
     );
-    items = Array.isArray(items) ? items.filter((item) => item.image) : [];
 
     // If fresh load failed but we have cache, use cache
     if ((!items || items.length === 0) && cachedData) {
@@ -734,10 +1074,7 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
     // If error but we have cached data, show it
     if (cachedData && cachedData.length > 0) {
       debugLog("Using cached data due to error");
-      renderGalleryImages(
-        container,
-        cachedData.filter((item) => item.image)
-      );
+      renderGalleryImages(container, cachedData);
     } else {
       container.innerHTML = `
         <div class="empty-state error">
@@ -781,20 +1118,32 @@ async function loadDynamicContent(forceReload = false, silentRefresh = false) {
       return;
     }
 
-    if (
-      currentPage.includes("index") ||
-      currentPage === "" ||
-      currentPage === "/" ||
-      currentPage === "index.html"
-    ) {
-      debugLog("Loading featured items for homepage");
-      await loadFeaturedItems(forceReload, silentRefresh);
-    } else if (currentPage.includes("menu")) {
-      debugLog("Loading menu items");
-      await loadMenuItems(forceReload, silentRefresh);
-    } else if (currentPage.includes("gallery")) {
-      debugLog("Loading gallery images");
-      await loadGalleryImages(forceReload, silentRefresh);
+    const pageLoaders = [
+      {
+        matches: (page) =>
+          page.includes("index") ||
+          page === "" ||
+          page === "/" ||
+          page === "index.html",
+        label: "featured items for homepage",
+        handler: loadFeaturedItems,
+      },
+      {
+        matches: (page) => page.includes("menu"),
+        label: "menu items",
+        handler: loadMenuItems,
+      },
+      {
+        matches: (page) => page.includes("gallery"),
+        label: "gallery images",
+        handler: loadGalleryImages,
+      },
+    ];
+
+    const activeLoader = pageLoaders.find(({ matches }) => matches(currentPage));
+    if (activeLoader) {
+      debugLog(`Loading ${activeLoader.label}`);
+      await activeLoader.handler(forceReload, silentRefresh);
     }
 
     debugLog("Content loading complete for:", currentPage);
@@ -805,6 +1154,7 @@ async function loadDynamicContent(forceReload = false, silentRefresh = false) {
 
     // Home-only UI (scroll reveal + scroll-to-top) should refresh after content loads
     refreshHomeEnhancements();
+    initModern3DInteractions();
   }
 }
 
@@ -821,13 +1171,7 @@ function setContainerLoading(container, isLoading) {
 function clearLoadingStates() {
   debugLog("Clearing loading states");
 
-  const containers = [
-    "featured-container",
-    "menu-container",
-    "gallery-container",
-  ];
-
-  containers.forEach((containerId) => {
+  CONTENT_CONTAINER_IDS.forEach((containerId) => {
     const container = document.getElementById(containerId);
     if (container) {
       const existingLoader = container.querySelector(".loading-message");
@@ -890,10 +1234,8 @@ function clearContentCaches() {
 }
 
 function showConfigError() {
-  const containers = document.querySelectorAll(
-    "#featured-container, #menu-container, #gallery-container"
-  );
-  containers.forEach((container) => {
+  CONTENT_CONTAINER_IDS.forEach((containerId) => {
+    const container = document.getElementById(containerId);
     if (container) {
       container.innerHTML = `
         <div class="empty-state error">
@@ -907,7 +1249,8 @@ function showConfigError() {
 }
 
 function renderFeaturedItems(container, items) {
-  container.innerHTML = items
+  const safeItems = normalizeFeaturedItems(items).filter(isFeaturedActive);
+  container.innerHTML = safeItems
     .map(
       (item) => `
           <article class="featured-card" data-ripple="true">
@@ -930,7 +1273,8 @@ function renderFeaturedItems(container, items) {
 }
 
 function renderMenuItems(container, items) {
-  container.innerHTML = items
+  const safeItems = normalizeMenuItems(items).filter(isMenuItemAvailable);
+  container.innerHTML = safeItems
     .map(
       (item) => `
           <div class="menu-item" data-ripple="true" data-item="${escapeHtml(
@@ -953,7 +1297,8 @@ function renderMenuItems(container, items) {
 }
 
 function renderGalleryImages(container, items) {
-  container.innerHTML = items
+  const safeItems = normalizeGalleryItems(items);
+  container.innerHTML = safeItems
     .map(
       (item) => {
         const widthAttr = item.width ? `width=\"${item.width}\"` : "";
@@ -1025,13 +1370,7 @@ function formatPrice(num) {
 }
 
 function isMenuItemAvailable(item) {
-  return (
-    item.is_available === undefined ||
-    item.is_available === null ||
-    item.is_available === true ||
-    item.is_available === 1 ||
-    item.is_available === "true"
-  );
+  return parseBoolean(item?.is_available, true);
 }
 
 function decodeHtml(value) {
@@ -1058,7 +1397,7 @@ function normalizeItemId(value) {
 // Escape HTML for security (already defined in admin.js, but defined here too)
 function escapeHtml(text) {
   const div = document.createElement("div");
-  div.textContent = text;
+  div.textContent = text === null || text === undefined ? "" : String(text);
   return div.innerHTML;
 }
 
@@ -1262,38 +1601,101 @@ if (!document.querySelector("#notification-styles")) {
   document.head.appendChild(style);
 }
 
-/* ================== ENHANCED SESSION AWARE LOADER ================== */
-(function () {
+/* ================== HOME LOADER (CAROUSEL-READY) ================== */
+(function primeLoaderSession() {
+  const page = window.location.pathname.split("/").pop() || "";
+  const isHomePage = page === "" || page === "index.html" || page === "index";
+  if (isHomePage) return;
+
+  try {
+    sessionStorage.setItem("toke_bakes_home_loader_seen", "1");
+  } catch {}
+})();
+
+(function initHomeLoader() {
   const loader = document.getElementById("loader");
   if (!loader) return;
 
-  const isHomePage =
-    window.location.pathname.endsWith("/") ||
-    window.location.pathname.endsWith("/index.html") ||
-    window.location.pathname === "";
+  const LOADER_SESSION_KEY = "toke_bakes_home_loader_seen";
+  let hideTimer = null;
+  let hidden = false;
 
-  if (!isHomePage) {
-    loader.style.display = "none";
-    return;
-  }
+  const isHomePage = () => {
+    const page = window.location.pathname.split("/").pop() || "";
+    return page === "" || page === "index.html" || page === "index";
+  };
 
-  // Show loader only on first-ever visit (per device/browser)
-  const LOADER_KEY = "toke_bakes_loader_seen";
-  const hasSeenLoader = localStorage.getItem(LOADER_KEY) === "true";
+  const hasSeenLoaderThisSession = () => {
+    try {
+      return sessionStorage.getItem(LOADER_SESSION_KEY) === "1";
+    } catch {
+      return false;
+    }
+  };
 
-  if (hasSeenLoader) {
-    loader.style.display = "none";
-    return;
-  }
+  const markLoaderAsSeen = () => {
+    try {
+      sessionStorage.setItem(LOADER_SESSION_KEY, "1");
+    } catch {}
+  };
 
-  localStorage.setItem(LOADER_KEY, "true");
-  window.addEventListener("load", () => {
-    const duration = 900;
+  const clearHideTimer = () => {
+    if (!hideTimer) return;
+    clearTimeout(hideTimer);
+    hideTimer = null;
+  };
+
+  const hideLoader = (markSeen = true) => {
+    if (hidden) return;
+    hidden = true;
+    clearHideTimer();
+    if (markSeen) {
+      markLoaderAsSeen();
+    }
+    loader.style.opacity = "0";
+    loader.style.pointerEvents = "none";
     setTimeout(() => {
-      loader.style.opacity = "0";
-      setTimeout(() => (loader.style.display = "none"), 800);
-    }, duration);
+      loader.style.display = "none";
+    }, 260);
+  };
+
+  const showLoader = () => {
+    if (!isHomePage()) {
+      hideLoader(false);
+      return;
+    }
+
+    if (hasSeenLoaderThisSession()) {
+      hideLoader(false);
+      return;
+    }
+
+    markLoaderAsSeen();
+    hidden = false;
+    clearHideTimer();
+    loader.style.display = "flex";
+    loader.style.opacity = "1";
+    loader.style.pointerEvents = "auto";
+    loader.style.transitionDuration = "260ms";
+
+    // Fallback in case carousel event never fires
+    hideTimer = setTimeout(() => hideLoader(true), 2200);
+  };
+
+  window.addEventListener("carousel:ready", () => hideLoader(true));
+  window.addEventListener("spa:navigated", () => {
+    if (isHomePage()) {
+      showLoader();
+    } else {
+      hideLoader(false);
+    }
   });
+
+  if (!isHomePage()) {
+    markLoaderAsSeen();
+  }
+
+  showLoader();
 })();
 
 /* ================== BULLETPROOF NAV HIGHLIGHT ================== */
@@ -1398,9 +1800,14 @@ function refreshCartCount() {
 }
 
 /* ================== IMPROVED MOBILE MENU ================== */
+let mobileMenuOutsideClickHandler = null;
+
 function initMobileMenu() {
   const toggleBtn = document.getElementById("navbarToggle");
   const navList = document.querySelector(".navbar ul");
+  const isMobileViewport =
+    window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+  const shouldDefaultOpen = isMobileViewport && isHomePageRuntime();
 
   if (toggleBtn && navList) {
     // Remove any existing listeners first
@@ -1419,13 +1826,35 @@ function initMobileMenu() {
       freshNavList.classList.toggle("show");
     });
 
-    // Mobile UX: keep menu open by default on small screens
-    if (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) {
+    // Mobile UX: keep menu open by default on homepage
+    if (shouldDefaultOpen) {
       freshNavList.classList.add("show");
     }
 
+    if (!window.mobileMenuResizeListenerBound) {
+      window.mobileMenuResizeListenerBound = true;
+      window.addEventListener(
+        "resize",
+        () => {
+          const currentNavList = document.querySelector(".navbar ul");
+          if (!currentNavList) return;
+          const mobileNow =
+            window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+          const shouldAutoOpenHomeMenu = mobileNow && isHomePageRuntime();
+          if (shouldAutoOpenHomeMenu) {
+            currentNavList.classList.add("show");
+          }
+        },
+        { passive: true }
+      );
+    }
+
+    if (mobileMenuOutsideClickHandler) {
+      document.removeEventListener("click", mobileMenuOutsideClickHandler);
+    }
+
     // Close when clicking outside
-    document.addEventListener("click", (e) => {
+    mobileMenuOutsideClickHandler = (e) => {
       if (
         freshNavList.classList.contains("show") &&
         !e.target.closest(".navbar") &&
@@ -1433,13 +1862,14 @@ function initMobileMenu() {
       ) {
         freshNavList.classList.remove("show");
       }
-    });
+    };
+    document.addEventListener("click", mobileMenuOutsideClickHandler);
 
-    // Close when clicking links
-    document.querySelectorAll(".navbar a").forEach((link) => {
-      link.addEventListener("click", () => {
+    // Close when clicking any nav link
+    freshNavList.addEventListener("click", (e) => {
+      if (e.target.closest("a")) {
         freshNavList.classList.remove("show");
-      });
+      }
     });
 
     debugLog("Mobile menu initialized");
@@ -1945,10 +2375,188 @@ function initRipple(selector) {
   );
 }
 
+/* ================== MODERN 3D INTERACTIONS ================== */
+const MODERN_3D_SELECTOR = ".feature, .featured-card, .menu-item, .gallery-card";
+let modern3DResizeListenerBound = false;
+
+function ensureModern3DStyles() {
+  if (document.getElementById("modern-3d-styles")) return;
+
+  const style = document.createElement("style");
+  style.id = "modern-3d-styles";
+  style.textContent = `
+    @media (hover: hover) and (pointer: fine) {
+      .feature.interactive-3d,
+      .featured-card.interactive-3d,
+      .menu-item.interactive-3d,
+      .gallery-card.interactive-3d {
+        --tilt-x: 0deg;
+        --tilt-y: 0deg;
+        --lift-3d: -6px;
+        transform-style: preserve-3d;
+        will-change: transform, box-shadow, filter;
+        transition: transform 220ms cubic-bezier(0.22, 0.8, 0.22, 1),
+          box-shadow 220ms ease, filter 220ms ease;
+        backface-visibility: hidden;
+      }
+
+      .featured-card.interactive-3d,
+      .gallery-card.interactive-3d {
+        --lift-3d: -8px;
+      }
+
+      .feature.interactive-3d:hover,
+      .feature.interactive-3d.is-interacting,
+      .featured-card.interactive-3d:hover,
+      .featured-card.interactive-3d.is-interacting,
+      .menu-item.interactive-3d:hover,
+      .menu-item.interactive-3d.is-interacting,
+      .gallery-card.interactive-3d:hover,
+      .gallery-card.interactive-3d.is-interacting {
+        transform: translateY(var(--lift-3d))
+          rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+        box-shadow: 0 20px 42px rgba(20, 14, 10, 0.2);
+        filter: saturate(1.04);
+      }
+    }
+
+    @media (hover: none), (pointer: coarse) {
+      .feature:hover,
+      .featured-card:hover,
+      .menu-item:hover,
+      .gallery-card:hover {
+        transform: none !important;
+      }
+
+      .feature:hover::after,
+      .featured-card:hover::before,
+      .featured-card:hover .featured-card-glow,
+      .menu-item:hover img,
+      .gallery-card:hover img {
+        transform: none !important;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .interactive-3d,
+      .interactive-3d:hover,
+      .interactive-3d.is-interacting {
+        transform: none !important;
+        transition: none !important;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function resetModern3DCard(card) {
+  card.classList.remove("is-interacting");
+  card.style.removeProperty("--tilt-x");
+  card.style.removeProperty("--tilt-y");
+}
+
+function bindModern3DCard(card) {
+  if (!card || card.dataset.modern3dBound === "true") return;
+  card.dataset.modern3dBound = "true";
+
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+  const onPointerMove = (event) => {
+    if (!card.classList.contains("interactive-3d")) return;
+    if (event.pointerType === "touch") return;
+
+    const rect = card.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    const posX = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+    const posY = clamp((event.clientY - rect.top) / rect.height, 0, 1);
+    const tiltY = (posX - 0.5) * 12;
+    const tiltX = (0.5 - posY) * 10;
+
+    card.style.setProperty("--tilt-x", `${tiltX.toFixed(2)}deg`);
+    card.style.setProperty("--tilt-y", `${tiltY.toFixed(2)}deg`);
+    card.classList.add("is-interacting");
+  };
+
+  const onPointerLeave = () => {
+    resetModern3DCard(card);
+  };
+
+  card.addEventListener("pointermove", onPointerMove, { passive: true });
+  card.addEventListener("pointerleave", onPointerLeave, { passive: true });
+  card.addEventListener("pointercancel", onPointerLeave, { passive: true });
+  card.addEventListener("touchstart", onPointerLeave, { passive: true });
+}
+
+function initModern3DInteractions() {
+  ensureModern3DStyles();
+
+  const prefersReducedMotion =
+    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const canUseFinePointer =
+    window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  const enable3D = canUseFinePointer && !prefersReducedMotion;
+
+  document.querySelectorAll(MODERN_3D_SELECTOR).forEach((card) => {
+    bindModern3DCard(card);
+
+    if (enable3D) {
+      card.classList.add("interactive-3d");
+      return;
+    }
+
+    card.classList.remove("interactive-3d");
+    resetModern3DCard(card);
+  });
+
+  if (!modern3DResizeListenerBound) {
+    modern3DResizeListenerBound = true;
+    let resizeTimer = null;
+    window.addEventListener(
+      "resize",
+      () => {
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(initModern3DInteractions, 120);
+      },
+      { passive: true }
+    );
+  }
+}
+
 /* ================== HOME UX ENHANCEMENTS (HOME ONLY) ================== */
 let homeRevealObserver = null;
 let homeScrollListenerAttached = false;
 let homeScrollTicking = false;
+
+function ensureHomeEnhancementStyles() {
+  if (document.getElementById("home-enhancement-styles")) return;
+
+  const style = document.createElement("style");
+  style.id = "home-enhancement-styles";
+  style.textContent = `
+    .reveal {
+      opacity: 0;
+      transform: translateY(18px);
+      filter: blur(6px);
+      transition: opacity 700ms ease, transform 700ms cubic-bezier(0.2, 0.9, 0.3, 1), filter 700ms ease;
+    }
+    .reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+      filter: none;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .reveal {
+        opacity: 1;
+        transform: none;
+        filter: none;
+        transition: none;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 function isHomePageRuntime() {
   const page = window.location.pathname.split("/").pop() || "index.html";
@@ -2062,34 +2670,39 @@ function setupHomeScrollReveal() {
   }
 
   targets.forEach((el, idx) => {
-    if (el.getAttribute("data-reveal") === "true") return;
-    el.setAttribute("data-reveal", "true");
-    el.classList.add("reveal");
-    el.style.transitionDelay = `${Math.min(idx * 60, 240)}ms`;
-
-    // Prevent "invisible for a frame" on above-the-fold elements
-    const rect = el.getBoundingClientRect();
-    if (rect.top < window.innerHeight * 0.9) {
-      el.classList.add("is-visible");
-      // Keep observing so it can toggle later
+    if (el.getAttribute("data-reveal") !== "true") {
+      el.setAttribute("data-reveal", "true");
+      el.classList.add("reveal");
+      el.style.transitionDelay = `${Math.min(idx * 60, 240)}ms`;
     }
+
+    const rect = el.getBoundingClientRect();
+    const isInViewport = rect.top < window.innerHeight && rect.bottom > 0;
+    el.classList.toggle("is-visible", isInViewport);
 
     homeRevealObserver.observe(el);
   });
 }
 
 function refreshHomeEnhancements() {
+  ensureHomeEnhancementStyles();
   ensureScrollTopButton();
   setupHomeScrollReveal();
 }
 
 // Refresh enhancements after SPA navigation swaps the DOM
 window.addEventListener("spa:navigated", () => {
-  setTimeout(refreshHomeEnhancements, 0);
+  setTimeout(() => {
+    refreshHomeEnhancements();
+    initModern3DInteractions();
+  }, 0);
 });
 
 window.addEventListener("spa:reinitialized", () => {
-  setTimeout(refreshHomeEnhancements, 0);
+  setTimeout(() => {
+    refreshHomeEnhancements();
+    initModern3DInteractions();
+  }, 0);
 });
 
 /* ================== FIXED CART EVENT HANDLING ================== */
@@ -2169,7 +2782,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   refreshCartCount();
 
   // STEP 2: Initialize sync system
-  window.websiteUpdater = new WebsiteAutoUpdater();
+  try {
+    window.websiteUpdater = new WebsiteAutoUpdater();
+  } catch (error) {
+    console.error("WebsiteAutoUpdater failed to initialize:", error);
+    window.websiteUpdater = null;
+  }
 
   // STEP 3: Initialize everything else
   initMobileMenu();
@@ -2190,6 +2808,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   refreshHomeEnhancements();
+  initModern3DInteractions();
 
   // If on order page, render cart
   if (currentPage.includes("order")) {

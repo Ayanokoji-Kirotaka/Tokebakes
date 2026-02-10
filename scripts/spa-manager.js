@@ -4,9 +4,10 @@ class SPAManager {
   constructor() {
     this.currentPage = this.normalizeUrl(window.location.pathname).key;
     this.isTransitioning = false;
-    this.pageTransitionMs = 200;
+    this.pageTransitionMs = 260;
     this.progressEl = null;
     this.pageCache = new Map();
+    this.scriptLoadPromises = new Map();
     this.init();
   }
 
@@ -78,6 +79,44 @@ class SPAManager {
     if (this.progressEl) {
       this.progressEl.classList.remove("active");
     }
+  }
+
+  loadScriptOnce(src) {
+    if (this.scriptLoadPromises.has(src)) {
+      return this.scriptLoadPromises.get(src);
+    }
+
+    const promise = new Promise((resolve, reject) => {
+      const existing = document.querySelector(`script[src="${src}"]`);
+      if (existing) {
+        // If it already exists in DOM, treat as loaded to avoid hanging on
+        // scripts whose load event already fired before this call.
+        existing.dataset.loaded = "true";
+        resolve();
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = src;
+      script.async = true;
+      script.addEventListener(
+        "load",
+        () => {
+          script.dataset.loaded = "true";
+          resolve();
+        },
+        { once: true }
+      );
+      script.addEventListener(
+        "error",
+        () => reject(new Error(`Failed to load ${src}`)),
+        { once: true }
+      );
+      document.body.appendChild(script);
+    });
+
+    this.scriptLoadPromises.set(src, promise);
+    return promise;
   }
 
   normalizeUrl(url) {
@@ -306,14 +345,14 @@ class SPAManager {
   reinitializePage() {
     console.log("🔄 Reinitializing page components after SPA navigation...");
 
-    const run = () => {
+    const run = async () => {
       try {
         // Reset initialization flags to allow re-initialization on new pages
         window.menuInteractionsInitialized = false;
         window.orderFunctionalityInitialized = false;
 
         // 1. Reinitialize carousel if on homepage
-        this.reinitCarousel();
+        await this.reinitCarousel();
 
         // 2. Reinitialize mobile menu
         this.reinitMobileMenu();
@@ -357,59 +396,83 @@ class SPAManager {
         }
 
         window.dispatchEvent(new CustomEvent("spa:reinitialized"));
-        console.log("✅ All components reinitialized successfully");
+        console.log("All components reinitialized successfully");
       } catch (error) {
         console.warn("Some components failed to reinitialize:", error);
       }
     };
 
-    requestAnimationFrame(run);
+    requestAnimationFrame(() => {
+      Promise.resolve(run()).catch((error) =>
+        console.warn("Reinitialization task failed:", error)
+      );
+    });
   }
 
   // NEW: Reinitialize carousel
   reinitCarousel() {
-    const carouselContainer = document.querySelector(".hero-carousel");
-    if (!carouselContainer) {
-      console.log("ℹ️ No carousel on this page");
-      return;
-    }
+    const run = async () => {
+      const carouselContainer = document.querySelector(".hero-carousel");
+      if (!carouselContainer) {
+        if (window.heroCarousel && typeof window.heroCarousel.destroy === "function") {
+          window.heroCarousel.destroy();
+        }
+        window.heroCarousel = null;
+        console.log("No carousel on this page");
+        return;
+      }
 
-    console.log("🔄 Reinitializing carousel...");
+      console.log("Reinitializing carousel...");
 
-    // Destroy existing carousel if it exists
-    if (window.heroCarousel) {
-      window.heroCarousel.stopAutoPlay();
-      window.heroCarousel = null;
-    }
+      if (
+        typeof window.initializeCarousel !== "function" &&
+        typeof window.HeroCarousel !== "function"
+      ) {
+        await this.loadScriptOnce("scripts/carousel.js");
+      }
 
-    // Initialize new carousel
-    if (typeof HeroCarousel === "function") {
-      window.heroCarousel = new HeroCarousel();
-    } else if (typeof initializeCarousel === "function") {
-      initializeCarousel();
-    }
+      if (window.heroCarousel && typeof window.heroCarousel.destroy === "function") {
+        window.heroCarousel.destroy();
+      } else if (window.heroCarousel && typeof window.heroCarousel.stopAutoPlay === "function") {
+        window.heroCarousel.stopAutoPlay();
+        window.heroCarousel = null;
+      }
+
+      if (typeof window.initializeCarousel === "function") {
+        window.initializeCarousel();
+      } else if (typeof window.HeroCarousel === "function") {
+        window.heroCarousel = new window.HeroCarousel();
+      }
+    };
+
+    return Promise.resolve(run()).catch((error) => {
+      console.warn("Carousel reinitialization failed:", error);
+    });
   }
 
   // NEW: Reinitialize mobile menu
   reinitMobileMenu() {
-    console.log("🔄 Reinitializing mobile menu...");
+    if (typeof initMobileMenu === "function") {
+      initMobileMenu();
+      return;
+    }
+
+    console.log("Reinitializing mobile menu...");
 
     const toggleBtn = document.getElementById("navbarToggle");
     const navList = document.querySelector(".navbar ul");
 
     if (!toggleBtn || !navList) {
-      console.log("ℹ️ No mobile menu found on this page");
+      console.log("No mobile menu found on this page");
       return;
     }
 
-    // Remove old event listeners by cloning and replacing
     const newToggle = toggleBtn.cloneNode(true);
     toggleBtn.parentNode.replaceChild(newToggle, toggleBtn);
 
     const newNavList = navList.cloneNode(true);
     navList.parentNode.replaceChild(newNavList, navList);
 
-    // Reinitialize mobile menu functionality
     const freshToggle = document.getElementById("navbarToggle");
     const freshNavList = document.querySelector(".navbar ul");
 
@@ -419,12 +482,10 @@ class SPAManager {
         freshNavList.classList.toggle("show");
       });
 
-      // Mobile UX: keep menu open by default on small screens
       if (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) {
         freshNavList.classList.add("show");
       }
 
-      // Close when clicking outside
       document.addEventListener("click", (e) => {
         if (
           freshNavList.classList.contains("show") &&
@@ -435,7 +496,6 @@ class SPAManager {
         }
       });
 
-      // Close when clicking links
       document.querySelectorAll(".navbar a").forEach((link) => {
         link.addEventListener("click", () => {
           freshNavList.classList.remove("show");
@@ -589,3 +649,5 @@ if (document.readyState === "loading") {
 } else {
   window.spaManager = new SPAManager();
 }
+
+

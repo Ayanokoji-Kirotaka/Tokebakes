@@ -1,5 +1,5 @@
-const STATIC_CACHE = "toke-bakes-static-v2";
-const RUNTIME_CACHE = "toke-bakes-runtime-v2";
+const STATIC_CACHE = "toke-bakes-static-v4";
+const RUNTIME_CACHE = "toke-bakes-runtime-v4";
 
 const PRECACHE_URLS = [
   "index.html",
@@ -17,11 +17,13 @@ const PRECACHE_URLS = [
   "styles/theme-ramadan.css",
   "styles/theme-valentine.css",
   "scripts/config.js",
+  "scripts/update-sync.js",
   "scripts/theme-manager.js",
   "scripts/carousel.js",
   "scripts/spa-manager.js",
   "scripts/script.js",
   "scripts/admin.js",
+  "scripts/sw-register.js",
   "images/logo.webp",
   "images/valantine-logo.webp",
   "images/ramadan-logo.webp",
@@ -30,7 +32,7 @@ const PRECACHE_URLS = [
   "images/christmas-logo.webp",
   "images/favicon.webp",
   "images/icon-192.png",
-  "images/icon-512.png"
+  "images/icon-512.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -38,6 +40,7 @@ self.addEventListener("install", (event) => {
     caches
       .open(STATIC_CACHE)
       .then((cache) => cache.addAll(PRECACHE_URLS))
+      .catch(() => {})
       .then(() => self.skipWaiting())
   );
 });
@@ -49,7 +52,7 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys.map((key) => {
-            if (![STATIC_CACHE, RUNTIME_CACHE].includes(key)) {
+            if (key !== STATIC_CACHE && key !== RUNTIME_CACHE) {
               return caches.delete(key);
             }
             return null;
@@ -60,36 +63,86 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
+function shouldBypassCache(url) {
+  return (
+    url.hostname.includes("supabase.co") ||
+    url.pathname.includes("/rest/v1/") ||
+    url.pathname.includes("/auth/v1/") ||
+    url.pathname.includes("/storage/v1/")
+  );
+}
+
+function isPageLikeRequest(request, url) {
+  return (
+    request.mode === "navigate" ||
+    request.destination === "document" ||
+    request.headers.get("accept")?.includes("text/html")
+  );
+}
+
+function isFreshnessCriticalAsset(url, request) {
+  if (request.destination === "script" || request.destination === "style") {
+    return true;
+  }
+  return (
+    url.pathname.endsWith(".js") ||
+    url.pathname.endsWith(".css") ||
+    url.pathname.endsWith(".html") ||
+    url.pathname.endsWith(".json")
+  );
+}
+
+function networkFirst(request, fallbackUrl = null) {
+  return fetch(request)
+    .then((response) => {
+      if (response && response.ok) {
+        const copy = response.clone();
+        caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
+      }
+      return response;
+    })
+    .catch(() =>
+      caches
+        .match(request)
+        .then((cached) => {
+          if (cached) return cached;
+          if (fallbackUrl) return caches.match(fallbackUrl);
+          return null;
+        })
+        .then((fallback) => fallback || Response.error())
+    );
+}
+
 function cacheFirst(request) {
   return caches.match(request).then((cached) => {
     if (cached) return cached;
     return fetch(request).then((response) => {
-      const copy = response.clone();
-      caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
+      if (response && response.ok) {
+        const copy = response.clone();
+        caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
+      }
       return response;
     });
   });
-}
-
-function networkFirst(request, fallbackUrl = "index.html") {
-  return fetch(request)
-    .then((response) => {
-      const copy = response.clone();
-      caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
-      return response;
-    })
-    .catch(() => caches.match(request).then((cached) => cached || caches.match(fallbackUrl)));
 }
 
 function staleWhileRevalidate(request) {
   return caches.match(request).then((cached) => {
     const fetchPromise = fetch(request)
       .then((response) => {
-        const copy = response.clone();
-        caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
+        }
         return response;
       })
-      .catch(() => cached);
+      .catch(() => cached || Response.error());
     return cached || fetchPromise;
   });
 }
@@ -99,31 +152,25 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
+  if (url.origin !== self.location.origin) {
+    event.respondWith(staleWhileRevalidate(request));
+    return;
+  }
 
-  const isSupabase =
-    url.hostname.includes("supabase.co") ||
-    url.pathname.includes("/rest/v1/") ||
-    url.pathname.includes("/auth/v1/");
-
-  if (isSupabase) {
+  if (shouldBypassCache(url)) {
     event.respondWith(fetch(request));
     return;
   }
 
-  if (url.pathname.includes("/storage/v1/")) {
-    event.respondWith(networkFirst(request));
-    return;
-  }
-
-  if (request.mode === "navigate") {
+  if (isPageLikeRequest(request, url)) {
     event.respondWith(networkFirst(request, "index.html"));
     return;
   }
 
-  if (url.origin === self.location.origin) {
-    event.respondWith(cacheFirst(request));
+  if (isFreshnessCriticalAsset(url, request)) {
+    event.respondWith(networkFirst(request));
     return;
   }
 
-  event.respondWith(staleWhileRevalidate(request));
+  event.respondWith(cacheFirst(request));
 });

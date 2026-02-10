@@ -4,11 +4,48 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gallery | Toke Bakes</title>
+    <meta
+      name="description"
+      content="View Toke Bakes gallery featuring handcrafted cakes, cupcakes and dessert creations for every celebration."
+    />
+    <meta
+      name="robots"
+      content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
+    />
+    <link rel="canonical" href="https://tokebakes-ten.vercel.app/gallery.html" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Toke Bakes" />
+    <meta property="og:title" content="Gallery | Toke Bakes" />
+    <meta
+      property="og:description"
+      content="Browse our gallery of cakes, cupcakes and dessert tables."
+    />
+    <meta property="og:url" content="https://tokebakes-ten.vercel.app/gallery.html" />
+    <meta property="og:image" content="https://tokebakes-ten.vercel.app/images/logo.webp" />
+    <meta property="og:image:alt" content="Toke Bakes logo" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Gallery | Toke Bakes" />
+    <meta
+      name="twitter:description"
+      content="Explore the Toke Bakes gallery of handcrafted dessert creations."
+    />
+    <meta name="twitter:image" content="https://tokebakes-ten.vercel.app/images/logo.webp" />
     <script>
-      // Prevent theme flashing by applying saved theme immediately
-      const savedMode =
-        localStorage.getItem("toke_bakes_theme_mode") || "light";
-      document.documentElement.setAttribute("data-theme", savedMode);
+      (function () {
+        const savedMode =
+          localStorage.getItem("toke_bakes_theme_mode") || "light";
+        const savedTheme =
+          localStorage.getItem("toke_bakes_css_theme") || "styles/style.css";
+        const themeVersion =
+          localStorage.getItem("toke_bakes_theme_last_update") || "";
+        document.documentElement.setAttribute("data-theme", savedMode);
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.id = "theme-stylesheet";
+        link.href = savedTheme + (themeVersion ? `?v=${themeVersion}` : "");
+        document.head.appendChild(link);
+      })();
     </script>
     <link rel="icon" href="images/favicon.webp" type="image/webp" />
     <link
@@ -28,8 +65,8 @@
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
     />
-    <link id="theme-stylesheet" rel="stylesheet" href="styles/style.css" />
     <script src="scripts/config.js"></script>
+    <script src="scripts/update-sync.js"></script>
     <script src="scripts/theme-manager.js"></script>
   </head>
 
@@ -135,5 +172,6 @@
 
     <script src="scripts/spa-manager.js"></script>
     <script src="scripts/script.js"></script>
+    <script src="scripts/sw-register.js"></script>
   </body>
 </html>

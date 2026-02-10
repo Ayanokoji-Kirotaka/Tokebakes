@@ -4,11 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Panel | Toke Bakes</title>
+    <meta name="description" content="Administrative panel for managing Toke Bakes website content." />
+    <meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex" />
     <script>
-      // Prevent theme flashing by applying saved theme immediately
-      const savedMode =
-        localStorage.getItem("toke_bakes_theme_mode") || "light";
-      document.documentElement.setAttribute("data-theme", savedMode);
+      (function () {
+        const savedMode =
+          localStorage.getItem("toke_bakes_theme_mode") || "light";
+        const savedTheme =
+          localStorage.getItem("toke_bakes_css_theme") || "styles/style.css";
+        const themeVersion =
+          localStorage.getItem("toke_bakes_theme_last_update") || "";
+        document.documentElement.setAttribute("data-theme", savedMode);
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.id = "theme-stylesheet";
+        link.href = savedTheme + (themeVersion ? `?v=${themeVersion}` : "");
+        document.head.appendChild(link);
+      })();
     </script>
     <link rel="shortcut icon" href="images/favicon.webp" type="image/png" />
     <link
@@ -28,9 +40,9 @@
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
     />
-    <link id="theme-stylesheet" rel="stylesheet" href="styles/style.css" />
-    <link rel="icon" href="images/logo.jpg" type="image/png" />
+    <link rel="icon" href="images/favicon.webp" type="image/webp" />
     <script src="scripts/config.js"></script>
+    <script src="scripts/update-sync.js"></script>
     <script src="scripts/theme-manager.js"></script>
   </head>
   <body>
@@ -1084,6 +1096,5 @@
     <input type="file" id="import-file" accept=".json" style="display: none" />
 
     <script src="scripts/admin.js"></script>
-    <script src="scripts/script.js"></script>
   </body>
 </html>
