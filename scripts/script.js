@@ -1633,6 +1633,8 @@ if (!document.querySelector("#notification-styles")) {
     }
   };
 
+  const isCarouselReady = () => window.__tokeCarouselReady === true;
+
   const markLoaderAsSeen = () => {
     try {
       sessionStorage.setItem(LOADER_SESSION_KEY, "1");
@@ -1670,6 +1672,11 @@ if (!document.querySelector("#notification-styles")) {
       return;
     }
 
+    if (isCarouselReady()) {
+      hideLoader(true);
+      return;
+    }
+
     markLoaderAsSeen();
     hidden = false;
     clearHideTimer();
@@ -1682,7 +1689,10 @@ if (!document.querySelector("#notification-styles")) {
     hideTimer = setTimeout(() => hideLoader(true), 2200);
   };
 
-  window.addEventListener("carousel:ready", () => hideLoader(true));
+  window.addEventListener("carousel:ready", () => {
+    window.__tokeCarouselReady = true;
+    hideLoader(true);
+  });
   window.addEventListener("spa:navigated", () => {
     if (isHomePage()) {
       showLoader();

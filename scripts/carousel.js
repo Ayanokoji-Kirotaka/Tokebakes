@@ -3,6 +3,7 @@
 const CAROUSEL_DEBUG = false;
 const CAROUSEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const CAROUSEL_READY_TIMEOUT_MS = 450;
+const CAROUSEL_FALLBACK_IMAGE = "images/logo.webp";
 const carouselDebugLog = (...args) => {
   if (CAROUSEL_DEBUG) console.log(...args);
 };
@@ -75,6 +76,10 @@ class HeroCarousel {
       ctaLink: this.heroContent.cta ? this.heroContent.cta.getAttribute("href") : "",
     };
 
+    if (typeof window !== "undefined") {
+      window.__tokeCarouselReady = false;
+    }
+
     // Initialize immediately
     this.init();
   }
@@ -113,6 +118,7 @@ class HeroCarousel {
   announceReady() {
     if (typeof window === "undefined") return;
     try {
+      window.__tokeCarouselReady = true;
       window.dispatchEvent(
         new CustomEvent("carousel:ready", {
           detail: {
@@ -187,7 +193,7 @@ class HeroCarousel {
     return [
       {
         id: "default",
-        image: "images/default-bg.jpg",
+        image: CAROUSEL_FALLBACK_IMAGE,
         alt: "Toke Bakes Artisan Bakery",
       },
     ];
@@ -403,7 +409,7 @@ class HeroCarousel {
              loading="${loading}"
              decoding="async"
              fetchpriority="${index === 0 ? "high" : "auto"}"
-             onerror="this.onerror=null; this.src='images/default-bg.jpg';">
+             onerror="this.onerror=null; this.src='${CAROUSEL_FALLBACK_IMAGE}';">
       `;
 
       this.track.appendChild(slideEl);
