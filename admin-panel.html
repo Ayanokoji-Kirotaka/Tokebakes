@@ -8,18 +8,75 @@
     <meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex" />
     <script>
       (function () {
+        const normalizeAssetPath = (value) => {
+          if (value === null || value === undefined) return "";
+          return String(value)
+            .trim()
+            .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
+        };
+        const fixLegacyThemePath = (value) => {
+          const cssFile = normalizeAssetPath(value) || "styles/style.css";
+          const legacyMap = {
+            "style.css": "styles/style.css",
+            "theme-christmas.css": "styles/theme-christmas.css",
+            "theme-valentine.css": "styles/theme-valentine.css",
+            "theme-ramadan.css": "styles/theme-ramadan.css",
+            "theme-halloween.css": "styles/theme-halloween.css",
+            "theme-independenceday.css": "styles/theme-independenceday.css",
+            "theme-independence-day.css": "styles/theme-independenceday.css",
+          };
+          return legacyMap[cssFile] || cssFile;
+        };
+
         const savedMode =
           localStorage.getItem("toke_bakes_theme_mode") || "light";
-        const savedTheme =
+        const savedThemeRaw =
           localStorage.getItem("toke_bakes_css_theme") || "styles/style.css";
+        const savedTheme = fixLegacyThemePath(savedThemeRaw);
         const themeVersion =
           localStorage.getItem("toke_bakes_theme_last_update") || "";
+
+        if (savedThemeRaw !== savedTheme) {
+          localStorage.setItem("toke_bakes_css_theme", savedTheme);
+        }
+
         document.documentElement.setAttribute("data-theme", savedMode);
+        let preloadStyle = document.getElementById("theme-preload-style");
+        if (!preloadStyle) {
+          preloadStyle = document.createElement("style");
+          preloadStyle.id = "theme-preload-style";
+          preloadStyle.textContent =
+            "html.theme-loading body > :not(#loader){visibility:hidden!important;}";
+          document.head.appendChild(preloadStyle);
+        }
+        document.documentElement.classList.add("theme-loading");
+
         const link = document.createElement("link");
         link.rel = "stylesheet";
         link.id = "theme-stylesheet";
-        link.href = savedTheme + (themeVersion ? `?v=${themeVersion}` : "");
+        link.dataset.loaded = "false";
+        link.addEventListener(
+          "load",
+          () => {
+            link.dataset.loaded = "true";
+            document.documentElement.classList.remove("theme-loading");
+            window.dispatchEvent(new CustomEvent("theme:ready"));
+          },
+          { once: true }
+        );
+        link.addEventListener(
+          "error",
+          () => {
+            link.dataset.loaded = "true";
+            document.documentElement.classList.remove("theme-loading");
+          },
+          { once: true }
+        );
+        link.href = `${savedTheme}${themeVersion ? `?v=${themeVersion}` : ""}`;
         document.head.appendChild(link);
+        setTimeout(() => {
+          document.documentElement.classList.remove("theme-loading");
+        }, 4000);
       })();
     </script>
     <link rel="shortcut icon" href="images/favicon.webp" type="image/png" />
@@ -75,13 +132,24 @@
             <label for="admin-password"
               ><i class="fas fa-lock"></i> Password</label
             >
-            <input
-              type="password"
-              id="admin-password"
-              placeholder="Enter password"
-              autocomplete="current-password"
-              required
-            />
+            <div class="password-input-wrap">
+              <input
+                type="password"
+                id="admin-password"
+                placeholder="Enter password"
+                autocomplete="current-password"
+                required
+              />
+              <button
+                type="button"
+                class="password-toggle-btn"
+                id="admin-password-toggle"
+                aria-label="Show password"
+                aria-pressed="false"
+              >
+                <i class="fas fa-eye"></i>
+              </button>
+            </div>
           </div>
 
           <div class="form-group">

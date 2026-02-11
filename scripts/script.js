@@ -38,6 +38,8 @@ class WebsiteAutoUpdater {
     this.pendingRefresh = false;
     this.lastRefreshAt = 0;
     this.minRefreshGapMs = 1200;
+    this.syncIndicatorTimer = null;
+    this.refreshWatchdogTimer = null;
     this.init();
   }
 
@@ -153,6 +155,16 @@ class WebsiteAutoUpdater {
     if (this.boundCustomFallback) {
       window.removeEventListener("toke:data-updated", this.boundCustomFallback);
       this.boundCustomFallback = null;
+    }
+
+    if (this.syncIndicatorTimer) {
+      clearTimeout(this.syncIndicatorTimer);
+      this.syncIndicatorTimer = null;
+    }
+
+    if (this.refreshWatchdogTimer) {
+      clearTimeout(this.refreshWatchdogTimer);
+      this.refreshWatchdogTimer = null;
     }
   }
 
@@ -285,6 +297,14 @@ class WebsiteAutoUpdater {
 
     // Show syncing indicator
     this.showSyncIndicator("syncing");
+    this.clearSyncTimers();
+    this.refreshWatchdogTimer = setTimeout(() => {
+      if (!this.isRefreshing) return;
+      this.isRefreshing = false;
+      this.pendingRefresh = false;
+      this.showSyncIndicator("error");
+      this.syncIndicatorTimer = setTimeout(() => this.hideSyncIndicator(), 3000);
+    }, 20000);
 
     try {
       debugLog("Refreshing website data...");
@@ -327,23 +347,36 @@ class WebsiteAutoUpdater {
       this.showUpdateNotification();
 
       // Hide indicator after 2 seconds
-      setTimeout(() => {
-        this.hideSyncIndicator();
-      }, 2000);
+      this.syncIndicatorTimer = setTimeout(() => this.hideSyncIndicator(), 2000);
     } catch (error) {
       console.error("Sync refresh failed:", error);
       this.hideSyncIndicator();
 
       // Show error state briefly
       this.showSyncIndicator("error");
-      setTimeout(() => this.hideSyncIndicator(), 3000);
+      this.syncIndicatorTimer = setTimeout(() => this.hideSyncIndicator(), 3000);
     } finally {
       this.isRefreshing = false;
+      if (this.refreshWatchdogTimer) {
+        clearTimeout(this.refreshWatchdogTimer);
+        this.refreshWatchdogTimer = null;
+      }
 
       if (this.pendingRefresh) {
         this.pendingRefresh = false;
         queueMicrotask(() => this.refreshDataWithUI());
       }
+    }
+  }
+
+  clearSyncTimers() {
+    if (this.syncIndicatorTimer) {
+      clearTimeout(this.syncIndicatorTimer);
+      this.syncIndicatorTimer = null;
+    }
+    if (this.refreshWatchdogTimer) {
+      clearTimeout(this.refreshWatchdogTimer);
+      this.refreshWatchdogTimer = null;
     }
   }
 
@@ -388,6 +421,10 @@ class WebsiteAutoUpdater {
   }
 
   hideSyncIndicator() {
+    if (this.syncIndicatorTimer) {
+      clearTimeout(this.syncIndicatorTimer);
+      this.syncIndicatorTimer = null;
+    }
     const indicator = document.getElementById("sync-status-indicator");
     if (indicator) {
       indicator.style.display = "none";

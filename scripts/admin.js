@@ -3139,6 +3139,8 @@ async function initAdminPanel() {
 function setupEventListeners() {
   debugLog("Setting up event listeners...");
 
+  setupPasswordVisibilityToggle("admin-password", "admin-password-toggle");
+
   // Tab switching - UPDATED TO RESET CAROUSEL FORM
   document.querySelectorAll(".admin-tab").forEach((tab) => {
     tab.addEventListener("click", async function () {
@@ -3441,6 +3443,36 @@ function setupEventListeners() {
       }
     });
   }
+}
+
+function setupPasswordVisibilityToggle(inputId, toggleId) {
+  const input = document.getElementById(inputId);
+  const toggle = document.getElementById(toggleId);
+  if (!input || !toggle) return;
+
+  const icon = toggle.querySelector("i");
+
+  const updateUi = () => {
+    const isVisible = input.type === "text";
+    toggle.setAttribute("aria-pressed", isVisible ? "true" : "false");
+    toggle.setAttribute("aria-label", isVisible ? "Hide password" : "Show password");
+    if (!icon) return;
+    icon.classList.toggle("fa-eye", !isVisible);
+    icon.classList.toggle("fa-eye-slash", isVisible);
+  };
+
+  toggle.addEventListener("click", (event) => {
+    event.preventDefault();
+    input.type = input.type === "password" ? "text" : "password";
+    updateUi();
+    try {
+      input.focus({ preventScroll: true });
+      const cursorPos = input.value.length;
+      input.setSelectionRange(cursorPos, cursorPos);
+    } catch {}
+  });
+
+  updateUi();
 }
 
 // Make functions available globally - ADDED CAROUSEL

@@ -15,15 +15,22 @@ const ThemeManager = {
   dbCheckInterval: 60000,
   spaHooksBound: false,
   themeSyncUnsubscribe: null,
+  themeLoadingTimer: null,
 
   /* ================== INITIALIZATION ================== */
   init() {
     themeDebugLog("?? Theme Manager Initialized - FIXED VERSION");
 
     // Load saved preferences
-    const savedTheme =
+    const savedThemeRaw =
       localStorage.getItem("toke_bakes_css_theme") || "styles/style.css";
+    const savedTheme = this.fixLegacyThemePath(
+      this.normalizeAssetPath(savedThemeRaw) || "styles/style.css"
+    );
     const savedMode = localStorage.getItem("toke_bakes_theme_mode") || "light";
+    if (savedThemeRaw !== savedTheme) {
+      localStorage.setItem("toke_bakes_css_theme", savedTheme);
+    }
     const savedLogo =
       localStorage.getItem("toke_bakes_theme_logo") ||
       this.getLogoForTheme(savedTheme);
@@ -58,10 +65,12 @@ const ThemeManager = {
 
     // Sync with database active theme on startup
     this.fetchActiveThemeFromDatabase(true).then((dbTheme) => {
-      if (dbTheme && dbTheme.css_file) {
-        this.applyTheme(dbTheme.css_file, false, false, {
-          logoFile: dbTheme.logo_file,
+      const dbCandidate = this.buildThemeCandidateFromRecord(dbTheme);
+      if (dbCandidate && this.shouldApplyDbCandidate(dbCandidate)) {
+        this.applyTheme(dbCandidate.cssFile, false, false, {
+          logoFile: dbCandidate.logoFile,
           persist: true,
+          timestampOverride: dbCandidate.timestamp,
           updatedAt: dbTheme.updated_at,
         });
       }
@@ -98,6 +107,8 @@ const ThemeManager = {
         themeDebugLog("?? Theme update received via shared sync bus");
         this.applyTheme(payload.themeFile, false, false, {
           logoFile: payload.logoFile || null,
+          persist: true,
+          timestampOverride: payload.timestamp,
         });
       });
     } else if (typeof BroadcastChannel !== "undefined") {
@@ -109,6 +120,8 @@ const ThemeManager = {
             themeDebugLog("?? Theme update received via BroadcastChannel");
             this.applyTheme(event.data.themeFile, false, false, {
               logoFile: event.data.logoFile || null,
+              persist: true,
+              timestampOverride: event.data.timestamp,
             });
           }
         };
@@ -124,27 +137,33 @@ const ThemeManager = {
 
   async checkForThemeUpdates() {
     // Get the last theme update timestamp from localStorage
-    const lastUpdate = localStorage.getItem("toke_bakes_theme_last_update");
-    const myLastCheck = localStorage.getItem("my_theme_check") || "0";
+    const lastUpdate = Number(
+      localStorage.getItem("toke_bakes_theme_last_update") || "0"
+    );
+    const myLastCheck = Number(localStorage.getItem("my_theme_check") || "0");
 
-    if (lastUpdate && lastUpdate > myLastCheck) {
+    if (lastUpdate > myLastCheck) {
       themeDebugLog("?? Theme update detected!");
 
       // Get the new theme
-      const newTheme =
-        localStorage.getItem("toke_bakes_css_theme") || "styles/style.css";
+      const newTheme = this.fixLegacyThemePath(
+        this.normalizeAssetPath(
+          localStorage.getItem("toke_bakes_css_theme") || "styles/style.css"
+        ) || "styles/style.css"
+      );
       const newLogo =
-        localStorage.getItem("toke_bakes_theme_logo") ||
+        this.normalizeAssetPath(localStorage.getItem("toke_bakes_theme_logo")) ||
         this.getLogoForTheme(newTheme);
 
       // Update my last check timestamp
-      localStorage.setItem("my_theme_check", lastUpdate);
+      localStorage.setItem("my_theme_check", String(lastUpdate));
 
       // Apply the new theme
       if (newTheme !== this.currentTheme || newLogo !== this.currentLogo) {
         this.applyTheme(newTheme, false, false, {
           logoFile: newLogo,
           persist: true,
+          timestampOverride: lastUpdate,
         });
       }
       return true;
@@ -152,18 +171,12 @@ const ThemeManager = {
 
     // Fallback: check database for active theme (cross-device changes)
     const dbTheme = await this.fetchActiveThemeFromDatabase();
-    const dbLogo =
-      dbTheme && dbTheme.css_file
-        ? this.resolveLogoFile(dbTheme.css_file, dbTheme.logo_file)
-        : null;
-    if (
-      dbTheme &&
-      dbTheme.css_file &&
-      (dbTheme.css_file !== this.currentTheme || dbLogo !== this.currentLogo)
-    ) {
-      this.applyTheme(dbTheme.css_file, false, false, {
-        logoFile: dbLogo,
+    const dbCandidate = this.buildThemeCandidateFromRecord(dbTheme);
+    if (dbCandidate && this.shouldApplyDbCandidate(dbCandidate)) {
+      this.applyTheme(dbCandidate.cssFile, false, false, {
+        logoFile: dbCandidate.logoFile,
         persist: true,
+        timestampOverride: dbCandidate.timestamp,
         updatedAt: dbTheme.updated_at,
       });
       return true;
@@ -176,7 +189,12 @@ const ThemeManager = {
   applyTheme(cssFile, saveToStorage = true, isAdminChange = false, options = {}) {
     themeDebugLog("?? Applying theme:", cssFile, "isAdminChange:", isAdminChange);
 
-    const { logoFile = null, persist = false, updatedAt = null } = options || {};
+    const {
+      logoFile = null,
+      persist = false,
+      updatedAt = null,
+      timestampOverride = null,
+    } = options || {};
     const normalizedCssFile = this.fixLegacyThemePath(
       this.normalizeAssetPath(cssFile) || "styles/style.css"
     );
@@ -193,13 +211,26 @@ const ThemeManager = {
       localStorage.setItem("toke_bakes_css_theme", normalizedCssFile);
       localStorage.setItem("toke_bakes_theme_logo", resolvedLogo);
 
+      const parsedTimestamp = Number(timestampOverride);
       const parsed = updatedAt ? Date.parse(updatedAt) : NaN;
-      timestamp = Number.isNaN(parsed) ? Date.now().toString() : `${parsed}`;
+      const existingTs = this.getStoredThemeTimestamp();
+      let candidateTs = 0;
+      if (Number.isFinite(parsedTimestamp) && parsedTimestamp > 0) {
+        candidateTs = Math.trunc(parsedTimestamp);
+      } else if (!Number.isNaN(parsed) && parsed > 0) {
+        candidateTs = Math.trunc(parsed);
+      } else {
+        candidateTs = Date.now();
+      }
+      timestamp = `${Math.max(existingTs, candidateTs)}`;
       localStorage.setItem("toke_bakes_theme_last_update", timestamp);
       localStorage.setItem("my_theme_check", timestamp);
 
       // Broadcast to other tabs if admin is making the change
       if (isAdminChange) {
+        const tsNumber = Number(timestamp) || Date.now();
+        const themeName = this.getThemeName(normalizedCssFile);
+
         if (
           window.TokeUpdateSync &&
           typeof window.TokeUpdateSync.publish === "function"
@@ -208,18 +239,53 @@ const ThemeManager = {
             type: "THEME_CHANGED",
             themeFile: normalizedCssFile,
             logoFile: resolvedLogo,
-            themeName: this.getThemeName(normalizedCssFile),
-            timestamp: Number(timestamp),
+            themeName,
+            timestamp: tsNumber,
             source: "admin-theme",
           });
+
+          if (typeof window.TokeUpdateSync.publishDataUpdate === "function") {
+            window.TokeUpdateSync.publishDataUpdate("update", "theme", {
+              source: "admin-theme",
+              themeFile: normalizedCssFile,
+              themeName,
+              timestamp: tsNumber,
+            });
+          }
         } else if (this.themeChannel) {
           this.themeChannel.postMessage({
             type: "THEME_CHANGED",
             themeFile: normalizedCssFile,
             logoFile: resolvedLogo,
-            themeName: this.getThemeName(normalizedCssFile),
-            timestamp: timestamp,
+            themeName,
+            timestamp: tsNumber,
           });
+
+          const fallbackPayload = {
+            type: "DATA_UPDATED",
+            timestamp: tsNumber,
+            operation: "update",
+            itemType: "theme",
+            source: "admin-theme",
+            themeFile: normalizedCssFile,
+            themeName,
+          };
+
+          try {
+            localStorage.setItem("toke_bakes_last_update", String(tsNumber));
+            localStorage.setItem(
+              "toke_bakes_last_update_payload",
+              JSON.stringify(fallbackPayload)
+            );
+          } catch {}
+
+          try {
+            window.dispatchEvent(
+              new CustomEvent("toke:data-updated", {
+                detail: fallbackPayload,
+              })
+            );
+          } catch {}
         }
       }
     }
@@ -236,15 +302,41 @@ const ThemeManager = {
           link.dataset.loaded = "false";
 
           const onLoad = () => {
+            if (this.themeLoadingTimer) {
+              clearTimeout(this.themeLoadingTimer);
+              this.themeLoadingTimer = null;
+            }
+            link.dataset.loaded = "true";
+            document.documentElement.classList.remove("theme-loading");
+            window.dispatchEvent(new CustomEvent("theme:ready"));
+          };
+          const onError = () => {
+            if (this.themeLoadingTimer) {
+              clearTimeout(this.themeLoadingTimer);
+              this.themeLoadingTimer = null;
+            }
             link.dataset.loaded = "true";
             document.documentElement.classList.remove("theme-loading");
             window.dispatchEvent(new CustomEvent("theme:ready"));
           };
 
           link.addEventListener("load", onLoad, { once: true });
+          link.addEventListener("error", onError, { once: true });
           link.href = nextHref;
+
+          if (this.themeLoadingTimer) {
+            clearTimeout(this.themeLoadingTimer);
+          }
+          this.themeLoadingTimer = setTimeout(() => {
+            document.documentElement.classList.remove("theme-loading");
+            this.themeLoadingTimer = null;
+          }, 4000);
           themeDebugLog("Theme CSS updated to:", nextHref);
         } else {
+          if (this.themeLoadingTimer) {
+            clearTimeout(this.themeLoadingTimer);
+            this.themeLoadingTimer = null;
+          }
           link.dataset.loaded = "true";
           document.documentElement.classList.remove("theme-loading");
           window.dispatchEvent(new CustomEvent("theme:ready"));
@@ -287,6 +379,35 @@ const ThemeManager = {
     }
 
     return true;
+  },
+
+  getStoredThemeTimestamp() {
+    const stored = Number(localStorage.getItem("toke_bakes_theme_last_update") || "0");
+    return Number.isFinite(stored) && stored > 0 ? Math.trunc(stored) : 0;
+  },
+
+  getRecordTimestamp(updatedAt) {
+    const parsed = Date.parse(updatedAt || "");
+    return Number.isNaN(parsed) || parsed <= 0 ? 0 : Math.trunc(parsed);
+  },
+
+  buildThemeCandidateFromRecord(record) {
+    if (!record || !record.css_file) return null;
+    const cssFile = this.fixLegacyThemePath(
+      this.normalizeAssetPath(record.css_file) || "styles/style.css"
+    );
+    const logoFile = this.resolveLogoFile(cssFile, record.logo_file);
+    const timestamp = this.getRecordTimestamp(record.updated_at);
+    return { cssFile, logoFile, timestamp };
+  },
+
+  shouldApplyDbCandidate(candidate) {
+    if (!candidate) return false;
+    const differs =
+      candidate.cssFile !== this.currentTheme || candidate.logoFile !== this.currentLogo;
+    if (differs) return true;
+    const localTs = this.getStoredThemeTimestamp();
+    return candidate.timestamp > localTs;
   },
 
   /* ================== FIXED: ADMIN THEME ACTIVATION ================== */
