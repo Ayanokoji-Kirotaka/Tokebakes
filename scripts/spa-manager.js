@@ -1,18 +1,29 @@
 /* Fixed SPA Manager with proper reinitialization of all components */
 
+const SPA_DEBUG = false;
+const spaDebugLog = (...args) => {
+  if (SPA_DEBUG) console.log(...args);
+};
+const spaDebugWarn = (...args) => {
+  if (SPA_DEBUG) console.warn(...args);
+};
+
 class SPAManager {
   constructor() {
-    this.currentPage = this.normalizeUrl(window.location.pathname).key;
+    this.currentPage = this.normalizeUrl(
+      `${window.location.pathname}${window.location.search || ""}`
+    ).key;
     this.isTransitioning = false;
     this.pageTransitionMs = 260;
     this.progressEl = null;
     this.pageCache = new Map();
     this.scriptLoadPromises = new Map();
+    this.mobileMenuOutsideClickHandler = null;
     this.init();
   }
 
   init() {
-    console.log("🚀 Initializing Enhanced SPA Manager...");
+    spaDebugLog("Initializing Enhanced SPA Manager...");
 
     // Setup link interception
     this.setupLinkInterception();
@@ -21,14 +32,18 @@ class SPAManager {
     // Handle browser back/forward
     window.addEventListener("popstate", () => {
       if (!this.isTransitioning) {
-        this.loadPage(window.location.pathname);
+        this.loadPage(
+          `${window.location.pathname}${window.location.search || ""}`
+        );
       }
     });
   }
 
   setupLinkInterception() {
     const maybePrefetch = (e) => {
-      const link = e.target.closest("a[href]");
+      const targetEl =
+        e.target instanceof Element ? e.target : e.target?.parentElement;
+      const link = targetEl ? targetEl.closest("a[href]") : null;
       if (!link) return;
       if (!this.shouldHandleLink(link)) return;
       const href = link.getAttribute("href");
@@ -42,7 +57,9 @@ class SPAManager {
     document.addEventListener("click", (e) => {
       if (this.isTransitioning) return;
 
-      const link = e.target.closest("a[href]");
+      const targetEl =
+        e.target instanceof Element ? e.target : e.target?.parentElement;
+      const link = targetEl ? targetEl.closest("a[href]") : null;
       if (!link) return;
 
       if (!this.shouldHandleLink(link)) return;
@@ -221,8 +238,9 @@ class SPAManager {
     }
   }
 
-  async navigateTo(url) {
+  async navigateTo(url, options = {}) {
     const normalized = this.normalizeUrl(url);
+    const { updateHistory = true } = options || {};
     if (this.isTransitioning || normalized.key === this.currentPage) return;
 
     this.isTransitioning = true;
@@ -230,7 +248,9 @@ class SPAManager {
 
     const mainEl = document.getElementById("main-content");
     if (!mainEl) {
-      window.location.href = normalized.pushUrl || url;
+      this.isTransitioning = false;
+      this.endTransition();
+      window.location.href = normalized.pushUrl || normalized.fetchUrl || url;
       return;
     }
 
@@ -238,7 +258,7 @@ class SPAManager {
     const fadePromise = new Promise((resolve) =>
       setTimeout(resolve, this.pageTransitionMs)
     );
-    console.log(`🔀 SPA Navigating to: ${normalized.pushUrl}`);
+    spaDebugLog(`SPA navigating to: ${normalized.pushUrl}`);
 
     try {
       const contentPromise = (async () => {
@@ -269,7 +289,9 @@ class SPAManager {
       await this.updatePage(newContent, true);
 
       // Update URL
-      window.history.pushState({}, "", normalized.pushUrl);
+      if (updateHistory) {
+        window.history.pushState({}, "", normalized.pushUrl);
+      }
       this.currentPage = normalized.key;
 
       if (newContent.title) {
@@ -286,11 +308,11 @@ class SPAManager {
       // Keep cache warm (stale-while-revalidate)
       this.prefetchPage(normalized.fetchUrl);
 
-      console.log(`✅ SPA navigation complete: ${normalized.pushUrl}`);
+      spaDebugLog(`SPA navigation complete: ${normalized.pushUrl}`);
     } catch (error) {
       console.error("SPA navigation failed:", error);
       // Fallback to full page load
-      window.location.href = normalized.pushUrl || url;
+      window.location.href = normalized.pushUrl || normalized.fetchUrl || url;
       return;
     } finally {
       this.isTransitioning = false;
@@ -343,7 +365,7 @@ class SPAManager {
   }
 
   reinitializePage() {
-    console.log("🔄 Reinitializing page components after SPA navigation...");
+    spaDebugLog("Reinitializing page components after SPA navigation...");
 
     const run = async () => {
       try {
@@ -365,7 +387,7 @@ class SPAManager {
         // 4. Reinitialize CMS content for the new page
         if (typeof loadDynamicContent === "function") {
           Promise.resolve(loadDynamicContent()).catch((e) =>
-            console.warn("Dynamic content reload failed:", e)
+            spaDebugWarn("Dynamic content reload failed:", e)
           );
         }
 
@@ -391,20 +413,20 @@ class SPAManager {
           typeof renderCartOnOrderPage === "function"
         ) {
           Promise.resolve(renderCartOnOrderPage(true)).catch((e) =>
-            console.warn("Cart render failed:", e)
+            spaDebugWarn("Cart render failed:", e)
           );
         }
 
         window.dispatchEvent(new CustomEvent("spa:reinitialized"));
-        console.log("All components reinitialized successfully");
+        spaDebugLog("All components reinitialized successfully");
       } catch (error) {
-        console.warn("Some components failed to reinitialize:", error);
+        spaDebugWarn("Some components failed to reinitialize:", error);
       }
     };
 
     requestAnimationFrame(() => {
       Promise.resolve(run()).catch((error) =>
-        console.warn("Reinitialization task failed:", error)
+        spaDebugWarn("Reinitialization task failed:", error)
       );
     });
   }
@@ -418,11 +440,11 @@ class SPAManager {
           window.heroCarousel.destroy();
         }
         window.heroCarousel = null;
-        console.log("No carousel on this page");
+        spaDebugLog("No carousel on this page");
         return;
       }
 
-      console.log("Reinitializing carousel...");
+      spaDebugLog("Reinitializing carousel...");
 
       if (
         typeof window.initializeCarousel !== "function" &&
@@ -446,7 +468,7 @@ class SPAManager {
     };
 
     return Promise.resolve(run()).catch((error) => {
-      console.warn("Carousel reinitialization failed:", error);
+      spaDebugWarn("Carousel reinitialization failed:", error);
     });
   }
 
@@ -457,13 +479,13 @@ class SPAManager {
       return;
     }
 
-    console.log("Reinitializing mobile menu...");
+    spaDebugLog("Reinitializing mobile menu...");
 
     const toggleBtn = document.getElementById("navbarToggle");
     const navList = document.querySelector(".navbar ul");
 
     if (!toggleBtn || !navList) {
-      console.log("No mobile menu found on this page");
+      spaDebugLog("No mobile menu found on this page");
       return;
     }
 
@@ -486,15 +508,22 @@ class SPAManager {
         freshNavList.classList.add("show");
       }
 
-      document.addEventListener("click", (e) => {
+      if (this.mobileMenuOutsideClickHandler) {
+        document.removeEventListener("click", this.mobileMenuOutsideClickHandler);
+      }
+
+      this.mobileMenuOutsideClickHandler = (e) => {
+        const targetEl =
+          e.target instanceof Element ? e.target : e.target?.parentElement;
         if (
           freshNavList.classList.contains("show") &&
-          !e.target.closest(".navbar") &&
-          !e.target.closest("#navbarToggle")
+          !(targetEl && targetEl.closest(".navbar")) &&
+          !(targetEl && targetEl.closest("#navbarToggle"))
         ) {
           freshNavList.classList.remove("show");
         }
-      });
+      };
+      document.addEventListener("click", this.mobileMenuOutsideClickHandler);
 
       document.querySelectorAll(".navbar a").forEach((link) => {
         link.addEventListener("click", () => {
@@ -506,11 +535,11 @@ class SPAManager {
 
   // NEW: Reinitialize theme toggle
   reinitThemeToggle() {
-    console.log("🔄 Reinitializing theme toggle...");
+    spaDebugLog("Reinitializing theme toggle...");
 
     const themeToggle = document.getElementById("themeToggle");
     if (!themeToggle) {
-      console.log("ℹ️ No theme toggle found on this page");
+      spaDebugLog("No theme toggle found on this page");
       return;
     }
 
@@ -555,7 +584,11 @@ class SPAManager {
 
     // Initial icon setup
     const currentTheme =
-      localStorage.getItem("toke_bakes_theme_mode") || "light";
+      document.documentElement.getAttribute("data-theme") ||
+      (window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light");
     updateIcons(currentTheme);
 
     // Click handler
@@ -578,7 +611,7 @@ class SPAManager {
       // Update footer theme
       this.updateFooterTheme(newTheme);
 
-      console.log(`🌓 Theme mode changed to ${newTheme}`);
+      spaDebugLog(`Theme mode changed to ${newTheme}`);
     });
   }
 
@@ -586,7 +619,7 @@ class SPAManager {
   updateFooterTheme(theme) {
     const footer = document.querySelector(".bakes-footer");
     if (!footer) {
-      console.log("ℹ️ No .bakes-footer element found");
+      spaDebugLog("No .bakes-footer element found");
       return;
     }
 
@@ -598,7 +631,7 @@ class SPAManager {
       footer.classList.add("light-theme");
     }
 
-    console.log(`✅ Footer theme updated to ${theme}`);
+    spaDebugLog(`Footer theme updated to ${theme}`);
   }
 
   reinitNavHighlight() {
@@ -637,7 +670,7 @@ class SPAManager {
   // Load a specific page (for popstate)
   async loadPage(path) {
     if (this.isTransitioning) return;
-    this.navigateTo(path);
+    this.navigateTo(path, { updateHistory: false });
   }
 }
 

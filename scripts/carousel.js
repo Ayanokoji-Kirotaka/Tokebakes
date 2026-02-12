@@ -45,8 +45,15 @@ class HeroCarousel {
 
     // Auto-play timers
     this.autoPlayInterval = null;
-    this.autoPlayDelay = 5000;
+    this.autoPlayDelay = 6500;
     this.autoPlayEnabled = true;
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      this.autoPlayEnabled = false;
+    }
     this.resumeTimeout = null;
     this.resumeDelay = 3500;
     this.isHovered = false;
@@ -54,7 +61,15 @@ class HeroCarousel {
     // State management
     this.isTransitioning = false;
     this.transitionTimeout = null;
-    this.transitionDuration = 600;
+    this.transitionDuration = 1100;
+    this.queuedIndex = null;
+
+    // Smart loading helpers
+    this.preloadedImages = new Set();
+
+    // Smart autoplay helpers
+    this.isInView = true;
+    this.intersectionObserver = null;
 
     // Touch/swipe support
     this.touchStartX = 0;
@@ -98,9 +113,11 @@ class HeroCarousel {
       }
 
       this.setupCarousel();
+      this.syncTransitionDurationFromCss();
       await this.waitForFirstSlideReady();
       this.hideLoadingState();
       this.setupEventListeners();
+      this.setupIntersectionObserver();
       this.startAutoPlay();
       const needsBackgroundRefresh =
         !loadResult?.fromCache || !loadResult?.isFresh;
@@ -112,6 +129,122 @@ class HeroCarousel {
       }
     } finally {
       this.announceReady();
+    }
+  }
+
+  syncTransitionDurationFromCss() {
+    try {
+      const slide =
+        this.track && this.track.querySelector(".carousel-slide.active");
+      if (!slide) return;
+
+      const style = window.getComputedStyle(slide);
+      const durations = String(style.transitionDuration || "")
+        .split(",")
+        .map((v) => v.trim());
+      const delays = String(style.transitionDelay || "")
+        .split(",")
+        .map((v) => v.trim());
+      const props = String(style.transitionProperty || "")
+        .split(",")
+        .map((v) => v.trim());
+
+      const parseTimeMs = (value) => {
+        const text = String(value || "").trim();
+        if (!text) return 0;
+        if (text.endsWith("ms")) {
+          const n = Number.parseFloat(text);
+          return Number.isFinite(n) ? n : 0;
+        }
+        if (text.endsWith("s")) {
+          const n = Number.parseFloat(text);
+          return Number.isFinite(n) ? n * 1000 : 0;
+        }
+        const n = Number.parseFloat(text);
+        return Number.isFinite(n) ? n : 0;
+      };
+
+      const pickIndex = () => {
+        const idx = props.findIndex(
+          (p) => p === "opacity" || p === "all" || p === ""
+        );
+        return idx >= 0 ? idx : 0;
+      };
+
+      const i = pickIndex();
+      const durationMs = parseTimeMs(durations[i] ?? durations[0]);
+      const delayMs = parseTimeMs(delays[i] ?? delays[0]);
+
+      const total = Math.max(0, durationMs + delayMs);
+      if (total > 0) {
+        // Small buffer to avoid early unlock on slow devices.
+        this.transitionDuration = Math.round(total + 60);
+      }
+    } catch {}
+  }
+
+  setupIntersectionObserver() {
+    if (!this.container || typeof IntersectionObserver === "undefined") return;
+
+    if (this.intersectionObserver) {
+      try {
+        this.intersectionObserver.disconnect();
+      } catch {}
+      this.intersectionObserver = null;
+    }
+
+    try {
+      this.intersectionObserver = new IntersectionObserver(
+        (entries) => {
+          const entry = entries && entries[0];
+          const inView = Boolean(entry && entry.isIntersecting);
+          this.isInView = inView;
+
+          if (!this.autoPlayEnabled) return;
+
+          if (!inView) {
+            this.stopAutoPlay();
+            this.clearResumeTimer();
+            return;
+          }
+
+          if (!this.isHovered) {
+            this.scheduleAutoPlayResume(220);
+          }
+        },
+        { root: null, threshold: 0.15 }
+      );
+
+      this.intersectionObserver.observe(this.container);
+    } catch (error) {
+      carouselDebugWarn("IntersectionObserver setup failed:", error);
+      this.intersectionObserver = null;
+      this.isInView = true;
+    }
+  }
+
+  preloadImage(url) {
+    const src = normalizeCarouselAsset(url);
+    if (!src || this.preloadedImages.has(src)) return;
+    this.preloadedImages.add(src);
+
+    try {
+      const img = new Image();
+      img.decoding = "async";
+      img.src = src;
+      if (typeof img.decode === "function") {
+        img.decode().catch(() => {});
+      }
+    } catch {}
+  }
+
+  preloadNeighbors() {
+    if (!Array.isArray(this.slides) || this.slides.length <= 1) return;
+    const nextIndex = (this.currentIndex + 1) % this.slides.length;
+    const nextNextIndex = (this.currentIndex + 2) % this.slides.length;
+    this.preloadImage(this.slides[nextIndex]?.image);
+    if (this.slides.length > 2) {
+      this.preloadImage(this.slides[nextNextIndex]?.image);
     }
   }
 
@@ -177,6 +310,13 @@ class HeroCarousel {
 
     // Remove event listeners
     this.teardownEventListeners();
+
+    if (this.intersectionObserver) {
+      try {
+        this.intersectionObserver.disconnect();
+      } catch {}
+      this.intersectionObserver = null;
+    }
 
     // Clear references
     this.container = null;
@@ -384,8 +524,35 @@ class HeroCarousel {
     delete this.container.dataset.loading;
   }
 
-  setupCarousel() {
+  setupCarousel(options = {}) {
     if (this.slides.length === 0) return;
+
+    const preferredSlide = options?.preferredSlide || null;
+    const preferredId =
+      preferredSlide && preferredSlide.id !== undefined && preferredSlide.id !== null
+        ? String(preferredSlide.id)
+        : "";
+    const preferredImage = preferredSlide
+      ? normalizeCarouselAsset(preferredSlide.image)
+      : "";
+
+    let initialIndex = 0;
+    if (Number.isFinite(options?.preferredIndex)) {
+      const idx = Math.trunc(Number(options.preferredIndex));
+      if (idx >= 0 && idx < this.slides.length) initialIndex = idx;
+    } else if (preferredId) {
+      const idx = this.slides.findIndex((slide) => String(slide?.id) === preferredId);
+      if (idx >= 0) initialIndex = idx;
+    } else if (preferredImage) {
+      const idx = this.slides.findIndex(
+        (slide) => normalizeCarouselAsset(slide?.image) === preferredImage
+      );
+      if (idx >= 0) initialIndex = idx;
+    }
+
+    this.currentIndex = initialIndex;
+    this.isTransitioning = false;
+    this.queuedIndex = null;
 
     // Clear existing content
     this.track.innerHTML = "";
@@ -396,11 +563,12 @@ class HeroCarousel {
     this.slides.forEach((slide, index) => {
       // Create slide element
       const slideEl = document.createElement("div");
-      slideEl.className = `carousel-slide ${index === 0 ? "active" : ""}`;
+      const isActive = index === this.currentIndex;
+      slideEl.className = `carousel-slide ${isActive ? "active" : ""}`;
       slideEl.dataset.index = index;
 
-      // Use eager loading for first image, lazy for others
-      const loading = index === 0 ? "eager" : "lazy";
+      // Use eager loading for active image, lazy for others
+      const loading = isActive ? "eager" : "lazy";
 
       slideEl.innerHTML = `
         <img src="${slide.image}"
@@ -408,30 +576,34 @@ class HeroCarousel {
              class="slide-image"
              loading="${loading}"
              decoding="async"
-             fetchpriority="${index === 0 ? "high" : "auto"}"
+             fetchpriority="${isActive ? "high" : "auto"}"
              onerror="this.onerror=null; this.src='${CAROUSEL_FALLBACK_IMAGE}';">
       `;
+
+      if (isActive) {
+        slideEl.setAttribute("aria-current", "true");
+      }
 
       this.track.appendChild(slideEl);
 
       // Create dot
       const dot = document.createElement("button");
-      dot.className = `carousel-dot ${index === 0 ? "active" : ""}`;
+      dot.className = `carousel-dot ${isActive ? "active" : ""}`;
       dot.dataset.index = index;
       dot.setAttribute("aria-label", `Go to slide ${index + 1}`);
-      dot.setAttribute("aria-current", index === 0 ? "true" : "false");
+      dot.setAttribute("aria-current", isActive ? "true" : "false");
       this.dotsContainer.appendChild(dot);
     });
 
     // Create navigation arrows if we have more than 1 slide
     if (this.slides.length > 1) {
       this.navContainer.innerHTML = `
-        <button class="carousel-prev" aria-label="Previous slide">
+        <button class="carousel-prev" type="button" aria-label="Previous slide">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M15 18l-6-6 6-6"/>
           </svg>
         </button>
-        <button class="carousel-next" aria-label="Next slide">
+        <button class="carousel-next" type="button" aria-label="Next slide">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M9 18l6-6-6-6"/>
           </svg>
@@ -439,11 +611,12 @@ class HeroCarousel {
       `;
     }
 
-    // Sync hero content with the first slide
-    this.updateHeroContent(this.slides[0]);
+    // Sync hero content with the active slide
+    this.updateHeroContent(this.slides[this.currentIndex]);
+    this.preloadNeighbors();
   }
 
-  updateHeroContent(slide) {
+  updateHeroContent(slide, options = {}) {
     if (!this.heroContent.title && !this.heroContent.subtitle) return;
 
     const title = slide?.title || this.defaultHero.title;
@@ -463,6 +636,46 @@ class HeroCarousel {
         this.heroContent.cta.setAttribute("href", ctaLink);
       }
     }
+
+    if (options && options.animate) {
+      this.animateHeroContent();
+    }
+  }
+
+  animateHeroContent() {
+    try {
+      if (
+        typeof window !== "undefined" &&
+        window.matchMedia &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        return;
+      }
+    } catch {}
+
+    const targets = [
+      this.heroContent.title,
+      this.heroContent.subtitle,
+      this.heroContent.cta,
+    ].filter(Boolean);
+
+    targets.forEach((el, i) => {
+      try {
+        if (typeof el.animate !== "function") return;
+        el.animate(
+          [
+            { opacity: 0, transform: "translateY(8px)" },
+            { opacity: 1, transform: "translateY(0)" },
+          ],
+          {
+            duration: 460,
+            easing: "cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+            fill: "both",
+            delay: i * 55,
+          }
+        );
+      } catch {}
+    });
   }
 
   setupEventListeners() {
@@ -471,8 +684,13 @@ class HeroCarousel {
 
     // Dots navigation
     this.boundHandlers.dotsClick = (e) => {
-      const dot = e.target.closest(".carousel-dot");
-      if (!dot || this.isTransitioning) return;
+      const targetEl =
+        e.target instanceof Element ? e.target : e.target?.parentElement;
+      const dot =
+        targetEl && typeof targetEl.closest === "function"
+          ? targetEl.closest(".carousel-dot")
+          : null;
+      if (!dot) return;
 
       const index = parseInt(dot.dataset.index);
       if (!isNaN(index) && index !== this.currentIndex) {
@@ -486,11 +704,16 @@ class HeroCarousel {
     if (this.navContainer) {
       this.boundHandlers.navClick = (e) => {
         e.stopPropagation();
-
-        if (this.isTransitioning) return;
-
-        const prevBtn = e.target.closest(".carousel-prev");
-        const nextBtn = e.target.closest(".carousel-next");
+        const targetEl =
+          e.target instanceof Element ? e.target : e.target?.parentElement;
+        const prevBtn =
+          targetEl && typeof targetEl.closest === "function"
+            ? targetEl.closest(".carousel-prev")
+            : null;
+        const nextBtn =
+          targetEl && typeof targetEl.closest === "function"
+            ? targetEl.closest(".carousel-next")
+            : null;
 
         if (prevBtn) {
           this.prevSlide();
@@ -544,7 +767,6 @@ class HeroCarousel {
     this.boundHandlers.keydown = (e) => {
         if (
         !this.container ||
-        this.isTransitioning ||
         e.target.tagName === "INPUT" ||
         e.target.tagName === "TEXTAREA"
       )
@@ -561,6 +783,23 @@ class HeroCarousel {
       }
     };
     document.addEventListener("keydown", this.boundHandlers.keydown);
+
+    // Pause auto-play when tab is not visible (saves CPU + avoids slide jumps).
+    this.boundHandlers.visibilityChange = () => {
+      if (!this.autoPlayEnabled) return;
+      if (document.hidden) {
+        this.stopAutoPlay();
+        this.clearResumeTimer();
+        return;
+      }
+      if (!this.isHovered) {
+        this.scheduleAutoPlayResume(220);
+      }
+    };
+    document.addEventListener(
+      "visibilitychange",
+      this.boundHandlers.visibilityChange
+    );
   }
 
   teardownEventListeners() {
@@ -585,10 +824,16 @@ class HeroCarousel {
     if (this.boundHandlers.keydown) {
       document.removeEventListener("keydown", this.boundHandlers.keydown);
     }
+    if (this.boundHandlers.visibilityChange) {
+      document.removeEventListener(
+        "visibilitychange",
+        this.boundHandlers.visibilityChange
+      );
+    }
   }
 
   handleSwipe() {
-    if (this.slides.length <= 1 || this.isTransitioning) return;
+    if (this.slides.length <= 1) return;
 
     const swipeThreshold = 50;
     const diff = this.touchStartX - this.touchEndX;
@@ -603,26 +848,29 @@ class HeroCarousel {
   }
 
   goToSlide(index) {
-    // Prevent multiple transitions at once
-    if (
-      this.isTransitioning ||
-      index === this.currentIndex ||
-      index < 0 ||
-      index >= this.slides.length
-    )
+    const nextIndex = Number(index);
+    if (!Number.isFinite(nextIndex)) return;
+    if (nextIndex === this.currentIndex) return;
+    if (nextIndex < 0 || nextIndex >= this.slides.length) return;
+
+    if (this.isTransitioning) {
+      // Queue the latest request so nav always feels responsive.
+      this.queuedIndex = nextIndex;
       return;
+    }
 
     // Set transitioning state
     this.isTransitioning = true;
+    this.queuedIndex = null;
 
     // Get current and next elements
     const currentSlide = this.track.querySelector(".carousel-slide.active");
     const nextSlide = this.track.querySelector(
-      `.carousel-slide[data-index="${index}"]`
+      `.carousel-slide[data-index="${nextIndex}"]`
     );
     const currentDot = this.dotsContainer.querySelector(".carousel-dot.active");
     const nextDot = this.dotsContainer.querySelector(
-      `.carousel-dot[data-index="${index}"]`
+      `.carousel-dot[data-index="${nextIndex}"]`
     );
 
     // Update classes
@@ -638,21 +886,51 @@ class HeroCarousel {
     if (nextDot) nextDot.setAttribute("aria-current", "true");
 
     // Update current index
-    this.currentIndex = index;
+    this.currentIndex = nextIndex;
 
     // Sync hero content with current slide
-    this.updateHeroContent(this.slides[index]);
+    this.updateHeroContent(this.slides[nextIndex], { animate: true });
+    this.preloadNeighbors();
+
+    const finishTransition = () => {
+      if (this.transitionTimeout) {
+        clearTimeout(this.transitionTimeout);
+        this.transitionTimeout = null;
+      }
+      if (!this.isTransitioning) return;
+      this.isTransitioning = false;
+
+      if (
+        this.queuedIndex !== null &&
+        this.queuedIndex !== this.currentIndex
+      ) {
+        const queued = this.queuedIndex;
+        this.queuedIndex = null;
+        this.goToSlide(queued);
+      }
+    };
 
     // Clear any existing timeout
     if (this.transitionTimeout) {
       clearTimeout(this.transitionTimeout);
+      this.transitionTimeout = null;
     }
 
-    // Reset transitioning state after animation
-    this.transitionTimeout = setTimeout(() => {
-      this.isTransitioning = false;
-      this.transitionTimeout = null;
-    }, this.transitionDuration);
+    if (nextSlide) {
+      const onEnd = (event) => {
+        if (!event) return;
+        if (event.target !== nextSlide) return;
+        if (event.propertyName && event.propertyName !== "opacity") return;
+        finishTransition();
+      };
+      nextSlide.addEventListener("transitionend", onEnd, { once: true });
+    }
+
+    // Fallback in case transitionend doesn't fire.
+    this.transitionTimeout = setTimeout(
+      finishTransition,
+      Math.max(0, Number(this.transitionDuration) || 0)
+    );
   }
 
   nextSlide() {
@@ -670,7 +948,12 @@ class HeroCarousel {
 
   // Auto-play methods
   startAutoPlay() {
-    if (this.slides.length <= 1 || !this.autoPlayEnabled || this.isHovered)
+    if (
+      this.slides.length <= 1 ||
+      !this.autoPlayEnabled ||
+      this.isHovered ||
+      !this.isInView
+    )
       return;
 
     this.stopAutoPlay();
@@ -698,6 +981,7 @@ class HeroCarousel {
 
   scheduleAutoPlayResume(delay = this.resumeDelay) {
     if (!this.autoPlayEnabled) return;
+    if (!this.isInView) return;
     this.clearResumeTimer();
 
     this.resumeTimeout = setTimeout(() => {
@@ -725,6 +1009,10 @@ class HeroCarousel {
   // Refresh when admin updates data
   async refresh(forceRefresh = false, options = {}) {
     carouselDebugLog("Refreshing carousel...");
+    const previousSlide =
+      Array.isArray(this.slides) && this.slides.length > 0
+        ? this.slides[this.currentIndex]
+        : null;
     const previousSignature = this.createSlidesSignature();
     const loadResult = await this.loadCarouselData(forceRefresh, options);
     const nextSignature = this.createSlidesSignature();
@@ -738,9 +1026,11 @@ class HeroCarousel {
       return loadResult;
     }
 
-    this.setupCarousel();
+    this.setupCarousel({ preferredSlide: previousSlide });
+    this.syncTransitionDurationFromCss();
     await this.waitForFirstSlideReady();
     this.setupEventListeners();
+    this.setupIntersectionObserver();
 
     if (this.autoPlayEnabled) {
       this.startAutoPlay();

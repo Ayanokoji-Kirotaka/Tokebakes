@@ -28,19 +28,44 @@
           return legacyMap[cssFile] || cssFile;
         };
 
+        const lsGet = (key) => {
+          try {
+            return localStorage.getItem(key);
+          } catch {
+            return null;
+          }
+        };
+        const lsSet = (key, value) => {
+          try {
+            localStorage.setItem(key, value);
+          } catch {}
+        };
+
+        const savedModeRaw = lsGet("toke_bakes_theme_mode");
+        const systemMode =
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
         const savedMode =
-          localStorage.getItem("toke_bakes_theme_mode") || "light";
-        const savedThemeRaw =
-          localStorage.getItem("toke_bakes_css_theme") || "styles/style.css";
+          savedModeRaw === "dark" || savedModeRaw === "light"
+            ? savedModeRaw
+            : systemMode;
+
+        const savedThemeRaw = lsGet("toke_bakes_css_theme") || "styles/style.css";
         const savedTheme = fixLegacyThemePath(savedThemeRaw);
-        const themeVersion =
-          localStorage.getItem("toke_bakes_theme_last_update") || "";
+        const themeVersion = lsGet("toke_bakes_theme_last_update") || "";
 
         if (savedThemeRaw !== savedTheme) {
-          localStorage.setItem("toke_bakes_css_theme", savedTheme);
+          lsSet("toke_bakes_css_theme", savedTheme);
         }
 
         document.documentElement.setAttribute("data-theme", savedMode);
+        try {
+          document.documentElement.style.colorScheme = savedMode;
+          document.documentElement.style.backgroundColor =
+            savedMode === "dark" ? "#1a1a1a" : "#ffffff";
+        } catch {}
         let preloadStyle = document.getElementById("theme-preload-style");
         if (!preloadStyle) {
           preloadStyle = document.createElement("style");
@@ -98,9 +123,15 @@
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
     />
     <link rel="icon" href="images/favicon.webp" type="image/webp" />
-    <script src="scripts/config.js"></script>
-    <script src="scripts/update-sync.js"></script>
-    <script src="scripts/theme-manager.js"></script>
+    <link
+      rel="preload"
+      href="images/logo.webp"
+      as="image"
+      fetchpriority="high"
+    />
+    <script src="scripts/config.js" defer></script>
+    <script src="scripts/update-sync.js" defer></script>
+    <script src="scripts/theme-manager.js" defer></script>
   </head>
   <body>
     <!-- <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes" /></div> -->
@@ -1163,6 +1194,6 @@
     <!-- Hidden file input for import -->
     <input type="file" id="import-file" accept=".json" style="display: none" />
 
-    <script src="scripts/admin.js"></script>
+    <script src="scripts/admin.js" defer></script>
   </body>
 </html>

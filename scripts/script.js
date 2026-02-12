@@ -683,52 +683,42 @@ async function loadFromSupabase(endpoint, query = "", options = {}) {
     }
   }
 
-  try {
-    // Check if Supabase config is available
-    if (
-      !window.SUPABASE_CONFIG ||
-      !window.SUPABASE_CONFIG.URL ||
-      !window.SUPABASE_CONFIG.ANON_KEY
-    ) {
-      console.error("Supabase configuration not found in script.js");
-      return [];
-    }
-
-    const requestUrl = forceRefresh
-      ? `${SUPABASE_CONFIG.URL}${endpoint}${normalizedQuery}${
-          normalizedQuery.includes("?") ? "&" : "?"
-        }_=${now}`
-      : `${SUPABASE_CONFIG.URL}${endpoint}${normalizedQuery}`;
-
-    const response = await fetch(
-      requestUrl,
-      {
-        headers: {
-          apikey: SUPABASE_CONFIG.ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-          "Content-Type": "application/json",
-        },
-        cache: "no-store",
-      }
-    );
-
-    if (!response.ok) {
-      debugWarn(`Failed to load from ${endpoint}:`, response.status);
-      return [];
-    }
-
-    const data = await response.json();
-    const result = Array.isArray(data) ? data : [];
-
-    // Cache the result
-    dataCache.set(cacheKey, { data: result, timestamp: now });
-    debugLog(`Cached data for ${endpoint}`);
-
-    return result;
-  } catch (error) {
-    console.error(`Error loading from Supabase ${endpoint}:`, error);
-    return [];
+  // Check if Supabase config is available
+  if (
+    !window.SUPABASE_CONFIG ||
+    !window.SUPABASE_CONFIG.URL ||
+    !window.SUPABASE_CONFIG.ANON_KEY
+  ) {
+    throw new Error("Supabase configuration not found");
   }
+
+  const requestUrl = forceRefresh
+    ? `${SUPABASE_CONFIG.URL}${endpoint}${normalizedQuery}${
+        normalizedQuery.includes("?") ? "&" : "?"
+      }_=${now}`
+    : `${SUPABASE_CONFIG.URL}${endpoint}${normalizedQuery}`;
+
+  const response = await fetch(requestUrl, {
+    headers: {
+      apikey: SUPABASE_CONFIG.ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Supabase request failed (${response.status})`);
+  }
+
+  const data = await response.json();
+  const result = Array.isArray(data) ? data : [];
+
+  // Cache the result
+  dataCache.set(cacheKey, { data: result, timestamp: now });
+  debugLog(`Cached data for ${endpoint}`);
+
+  return result;
 }
 
 // Get menu items with caching
@@ -744,51 +734,47 @@ async function getMenuItems(forceRefresh = false) {
     return cachedMenuItems;
   }
 
-  const freshItems = normalizeMenuItems(
-    await loadFromSupabase(
-    API_ENDPOINTS.MENU,
-    buildMenuQuery(),
-    { forceRefresh }
-    )
-  );
+  try {
+    const freshItems = normalizeMenuItems(
+      await loadFromSupabase(API_ENDPOINTS.MENU, buildMenuQuery(), {
+        forceRefresh,
+      })
+    );
 
-  if (freshItems.length > 0) {
     cachedMenuItems = freshItems;
     cacheTimestamp = now;
     return cachedMenuItems;
-  }
+  } catch (error) {
+    debugWarn("Menu fetch failed; using cached data if available:", error);
 
-  // Fallback to localStorage cache if available
-  if (!forceRefresh) {
+    let fallbackItems = null;
+    let fallbackTs = null;
+
+    // LocalStorage fallback
     try {
       const cached = localStorage.getItem(MENU_CACHE_KEY);
       if (cached) {
         const parsed = JSON.parse(cached);
-        const normalizedCached = normalizeMenuItems(parsed?.data);
-        if (
-          normalizedCached.length > 0 &&
-          Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL
-        ) {
-          debugLog("Using localStorage cached menu items (fallback)");
-          cachedMenuItems = normalizedCached;
-          cacheTimestamp = parsed.timestamp || now;
-          return cachedMenuItems;
+        if (Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL) {
+          fallbackItems = normalizeMenuItems(parsed?.data);
+          fallbackTs = parsed.timestamp || now;
         }
       }
-    } catch (err) {
-      debugLog("Could not read menu cache (fallback)");
+    } catch {}
+
+    // In-memory fallback
+    if (fallbackItems === null && cachedMenuItems) {
+      fallbackItems = cachedMenuItems;
+      fallbackTs = cacheTimestamp || now;
     }
-  }
 
-  // Keep stale in-memory cache if fetch failed to avoid false "unavailable"
-  if (!forceRefresh && cachedMenuItems && cachedMenuItems.length > 0) {
-    debugLog("Using stale in-memory menu cache (fallback)");
-    return cachedMenuItems;
-  }
+    if (fallbackItems !== null) {
+      cachedMenuItems = fallbackItems;
+      cacheTimestamp = fallbackTs || now;
+    }
 
-  cachedMenuItems = freshItems;
-  cacheTimestamp = now;
-  return cachedMenuItems;
+    throw error;
+  }
 }
 
 // ================== LOAD FEATURED ITEMS - FIXED VERSION ==================
@@ -810,7 +796,8 @@ async function loadFeaturedItems(forceReload = false, silentRefresh = false) {
   const dataCacheKey = `${API_ENDPOINTS.FEATURED}_data`;
   let cachedData = null;
 
-  if (!forceReload) {
+  const allowCachedView = !forceReload || silentRefresh;
+  if (allowCachedView) {
     const cached = localStorage.getItem(dataCacheKey);
     try {
       if (cached) {
@@ -823,13 +810,24 @@ async function loadFeaturedItems(forceReload = false, silentRefresh = false) {
     } catch (e) {}
   }
 
-  if (cachedData) {
-    renderFeaturedItems(container, cachedData.filter(isFeaturedActive));
+  if (cachedData !== null) {
+    const cachedActive = cachedData.filter(isFeaturedActive);
+    if (cachedActive.length > 0) {
+      renderFeaturedItems(container, cachedActive);
+    } else {
+      container.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-star"></i>
+          <p>No featured items yet. Check back soon!</p>
+          <p class="small">Admin can add items in the admin panel</p>
+        </div>
+      `;
+    }
     setContainerLoading(container, false);
     if (!forceReload) return;
   }
 
-  const shouldShowLoading = !cachedData && !silentRefresh;
+  const shouldShowLoading = cachedData === null && !silentRefresh;
 
   // Only show loading if no cache
   if (shouldShowLoading) {
@@ -851,13 +849,16 @@ async function loadFeaturedItems(forceReload = false, silentRefresh = false) {
       { forceRefresh: forceReload }
       )
     );
-    let items = freshItems.filter(isFeaturedActive);
 
-    // If fresh load failed but we have cache, use cache
-    if ((!items || items.length === 0) && cachedData) {
-      items = cachedData.filter(isFeaturedActive);
-      debugLog("Using cached data (fresh fetch empty)");
-    }
+    // Cache successful response (even if empty) so stale content doesn't linger.
+    try {
+      localStorage.setItem(
+        dataCacheKey,
+        JSON.stringify({ data: freshItems, timestamp: Date.now() })
+      );
+    } catch (e) {}
+
+    const items = freshItems.filter(isFeaturedActive);
 
     if (!items || items.length === 0) {
       container.innerHTML = `
@@ -871,21 +872,23 @@ async function loadFeaturedItems(forceReload = false, silentRefresh = false) {
     }
 
     renderFeaturedItems(container, items);
-
-    // Cache successful response
-    try {
-      localStorage.setItem(
-        dataCacheKey,
-        JSON.stringify({ data: freshItems, timestamp: Date.now() })
-      );
-    } catch (e) {}
   } catch (error) {
     console.error("Error loading featured items:", error);
 
-    // If error but we have cached data, show it
-    if (cachedData && cachedData.length > 0) {
-      debugLog("Using cached data due to error");
-      renderFeaturedItems(container, cachedData.filter(isFeaturedActive));
+    // If error but we have cached data, keep showing it (including empty-state).
+    if (cachedData !== null) {
+      const cachedActive = cachedData.filter(isFeaturedActive);
+      if (cachedActive.length > 0) {
+        renderFeaturedItems(container, cachedActive);
+      } else {
+        container.innerHTML = `
+          <div class="empty-state">
+            <i class="fas fa-star"></i>
+            <p>No featured items yet. Check back soon!</p>
+            <p class="small">Admin can add items in the admin panel</p>
+          </div>
+        `;
+      }
     } else {
       container.innerHTML = `
         <div class="empty-state error">
@@ -921,7 +924,8 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
   let cachedData = null;
   const now = Date.now();
 
-  if (!forceReload) {
+  const allowCachedView = !forceReload || silentRefresh;
+  if (allowCachedView) {
     if (
       cachedMenuItems &&
       cacheTimestamp &&
@@ -947,13 +951,24 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
     }
   }
 
-  if (cachedData) {
-    renderMenuItems(container, cachedData.filter(isMenuItemAvailable));
+  if (cachedData !== null) {
+    const cachedAvailable = cachedData.filter(isMenuItemAvailable);
+    if (cachedAvailable.length > 0) {
+      renderMenuItems(container, cachedAvailable);
+    } else {
+      container.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-utensils"></i>
+          <p>Our menu is being prepared.</p>
+          <p class="small">Delicious items coming soon!</p>
+        </div>
+      `;
+    }
     setContainerLoading(container, false);
     if (!forceReload) return;
   }
 
-  const shouldShowLoading = !cachedData && !silentRefresh;
+  const shouldShowLoading = cachedData === null && !silentRefresh;
 
   // Only show loading if no cache
   if (shouldShowLoading) {
@@ -969,6 +984,19 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
   try {
     // Try to load fresh data
     const allItems = normalizeMenuItems(await getMenuItems(forceReload));
+
+    // Update cache (even if empty) so stale content doesn't linger.
+    cachedMenuItems = allItems;
+    cacheTimestamp = Date.now();
+    try {
+      localStorage.setItem(
+        MENU_CACHE_KEY,
+        JSON.stringify({ data: allItems, timestamp: Date.now() })
+      );
+    } catch {
+      debugLog("Could not write menu cache");
+    }
+
     const items = allItems.filter(isMenuItemAvailable);
 
     if (!items || items.length === 0) {
@@ -983,25 +1011,32 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
     }
 
     renderMenuItems(container, items);
-
-    // Update cache
-    cachedMenuItems = allItems;
-    cacheTimestamp = Date.now();
-    try {
-      localStorage.setItem(
-        MENU_CACHE_KEY,
-        JSON.stringify({ data: allItems, timestamp: Date.now() })
-      );
-    } catch (err) {
-      debugLog("Could not write menu cache");
-    }
   } catch (error) {
     console.error("Error loading menu items:", error);
 
-    // If error but we have cached data, show it
-    if (cachedData && cachedData.length > 0) {
-      debugLog("Using cached data due to error");
-      renderMenuItems(container, cachedData.filter(isMenuItemAvailable));
+    const fallback =
+      cachedData !== null
+        ? cachedData
+        : cachedMenuItems
+          ? cachedMenuItems
+          : null;
+
+    // If error but we have cached data, keep showing it (including empty-state).
+    if (fallback !== null) {
+      const fallbackAvailable = normalizeMenuItems(fallback).filter(
+        isMenuItemAvailable
+      );
+      if (fallbackAvailable.length > 0) {
+        renderMenuItems(container, fallbackAvailable);
+      } else {
+        container.innerHTML = `
+          <div class="empty-state">
+            <i class="fas fa-utensils"></i>
+            <p>Our menu is being prepared.</p>
+            <p class="small">Delicious items coming soon!</p>
+          </div>
+        `;
+      }
     } else {
       container.innerHTML = `
         <div class="empty-state error">
@@ -1037,7 +1072,8 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
   const dataCacheKey = `${API_ENDPOINTS.GALLERY}_data`;
   let cachedData = null;
 
-  if (!forceReload) {
+  const allowCachedView = !forceReload || silentRefresh;
+  if (allowCachedView) {
     try {
       const cached = localStorage.getItem(dataCacheKey);
       if (cached) {
@@ -1050,13 +1086,23 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
     } catch (e) {}
   }
 
-  if (cachedData) {
-    renderGalleryImages(container, cachedData);
+  if (cachedData !== null) {
+    if (cachedData.length > 0) {
+      renderGalleryImages(container, cachedData);
+    } else {
+      container.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-images"></i>
+          <p>Gallery coming soon!</p>
+          <p class="small">Beautiful creations will be here shortly</p>
+        </div>
+      `;
+    }
     setContainerLoading(container, false);
     if (!forceReload) return;
   }
 
-  const shouldShowLoading = !cachedData && !silentRefresh;
+  const shouldShowLoading = cachedData === null && !silentRefresh;
 
   // Only show loading if no cache
   if (shouldShowLoading) {
@@ -1071,7 +1117,7 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
 
   try {
     // Try to load fresh data
-    let items = normalizeGalleryItems(
+    const items = normalizeGalleryItems(
       await loadFromSupabase(
       API_ENDPOINTS.GALLERY,
       buildGalleryQuery(),
@@ -1079,11 +1125,13 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
       )
     );
 
-    // If fresh load failed but we have cache, use cache
-    if ((!items || items.length === 0) && cachedData) {
-      items = cachedData;
-      debugLog("Using cached data (fresh fetch empty)");
-    }
+    // Cache successful response (even if empty) so stale content doesn't linger.
+    try {
+      localStorage.setItem(
+        dataCacheKey,
+        JSON.stringify({ data: items, timestamp: Date.now() })
+      );
+    } catch (e) {}
 
     if (!items || items.length === 0) {
       container.innerHTML = `
@@ -1097,21 +1145,22 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
     }
 
     renderGalleryImages(container, items);
-
-    // Cache successful response
-    try {
-      localStorage.setItem(
-        dataCacheKey,
-        JSON.stringify({ data: items, timestamp: Date.now() })
-      );
-    } catch (e) {}
   } catch (error) {
     console.error("Error loading gallery images:", error);
 
-    // If error but we have cached data, show it
-    if (cachedData && cachedData.length > 0) {
-      debugLog("Using cached data due to error");
-      renderGalleryImages(container, cachedData);
+    // If error but we have cached data, keep showing it (including empty-state).
+    if (cachedData !== null) {
+      if (cachedData.length > 0) {
+        renderGalleryImages(container, cachedData);
+      } else {
+        container.innerHTML = `
+          <div class="empty-state">
+            <i class="fas fa-images"></i>
+            <p>Gallery coming soon!</p>
+            <p class="small">Beautiful creations will be here shortly</p>
+          </div>
+        `;
+      }
     } else {
       container.innerHTML = `
         <div class="empty-state error">

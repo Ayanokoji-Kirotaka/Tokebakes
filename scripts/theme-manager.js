@@ -16,6 +16,8 @@ const ThemeManager = {
   spaHooksBound: false,
   themeSyncUnsubscribe: null,
   themeLoadingTimer: null,
+  systemModeMedia: null,
+  systemModeHandler: null,
 
   /* ================== INITIALIZATION ================== */
   init() {
@@ -27,7 +29,17 @@ const ThemeManager = {
     const savedTheme = this.fixLegacyThemePath(
       this.normalizeAssetPath(savedThemeRaw) || "styles/style.css"
     );
-    const savedMode = localStorage.getItem("toke_bakes_theme_mode") || "light";
+    const savedModeRaw = localStorage.getItem("toke_bakes_theme_mode");
+    if (
+      savedModeRaw &&
+      savedModeRaw !== "light" &&
+      savedModeRaw !== "dark"
+    ) {
+      try {
+        localStorage.removeItem("toke_bakes_theme_mode");
+      } catch {}
+    }
+    const savedMode = this.resolveMode(savedModeRaw);
     if (savedThemeRaw !== savedTheme) {
       localStorage.setItem("toke_bakes_css_theme", savedTheme);
     }
@@ -41,6 +53,12 @@ const ThemeManager = {
 
     // Apply dark/light mode
     document.documentElement.setAttribute("data-theme", savedMode);
+    try {
+      document.documentElement.style.colorScheme = savedMode;
+    } catch {}
+
+    // Follow device theme when user hasn't explicitly chosen a mode.
+    this.bindSystemModeListener();
 
     // Apply saved theme WITHOUT modifying the path
     this.applyTheme(savedTheme, false, false, { logoFile: savedLogo });
@@ -136,6 +154,8 @@ const ThemeManager = {
   },
 
   async checkForThemeUpdates() {
+    if (document.hidden) return false;
+
     // Get the last theme update timestamp from localStorage
     const lastUpdate = Number(
       localStorage.getItem("toke_bakes_theme_last_update") || "0"
@@ -452,6 +472,68 @@ const ThemeManager = {
       .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
   },
 
+  getSystemMode() {
+    try {
+      if (
+        typeof window !== "undefined" &&
+        window.matchMedia &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches
+      ) {
+        return "dark";
+      }
+    } catch {}
+    return "light";
+  },
+
+  resolveMode(value) {
+    const mode = (value || "").toString().trim().toLowerCase();
+    if (mode === "dark" || mode === "light") {
+      return mode;
+    }
+    return this.getSystemMode();
+  },
+
+  bindSystemModeListener() {
+    if (this.systemModeMedia || this.systemModeHandler) return;
+    if (typeof window === "undefined" || !window.matchMedia) return;
+
+    let media = null;
+    try {
+      media = window.matchMedia("(prefers-color-scheme: dark)");
+    } catch {
+      media = null;
+    }
+    if (!media) return;
+
+    this.systemModeMedia = media;
+    this.systemModeHandler = () => {
+      let stored = null;
+      try {
+        stored = localStorage.getItem("toke_bakes_theme_mode");
+      } catch {}
+      if (stored === "dark" || stored === "light") {
+        return;
+      }
+
+      const next = media.matches ? "dark" : "light";
+      if (next === this.currentMode) return;
+
+      this.currentMode = next;
+      document.documentElement.setAttribute("data-theme", next);
+      try {
+        document.documentElement.style.colorScheme = next;
+      } catch {}
+      this.updateModeToggleUI();
+      this.updateFooterTheme(next);
+    };
+
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", this.systemModeHandler);
+    } else if (typeof media.addListener === "function") {
+      media.addListener(this.systemModeHandler);
+    }
+  },
+
   resolveLogoFile(cssFile, logoFile) {
     const cleanedLogo = this.normalizeAssetPath(logoFile);
     if (cleanedLogo) {
@@ -661,6 +743,9 @@ const ThemeManager = {
 
     // Apply the mode change
     document.documentElement.setAttribute("data-theme", newMode);
+    try {
+      document.documentElement.style.colorScheme = newMode;
+    } catch {}
     localStorage.setItem("toke_bakes_theme_mode", newMode);
 
     // Update UI elements

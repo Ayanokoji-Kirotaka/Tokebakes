@@ -22,11 +22,13 @@
       this.eventName = options.eventName || DEFAULT_EVENT;
       this.lastUpdateKey = options.lastUpdateKey || LEGACY_LAST_UPDATE_KEY;
       this.lastPayloadKey = options.lastPayloadKey || LAST_UPDATE_PAYLOAD_KEY;
-      this.sourceId =
-        options.sourceId ||
-        `tab_${Date.now().toString(36)}_${Math.random()
-          .toString(36)
-          .slice(2, 8)}`;
+      const defaultSourceId =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? `tab_${crypto.randomUUID()}`
+          : `tab_${Date.now().toString(36)}_${Math.random()
+              .toString(36)
+              .slice(2, 8)}`;
+      this.sourceId = options.sourceId || defaultSourceId;
       this.seenEvents = new Map();
       this.seenEventTtlMs = 2 * 60 * 1000;
       this.listeners = new Set();

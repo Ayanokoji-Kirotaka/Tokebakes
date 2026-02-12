@@ -195,7 +195,7 @@ function buildItemDetailsFromRecord(itemType, item) {
     price: item.price || null,
     created: item.created_at || null,
     type: itemType,
-    image: item.image || null,
+    image: resolveRecordImage(item) || null,
   };
 }
 
@@ -560,6 +560,29 @@ function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+
+function toSafeString(value, fallback = "") {
+  if (value === null || value === undefined) return fallback;
+  const text = String(value).trim();
+  return text || fallback;
+}
+
+function normalizeAssetPath(value) {
+  const raw = toSafeString(value);
+  if (!raw) return "";
+  return raw.replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
+}
+
+function resolveRecordImage(record) {
+  if (!record) return "";
+  return normalizeAssetPath(
+    record.image ||
+      record.image_url ||
+      record.imageUrl ||
+      record.src ||
+      record.url
+  );
 }
 
 /* ================== CUSTOM POPUP SYSTEM ================== */
@@ -1636,12 +1659,16 @@ async function secureRequest(
 
         if (Array.isArray(result)) {
           result.forEach((item) => {
-            if (item.image && item.id && tempImageCache.size < 50) {
-              tempImageCache.set(item.id, item.image);
+            const img = resolveRecordImage(item);
+            if (img && item.id && tempImageCache.size < 50) {
+              tempImageCache.set(item.id, img);
             }
           });
-        } else if (result.image && result.id && tempImageCache.size < 50) {
-          tempImageCache.set(result.id, result.image);
+        } else {
+          const img = resolveRecordImage(result);
+          if (img && result.id && tempImageCache.size < 50) {
+            tempImageCache.set(result.id, img);
+          }
         }
 
         return result;
@@ -2109,7 +2136,7 @@ async function renderFeaturedItems() {
       .map(
         (item) => `
       <div class="item-card" data-id="${item.id}">
-        <img src="${item.image}" alt="${item.title}" class="item-card-img" loading="lazy">
+        <img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="${item.title}" class="item-card-img" loading="lazy">
         <div class="item-card-content">
           <h3 class="item-card-title">${item.title}</h3>
           <p class="item-card-desc">${item.description}</p>
@@ -2240,7 +2267,7 @@ async function editFeaturedItem(id) {
     document.getElementById("featured-end-date").value = item.end_date || "";
 
     const preview = document.getElementById("featured-image-preview");
-    preview.innerHTML = `<img src="${item.image}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
+    preview.innerHTML = `<img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
 
     document.getElementById("featured-form-container").style.display = "block";
     isEditing = true;
@@ -2280,7 +2307,7 @@ async function renderMenuItems() {
       <div class="item-card" data-id="${item.id}" data-item="${escapeHtml(
           item.title
         )}" data-price="${item.price}">
-        <img src="${item.image}" alt="${
+        <img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="${
           item.title
         }" class="item-card-img" loading="lazy">
         <div class="item-card-content">
@@ -2451,7 +2478,7 @@ async function editMenuItem(id) {
         : "";
 
     const preview = document.getElementById("menu-image-preview");
-    preview.innerHTML = `<img src="${item.image}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
+    preview.innerHTML = `<img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
 
     document.getElementById("menu-form-container").style.display = "block";
     isEditing = true;
@@ -2489,7 +2516,7 @@ async function renderGalleryItems() {
       .map(
         (item) => `
       <div class="gallery-admin-item" data-id="${item.id}">
-        <img src="${item.image}" alt="${item.alt}" loading="lazy">
+        <img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="${item.alt}" loading="lazy">
         <div class="gallery-admin-overlay">
           <p><strong>Alt Text:</strong> ${item.alt}</p>
           <p><strong>Order:</strong> ${item.display_order ?? 0}</p>
@@ -2592,7 +2619,7 @@ async function editGalleryItem(id) {
       item.display_order ?? 0;
 
     const preview = document.getElementById("gallery-image-preview");
-    preview.innerHTML = `<img src="${item.image}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
+    preview.innerHTML = `<img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
 
     document.getElementById("gallery-form-container").style.display = "block";
     isEditing = true;
@@ -2644,7 +2671,7 @@ async function renderCarouselItems() {
           ${item.is_active ? "Active" : "Inactive"}
         </div>
         <div class="carousel-slide-number">${orderLabel}</div>
-        <img src="${item.image}" alt="${item.alt}" loading="lazy">
+        <img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="${item.alt}" loading="lazy">
         <div class="carousel-admin-overlay">
           <p><strong>Alt Text:</strong> ${item.alt}</p>
           <p><strong>Order:</strong> ${item.display_order || 0}</p>
@@ -2788,7 +2815,7 @@ async function editCarouselItem(id) {
       : "false";
 
     const preview = document.getElementById("carousel-image-preview");
-    preview.innerHTML = `<img src="${item.image}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
+    preview.innerHTML = `<img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
 
     document.getElementById("carousel-form-container").style.display = "block";
     isEditing = true;
@@ -2821,7 +2848,7 @@ async function updateStorageUsage() {
     allItems.forEach((item) => {
       if (Number.isFinite(item.file_size)) {
         totalBytes += Number(item.file_size);
-      } else if (item.image) {
+      } else if (resolveRecordImage(item)) {
         hasUnknown = true;
       }
     });

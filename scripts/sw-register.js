@@ -1,4 +1,7 @@
 (() => {
+  if (window.__tokeSwRegisterInitialized) return;
+  window.__tokeSwRegisterInitialized = true;
+
   if (!("serviceWorker" in navigator)) return;
 
   const isSecureContext =
