@@ -504,8 +504,19 @@ class SPAManager {
         freshNavList.classList.toggle("show");
       });
 
-      if (window.matchMedia && window.matchMedia("(max-width: 768px)").matches) {
+      const isMobileNow =
+        window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+      const pageName = window.location.pathname.split("/").pop() || "index.html";
+      const isHomePage =
+        pageName === "" ||
+        pageName === "/" ||
+        pageName === "index.html" ||
+        pageName === "index";
+
+      if (isMobileNow && isHomePage) {
         freshNavList.classList.add("show");
+      } else {
+        freshNavList.classList.remove("show");
       }
 
       if (this.mobileMenuOutsideClickHandler) {

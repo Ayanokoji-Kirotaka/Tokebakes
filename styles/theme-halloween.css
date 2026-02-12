@@ -1,1 +1,16 @@
-﻿
+/* theme-halloween.css - Minimal Theme */
+@import url("style.css");
+
+:root {
+  --primary: #ff7a00;
+  --secondary: #2b1b3a;
+  --text: #212529;
+  --background: #ffffff;
+}
+
+[data-theme="dark"] {
+  --primary: #ff9a3c;
+  --secondary: #3a2650;
+  --text: #f8f9fa;
+  --background: #121212;
+}

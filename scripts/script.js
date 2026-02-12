@@ -2677,11 +2677,42 @@ function ensureScrollTopButton() {
     btn.addEventListener("click", (e) => {
       e.preventDefault();
       const scrollingElement =
-        document.scrollingElement || document.documentElement;
-      if (scrollingElement && typeof scrollingElement.scrollTo === "function") {
-        scrollingElement.scrollTo({ top: 0, left: 0, behavior: "smooth" });
-      }
-      window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+        document.scrollingElement || document.documentElement || document.body;
+
+      const tryScrollToTop = (target) => {
+        if (!target) return false;
+        try {
+          if (typeof target.scrollTo === "function") {
+            target.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+            return true;
+          }
+        } catch {}
+
+        try {
+          // Fallback for older browsers that don't accept options objects.
+          if (typeof target.scrollTo === "function") {
+            target.scrollTo(0, 0);
+            return true;
+          }
+        } catch {}
+
+        try {
+          if ("scrollTop" in target) {
+            target.scrollTop = 0;
+            return true;
+          }
+        } catch {}
+
+        return false;
+      };
+
+      // Prefer element scrolling, but always fallback to window as well.
+      tryScrollToTop(scrollingElement);
+      tryScrollToTop(window);
+      try {
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      } catch {}
     });
     btn.dataset.bound = "true";
   }

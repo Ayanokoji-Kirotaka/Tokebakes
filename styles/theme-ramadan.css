@@ -1,4 +1,6 @@
 ﻿/* theme-ramadan.css - Minimal Theme */
+@import url("style.css");
+
 :root {
   --primary: #007bff;
   --secondary: #6c757d;
