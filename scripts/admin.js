@@ -585,6 +585,42 @@ function resolveRecordImage(record) {
   );
 }
 
+const ADMIN_IMAGE_PLACEHOLDERS = {
+  featured:
+    "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkZlYXR1cmVkPC90ZXh0Pjwvc3ZnPg==",
+  menu: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4=",
+  gallery:
+    "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+=",
+  carousel:
+    "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkNhcm91c2VsPC90ZXh0Pjwvc3ZnPg==",
+};
+
+function looksLikeImageSrc(value) {
+  const raw = toSafeString(value).toLowerCase();
+  if (!raw) return false;
+  if (raw.startsWith("data:image/")) return true;
+  if (raw.startsWith("blob:")) return true;
+  if (raw.startsWith("http://") || raw.startsWith("https://")) return true;
+  if (raw.startsWith("//")) return true;
+  if (raw.startsWith("/") || raw.startsWith("./") || raw.startsWith("../")) {
+    return true;
+  }
+  if (raw.startsWith("images/")) return true;
+  // Accept path-like values (e.g., storage paths) so we don't break older rows.
+  return raw.includes("/");
+}
+
+function resolveImageForDisplay(rawValue, placeholderDataUri) {
+  const normalized = normalizeAssetPath(rawValue);
+  if (!normalized) return placeholderDataUri;
+  const lower = normalized.toLowerCase();
+  if (lower.startsWith("placeholder-")) {
+    return placeholderDataUri;
+  }
+  if (!looksLikeImageSrc(normalized)) return placeholderDataUri;
+  return normalized;
+}
+
 /* ================== CUSTOM POPUP SYSTEM ================== */
 
 // Custom popup system to replace alert/confirm
@@ -2133,10 +2169,15 @@ async function renderFeaturedItems() {
     }
 
     container.innerHTML = items
-      .map(
-        (item) => `
+      .map((item) => {
+        const imgSrc = resolveImageForDisplay(
+          resolveRecordImage(item),
+          ADMIN_IMAGE_PLACEHOLDERS.featured
+        );
+        return `
       <div class="item-card" data-id="${item.id}">
-        <img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="${item.title}" class="item-card-img" loading="lazy">
+        <img src="${imgSrc}" alt="${item.title}" class="item-card-img" loading="lazy" decoding="async"
+             onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.featured}';">
         <div class="item-card-content">
           <h3 class="item-card-title">${item.title}</h3>
           <p class="item-card-desc">${item.description}</p>
@@ -2150,8 +2191,8 @@ async function renderFeaturedItems() {
           </div>
         </div>
       </div>
-    `
-      )
+    `;
+      })
       .join("");
     cacheItemsForType("featured", items);
   } catch (error) {
@@ -2267,7 +2308,8 @@ async function editFeaturedItem(id) {
     document.getElementById("featured-end-date").value = item.end_date || "";
 
     const preview = document.getElementById("featured-image-preview");
-    preview.innerHTML = `<img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
+    preview.innerHTML = `<img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.featured)}" alt="Current image" style="max-height: 150px; border-radius: 8px;" decoding="async"
+      onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.featured}';">`;
 
     document.getElementById("featured-form-container").style.display = "block";
     isEditing = true;
@@ -2302,14 +2344,19 @@ async function renderMenuItems() {
     }
 
     container.innerHTML = items
-      .map(
-        (item) => `
+      .map((item) => {
+        const imgSrc = resolveImageForDisplay(
+          resolveRecordImage(item),
+          ADMIN_IMAGE_PLACEHOLDERS.menu
+        );
+        return `
       <div class="item-card" data-id="${item.id}" data-item="${escapeHtml(
           item.title
         )}" data-price="${item.price}">
-        <img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="${
+        <img src="${imgSrc}" alt="${
           item.title
-        }" class="item-card-img" loading="lazy">
+        }" class="item-card-img" loading="lazy" decoding="async"
+             onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.menu}';">
         <div class="item-card-content">
           <h3 class="item-card-title">${item.title}</h3>
           <p class="item-card-desc">${item.description}</p>
@@ -2324,8 +2371,8 @@ async function renderMenuItems() {
           </div>
         </div>
       </div>
-    `
-      )
+    `;
+      })
       .join("");
     cacheItemsForType("menu", items);
   } catch (error) {
@@ -2478,7 +2525,8 @@ async function editMenuItem(id) {
         : "";
 
     const preview = document.getElementById("menu-image-preview");
-    preview.innerHTML = `<img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
+    preview.innerHTML = `<img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.menu)}" alt="Current image" style="max-height: 150px; border-radius: 8px;" decoding="async"
+      onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.menu}';">`;
 
     document.getElementById("menu-form-container").style.display = "block";
     isEditing = true;
@@ -2513,10 +2561,15 @@ async function renderGalleryItems() {
     }
 
     container.innerHTML = items
-      .map(
-        (item) => `
+      .map((item) => {
+        const imgSrc = resolveImageForDisplay(
+          resolveRecordImage(item),
+          ADMIN_IMAGE_PLACEHOLDERS.gallery
+        );
+        return `
       <div class="gallery-admin-item" data-id="${item.id}">
-        <img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="${item.alt}" loading="lazy">
+        <img src="${imgSrc}" alt="${item.alt}" loading="lazy" decoding="async"
+             onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.gallery}';">
         <div class="gallery-admin-overlay">
           <p><strong>Alt Text:</strong> ${item.alt}</p>
           <p><strong>Order:</strong> ${item.display_order ?? 0}</p>
@@ -2530,8 +2583,8 @@ async function renderGalleryItems() {
           </div>
         </div>
       </div>
-    `
-      )
+    `;
+      })
       .join("");
     cacheItemsForType("gallery", items);
   } catch (error) {
@@ -2619,7 +2672,8 @@ async function editGalleryItem(id) {
       item.display_order ?? 0;
 
     const preview = document.getElementById("gallery-image-preview");
-    preview.innerHTML = `<img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
+    preview.innerHTML = `<img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.gallery)}" alt="Current image" style="max-height: 150px; border-radius: 8px;" decoding="async"
+      onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.gallery}';">`;
 
     document.getElementById("gallery-form-container").style.display = "block";
     isEditing = true;
@@ -2671,7 +2725,8 @@ async function renderCarouselItems() {
           ${item.is_active ? "Active" : "Inactive"}
         </div>
         <div class="carousel-slide-number">${orderLabel}</div>
-        <img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="${item.alt}" loading="lazy">
+        <img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.carousel)}" alt="${item.alt}" loading="lazy" decoding="async"
+             onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.carousel}';">
         <div class="carousel-admin-overlay">
           <p><strong>Alt Text:</strong> ${item.alt}</p>
           <p><strong>Order:</strong> ${item.display_order || 0}</p>
@@ -2815,7 +2870,8 @@ async function editCarouselItem(id) {
       : "false";
 
     const preview = document.getElementById("carousel-image-preview");
-    preview.innerHTML = `<img src="${resolveRecordImage(item) || "images/logo.webp"}" alt="Current image" style="max-height: 150px; border-radius: 8px;">`;
+    preview.innerHTML = `<img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.carousel)}" alt="Current image" style="max-height: 150px; border-radius: 8px;" decoding="async"
+      onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.carousel}';">`;
 
     document.getElementById("carousel-form-container").style.display = "block";
     isEditing = true;

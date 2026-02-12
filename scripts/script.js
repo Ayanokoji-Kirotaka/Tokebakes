@@ -490,6 +490,39 @@ function normalizeAssetPath(value) {
   return raw.replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
 }
 
+const PUBLIC_IMAGE_PLACEHOLDERS = {
+  featured:
+    "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkZlYXR1cmVkPC90ZXh0Pjwvc3ZnPg==",
+  menu: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4=",
+  gallery:
+    "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+=",
+};
+
+function looksLikeImageSrc(value) {
+  const raw = toSafeString(value).toLowerCase();
+  if (!raw) return false;
+  if (raw.startsWith("data:image/")) return true;
+  if (raw.startsWith("blob:")) return true;
+  if (raw.startsWith("http://") || raw.startsWith("https://")) return true;
+  if (raw.startsWith("//")) return true;
+  if (raw.startsWith("/") || raw.startsWith("./") || raw.startsWith("../")) {
+    return true;
+  }
+  if (raw.startsWith("images/")) return true;
+  return raw.includes("/");
+}
+
+function resolveImageForDisplay(rawValue, placeholderDataUri) {
+  const normalized = normalizeAssetPath(rawValue);
+  if (!normalized) return placeholderDataUri;
+  const lower = normalized.toLowerCase();
+  if (lower.startsWith("placeholder-")) {
+    return placeholderDataUri;
+  }
+  if (!looksLikeImageSrc(normalized)) return placeholderDataUri;
+  return normalized;
+}
+
 function parseNumber(value, fallback = 0) {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
@@ -541,9 +574,10 @@ function normalizeFeaturedItem(rawItem = {}, index = 0) {
       rawItem.description || rawItem.subtitle || rawItem.summary,
       ""
     ),
-    image:
-      normalizeAssetPath(rawItem.image || rawItem.image_url || rawItem.src) ||
-      "images/logo.webp",
+    image: resolveImageForDisplay(
+      rawItem.image || rawItem.image_url || rawItem.src,
+      PUBLIC_IMAGE_PLACEHOLDERS.featured
+    ),
     display_order: parseNumber(rawItem.display_order, index),
     is_active: parseBoolean(rawItem.is_active ?? rawItem.active, true),
     start_date: normalizeDateOnly(rawItem.start_date || rawItem.startDate),
@@ -561,9 +595,10 @@ function normalizeMenuItem(rawItem = {}, index = 0) {
       ""
     ),
     price: parseNumber(rawItem.price ?? rawItem.amount ?? rawItem.cost, 0),
-    image:
-      normalizeAssetPath(rawItem.image || rawItem.image_url || rawItem.src) ||
-      "images/logo.webp",
+    image: resolveImageForDisplay(
+      rawItem.image || rawItem.image_url || rawItem.src,
+      PUBLIC_IMAGE_PLACEHOLDERS.menu
+    ),
     is_available: parseBoolean(
       rawItem.is_available ?? rawItem.available ?? rawItem.is_active,
       true
@@ -592,9 +627,10 @@ function normalizeGalleryItem(rawItem = {}, index = 0) {
   return {
     id: rawItem.id ?? `gallery-${index}`,
     alt: toSafeString(rawItem.alt || rawItem.title || rawItem.caption, "Gallery image"),
-    image:
-      normalizeAssetPath(rawItem.image || rawItem.image_url || rawItem.src) ||
-      "images/logo.webp",
+    image: resolveImageForDisplay(
+      rawItem.image || rawItem.image_url || rawItem.src,
+      PUBLIC_IMAGE_PLACEHOLDERS.gallery
+    ),
     width: Number.isFinite(width) && width > 0 ? Math.round(width) : null,
     height: Number.isFinite(height) && height > 0 ? Math.round(height) : null,
     display_order: parseNumber(rawItem.display_order, index),
