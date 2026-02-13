@@ -399,6 +399,11 @@ class WebsiteAutoUpdater {
         debugLog("Dynamic content reloaded");
       }
 
+      // Always re-check active theme after content refresh (cross-device)
+      if (window.ThemeManager && typeof window.ThemeManager.checkForThemeUpdates === "function") {
+        await window.ThemeManager.checkForThemeUpdates(true);
+      }
+
       if (window.heroCarousel) {
         if (typeof window.heroCarousel.refresh === "function") {
           await window.heroCarousel.refresh(true, { showLoading: false });

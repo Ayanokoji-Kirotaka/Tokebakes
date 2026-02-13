@@ -97,8 +97,8 @@ const ThemeManager = {
 
   /* ================== NEW: THEME AUTO-UPDATE SYSTEM ================== */
   setupThemeAutoUpdate() {
-    // Check for theme updates every 30 seconds
-    setInterval(() => this.checkForThemeUpdates(), 30000);
+    // Check for theme updates every 8 seconds (faster cross-device sync)
+    setInterval(() => this.checkForThemeUpdates(), 8000);
 
     // Also check when page becomes visible
     document.addEventListener("visibilitychange", () => {
@@ -120,14 +120,27 @@ const ThemeManager = {
       }
 
       this.themeSyncUnsubscribe = window.TokeUpdateSync.subscribe((payload) => {
-        if (payload?.type !== "THEME_CHANGED") return;
-        if (payload.sourceId === window.TokeUpdateSync.sourceId) return;
-        themeDebugLog("?? Theme update received via shared sync bus");
-        this.applyTheme(payload.themeFile, false, false, {
-          logoFile: payload.logoFile || null,
-          persist: true,
-          timestampOverride: payload.timestamp,
-        });
+        // Direct theme change broadcast
+        if (payload?.type === "THEME_CHANGED") {
+          if (payload.sourceId === window.TokeUpdateSync.sourceId) return;
+          themeDebugLog("?? Theme update received via shared sync bus");
+          this.applyTheme(payload.themeFile, false, false, {
+            logoFile: payload.logoFile || null,
+            persist: true,
+            timestampOverride: payload.timestamp,
+          });
+          return;
+        }
+
+        // Fallback: react to generic data-updated events for theme
+        if (payload?.type === "DATA_UPDATED" && payload?.itemType === "theme") {
+          const ts = Number(payload.timestamp) || Date.now();
+          themeDebugLog("?? Theme data update received", payload);
+          // Force a DB + local re-check so other devices update immediately
+          localStorage.setItem("toke_bakes_theme_last_update", String(ts));
+          localStorage.setItem("my_theme_check", "0");
+          this.checkForThemeUpdates(true);
+        }
       });
     } else if (typeof BroadcastChannel !== "undefined") {
       // Legacy BroadcastChannel fallback
@@ -153,8 +166,8 @@ const ThemeManager = {
     this.checkForThemeUpdates();
   },
 
-  async checkForThemeUpdates() {
-    if (document.hidden) return false;
+  async checkForThemeUpdates(force = false) {
+    if (!force && document.hidden) return false;
 
     // Get the last theme update timestamp from localStorage
     const lastUpdate = Number(
@@ -190,7 +203,7 @@ const ThemeManager = {
     }
 
     // Fallback: check database for active theme (cross-device changes)
-    const dbTheme = await this.fetchActiveThemeFromDatabase();
+    const dbTheme = await this.fetchActiveThemeFromDatabase(force);
     const dbCandidate = this.buildThemeCandidateFromRecord(dbTheme);
     if (dbCandidate && this.shouldApplyDbCandidate(dbCandidate)) {
       this.applyTheme(dbCandidate.cssFile, false, false, {
@@ -673,6 +686,7 @@ const ThemeManager = {
       css_file: cssFile,
       logo_file: logoFile || this.getLogoForTheme(cssFile),
       is_active: true,
+      updated_at: new Date().toISOString(),
     };
 
     const upsertUrl = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes`;
@@ -701,11 +715,12 @@ const ThemeManager = {
     this.lastDbCheck = now;
 
     try {
-      const url = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?is_active=eq.true&select=css_file,logo_file,theme_name,updated_at&order=updated_at.desc&limit=1`;
+      const url = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?is_active=eq.true&select=css_file,logo_file,theme_name,updated_at&order=updated_at.desc&limit=1${force ? `&_=${Date.now()}` : ""}`;
       const response = await fetch(url, {
         headers: {
           apikey: SUPABASE_CONFIG.ANON_KEY,
           Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+          Cache: "no-store",
         },
       });
 
