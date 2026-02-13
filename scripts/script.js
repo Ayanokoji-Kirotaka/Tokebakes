@@ -561,11 +561,11 @@ const debugWarn = (...args) => {
 // Cache for menu items to reduce API calls
 let cachedMenuItems = null;
 let cacheTimestamp = null;
-const CACHE_DURATION = 60 * 1000; // 1 minute
+const CACHE_DURATION = 0; // disable cache for cross-device freshness
 
 // General cache for all data
 const dataCache = new Map();
-const CACHE_DURATION_GENERAL = 60 * 1000; // 1 minute
+const CACHE_DURATION_GENERAL = 0; // disable general cache
 const MENU_CACHE_KEY = "toke_bakes_menu_cache_v2";
 const CONTENT_CONTAINER_IDS = [
   "featured-container",
@@ -810,7 +810,7 @@ async function loadFromSupabase(endpoint, query = "", options = {}) {
   const forceRefresh = Boolean(options.forceRefresh);
 
   // Check cache
-  if (!forceRefresh && dataCache.has(cacheKey)) {
+  if (!forceRefresh && dataCache.has(cacheKey) && CACHE_DURATION_GENERAL > 0) {
     const { data, timestamp } = dataCache.get(cacheKey);
     if (now - timestamp < CACHE_DURATION_GENERAL) {
       debugLog(`Using cached data for ${endpoint}`);
@@ -854,8 +854,10 @@ async function loadFromSupabase(endpoint, query = "", options = {}) {
   const result = Array.isArray(data) ? data : [];
 
   // Cache the result
-  dataCache.set(cacheKey, { data: result, timestamp: now });
-  debugLog(`Cached data for ${endpoint}`);
+  if (CACHE_DURATION_GENERAL > 0) {
+    dataCache.set(cacheKey, { data: result, timestamp: now });
+    debugLog(`Cached data for ${endpoint}`);
+  }
 
   return result;
 }
@@ -868,6 +870,7 @@ async function getMenuItems(forceRefresh = false) {
     !forceRefresh &&
     cachedMenuItems &&
     cacheTimestamp &&
+    CACHE_DURATION > 0 &&
     now - cacheTimestamp < CACHE_DURATION
   ) {
     return cachedMenuItems;
