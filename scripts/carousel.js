@@ -1,7 +1,7 @@
 ﻿/* ================== carousel.js - SPA-ENHANCED VERSION ================== */
 
 const CAROUSEL_DEBUG = false;
-const CAROUSEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const CAROUSEL_CACHE_TTL_MS = 60 * 1000; // 1 minute
 const CAROUSEL_READY_TIMEOUT_MS = 450;
 const CAROUSEL_CACHE_VERSION = 2;
 const CAROUSEL_CACHE_VERSION_KEY = "hero_carousel_cache_version";

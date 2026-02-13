@@ -60,8 +60,8 @@ class WebsiteAutoUpdater {
 
     this.setupRealtimeSync();
 
-    // 2. Check for updates every 25 seconds
-    this.startPolling(25000); // 25 seconds
+    // 2. Check for updates every 10 seconds (faster cross-device propagation)
+    this.startPolling(10000); // 10 seconds
 
     // 3. Check when user returns to tab
     document.addEventListener("visibilitychange", () => {
@@ -561,11 +561,11 @@ const debugWarn = (...args) => {
 // Cache for menu items to reduce API calls
 let cachedMenuItems = null;
 let cacheTimestamp = null;
-const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+const CACHE_DURATION = 60 * 1000; // 1 minute
 
 // General cache for all data
 const dataCache = new Map();
-const CACHE_DURATION_GENERAL = 24 * 60 * 60 * 1000; // 24 hours
+const CACHE_DURATION_GENERAL = 60 * 1000; // 1 minute
 const MENU_CACHE_KEY = "toke_bakes_menu_cache_v2";
 const CONTENT_CONTAINER_IDS = [
   "featured-container",
@@ -840,6 +840,8 @@ async function loadFromSupabase(endpoint, query = "", options = {}) {
       apikey: SUPABASE_CONFIG.ANON_KEY,
       Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
       "Content-Type": "application/json",
+      Pragma: "no-cache",
+      "Cache-Control": "no-store",
     },
     cache: "no-store",
   });
