@@ -447,6 +447,12 @@ const ThemeManager = {
             card.dataset.themeLogo || this.getLogoForTheme(themeFile);
           themeDebugLog("Admin theme activation:", themeFile);
           this.applyTheme(themeFile, true, true, { logoFile });
+
+          // Persist change to database so ALL visitors/devices pick it up
+          // even if they are on a different browser/session.
+          Promise.resolve(
+            this.persistThemeToDatabase(themeFile, logoFile)
+          ).catch((err) => themeDebugWarn("Theme persist failed:", err));
         }
       }
     });
@@ -588,6 +594,33 @@ const ThemeManager = {
   async getAdminAccessToken() {
     if (window.AdminSession && window.AdminSession.getAccessToken) {
       return window.AdminSession.getAccessToken();
+    }
+
+    // Fallback: read Supabase auth session from localStorage (mobile browsers)
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.includes("supabase") && key.endsWith("auth-token")) {
+          const raw = localStorage.getItem(key);
+          const parsed = raw ? JSON.parse(raw) : null;
+          const accessToken =
+            parsed?.currentSession?.access_token ||
+            parsed?.access_token ||
+            parsed?.currentSession?.accessToken;
+          if (accessToken) return accessToken;
+        }
+        if (key && key.startsWith("sb-") && key.endsWith("-auth-token")) {
+          const raw = localStorage.getItem(key);
+          const parsed = raw ? JSON.parse(raw) : null;
+          const accessToken =
+            parsed?.currentSession?.access_token ||
+            parsed?.access_token ||
+            parsed?.currentSession?.accessToken;
+          if (accessToken) return accessToken;
+        }
+      }
+    } catch (error) {
+      themeDebugWarn("Supabase localStorage token lookup failed:", error);
     }
 
     try {

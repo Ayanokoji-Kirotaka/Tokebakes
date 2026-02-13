@@ -390,6 +390,10 @@ class WebsiteAutoUpdater {
     try {
       debugLog("Refreshing website data...");
 
+      if (typeof clearContentCaches === "function") {
+        clearContentCaches();
+      }
+
       if (typeof loadDynamicContent === "function") {
         await loadDynamicContent(true, true);
         debugLog("Dynamic content reloaded");

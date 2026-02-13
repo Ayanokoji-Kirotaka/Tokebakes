@@ -87,8 +87,8 @@ html[data-loader-seen="1"] #loader {
   width: 120px;
   height: 120px;
   border-radius: 50%;
-  animation: enhancedPulse 2s ease-in-out infinite;
-  box-shadow: 0 0 30px rgba(230, 122, 0, 0.2);
+  animation: enhancedPulse 1.6s ease-in-out infinite;
+  box-shadow: 0 0 32px rgba(230, 122, 0, 0.32);
 }
 
 #loader.fade-out {
@@ -104,13 +104,13 @@ html[data-loader-seen="1"] #loader {
   0%,
   100% {
     transform: scale(1) rotate(0deg);
-    opacity: 1;
-    box-shadow: 0 0 20px rgba(230, 122, 0, 0.2);
+    opacity: 0.92;
+    box-shadow: 0 0 28px rgba(230, 122, 0, 0.35);
   }
   50% {
-    transform: scale(1.1) rotate(5deg);
-    opacity: 0.8;
-    box-shadow: 0 0 40px rgba(230, 122, 0, 0.4);
+    transform: scale(1.16) rotate(4deg);
+    opacity: 1;
+    box-shadow: 0 0 50px rgba(230, 122, 0, 0.55);
   }
 }
 

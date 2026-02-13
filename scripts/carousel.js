@@ -481,9 +481,6 @@ class HeroCarousel {
           "order",
           simpleOrder ? "display_order.asc" : "display_order.asc,created_at.desc"
         );
-        if (forceRefresh) {
-          url.searchParams.set("_", Date.now().toString());
-        }
         return url.toString();
       };
 
