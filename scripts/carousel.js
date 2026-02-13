@@ -473,24 +473,52 @@ class HeroCarousel {
         return { fromCache: false, isFresh: false, error: true };
       }
 
-      const requestUrl = `${SUPABASE_CONFIG.URL}${API_ENDPOINTS.CAROUSEL}?order=display_order.asc,created_at.desc&select=*${
-        forceRefresh ? `&_=${Date.now()}` : ""
-      }`;
+      const buildUrl = (simpleOrder = false) => {
+        const url = new URL(`${SUPABASE_CONFIG.URL}${API_ENDPOINTS.CAROUSEL}`);
+        url.searchParams.set("select", "*");
+        // Prefer explicit order; fall back to simple order if requested
+        url.searchParams.set(
+          "order",
+          simpleOrder ? "display_order.asc" : "display_order.asc,created_at.desc"
+        );
+        if (forceRefresh) {
+          url.searchParams.set("_", Date.now().toString());
+        }
+        return url.toString();
+      };
 
-      const response = await fetch(requestUrl, {
+      const doFetch = async (simpleOrder = false) => {
+        const requestUrl = buildUrl(simpleOrder);
+        const response = await fetch(requestUrl, {
           cache: forceRefresh ? "no-store" : "default",
           headers: {
             apikey: SUPABASE_CONFIG.ANON_KEY,
             Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
             "Content-Type": "application/json",
+            Accept: "application/json",
           },
         });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
+        if (!response.ok) {
+          const errText = await response.text().catch(() => "");
+          const err = new Error(
+            `HTTP ${response.status}${errText ? `: ${errText}` : ""}`
+          );
+          err.status = response.status;
+          throw err;
+        }
 
-      const data = await response.json();
+        return response.json();
+      };
+
+      let data;
+      try {
+        data = await doFetch(false);
+      } catch (primaryError) {
+        // Retry once with simpler order clause if the first request fails (e.g., Supabase parsing)
+        carouselDebugWarn("Primary carousel fetch failed, retrying simple order:", primaryError);
+        data = await doFetch(true);
+      }
       const slides = Array.isArray(data)
         ? data
             .filter(
