@@ -26,6 +26,7 @@ class WebsiteAutoUpdater {
     this.lastUpdateKey = "toke_bakes_last_update";
     this.lastPayloadKey = "toke_bakes_last_update_payload";
     this.dbLastUpdateKey = "toke_bakes_db_last_updated";
+    this.myLastCheckKey = "toke_bakes_last_check";
     this.dbCheckInterval = 60000;
     this.lastDbCheck = 0;
     this.broadcastChannel = null;
@@ -36,15 +37,26 @@ class WebsiteAutoUpdater {
     this.pollingInterval = null;
     this.isRefreshing = false;
     this.pendingRefresh = false;
+    this.pendingTriggerTs = 0;
     this.lastRefreshAt = 0;
     this.minRefreshGapMs = 1200;
     this.syncIndicatorTimer = null;
     this.refreshWatchdogTimer = null;
+    this.lastRenderedUpdateTs =
+      Number(localStorage.getItem(this.dbLastUpdateKey)) ||
+      Number(localStorage.getItem(this.lastUpdateKey)) ||
+      0;
     this.init();
   }
 
-  init() {
+  async init() {
     debugLog("Initializing Enhanced WebsiteAutoUpdater...");
+
+    try {
+      await this.primeBaselineTimestamp();
+    } catch (error) {
+      debugWarn("Baseline timestamp prime failed:", error);
+    }
 
     this.setupRealtimeSync();
 
@@ -168,16 +180,72 @@ class WebsiteAutoUpdater {
     }
   }
 
+  setMyLastCheck(value) {
+    const ts = Number(value) || 0;
+    try {
+      localStorage.setItem(this.myLastCheckKey, String(ts));
+    } catch {}
+  }
+
+  getMyLastCheck() {
+    return Number(localStorage.getItem(this.myLastCheckKey) || "0");
+  }
+
+  async fetchSiteLastUpdated() {
+    if (!window.SUPABASE_CONFIG?.URL || !window.SUPABASE_CONFIG?.ANON_KEY) {
+      return 0;
+    }
+
+    try {
+      const response = await fetch(
+        `${SUPABASE_CONFIG.URL}/rest/v1/rpc/site_last_updated`,
+        {
+          method: "POST",
+          headers: {
+            apikey: SUPABASE_CONFIG.ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        return 0;
+      }
+
+      const data = await response.json();
+      const value = Array.isArray(data) ? data[0] : data;
+      const parsed = Date.parse(value);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    } catch (error) {
+      debugWarn("Baseline update fetch failed:", error);
+      return 0;
+    }
+  }
+
+  async primeBaselineTimestamp() {
+    const baseline = await this.fetchSiteLastUpdated();
+    if (!baseline) return;
+
+    this.lastRenderedUpdateTs = baseline;
+    this.setMyLastCheck(baseline);
+    try {
+      localStorage.setItem(this.dbLastUpdateKey, String(baseline));
+    } catch {}
+    try {
+      localStorage.setItem(this.lastUpdateKey, String(baseline));
+    } catch {}
+  }
+
   handleExternalUpdate(payload = {}) {
     const tsNumber = Number(payload.timestamp) || Date.now();
-    const myLastCheck = Number(localStorage.getItem("my_last_check") || "0");
+    const myLastCheck = this.getMyLastCheck();
     if (tsNumber <= myLastCheck) {
       return;
     }
 
-    const ts = String(tsNumber);
-    localStorage.setItem("my_last_check", ts);
-    this.refreshDataWithUI();
+    this.setMyLastCheck(tsNumber);
+    this.refreshDataWithUI(tsNumber, true);
   }
 
   startPolling(interval = 25000) {
@@ -208,12 +276,12 @@ class WebsiteAutoUpdater {
 
   async checkForUpdates() {
     const lastUpdate = this.getLatestUpdateTimestamp();
-    const myLastCheck = Number(localStorage.getItem("my_last_check") || "0");
+    const myLastCheck = this.getMyLastCheck();
 
     if (lastUpdate && lastUpdate > myLastCheck) {
       debugLog("Update detected via localStorage/timestamp");
-      localStorage.setItem("my_last_check", String(lastUpdate));
-      await this.refreshDataWithUI();
+      this.setMyLastCheck(lastUpdate);
+      await this.refreshDataWithUI(lastUpdate, true);
       return true;
     }
 
@@ -262,7 +330,8 @@ class WebsiteAutoUpdater {
 
       if (parsed > lastKnown) {
         localStorage.setItem(this.dbLastUpdateKey, parsed.toString());
-        await this.refreshDataWithUI();
+        this.setMyLastCheck(parsed);
+        await this.refreshDataWithUI(parsed, true);
         return true;
       }
     } catch (error) {
@@ -272,10 +341,12 @@ class WebsiteAutoUpdater {
     return false;
   }
 
-  async refreshDataWithUI() {
+  async refreshDataWithUI(triggerTs = 0, announce = true) {
     const now = Date.now();
+    const updateTs = Number(triggerTs) || 0;
     if (this.isRefreshing) {
       this.pendingRefresh = true;
+      this.pendingTriggerTs = Math.max(this.pendingTriggerTs || 0, updateTs);
       return;
     }
 
@@ -283,41 +354,47 @@ class WebsiteAutoUpdater {
     if (sinceLast < this.minRefreshGapMs) {
       if (!this.pendingRefresh) {
         this.pendingRefresh = true;
+        this.pendingTriggerTs = Math.max(this.pendingTriggerTs || 0, updateTs);
         setTimeout(() => {
           if (!this.pendingRefresh) return;
           this.pendingRefresh = false;
-          this.refreshDataWithUI();
+          const pendingTs = this.pendingTriggerTs || 0;
+          this.pendingTriggerTs = 0;
+          this.refreshDataWithUI(pendingTs, announce);
         }, this.minRefreshGapMs - sinceLast);
       }
       return;
     }
 
+    const shouldSignal =
+      announce && updateTs && updateTs > this.lastRenderedUpdateTs;
+
     this.isRefreshing = true;
     this.lastRefreshAt = now;
 
-    // Show syncing indicator
-    this.showSyncIndicator("syncing");
-    this.clearSyncTimers();
-    this.refreshWatchdogTimer = setTimeout(() => {
-      if (!this.isRefreshing) return;
-      this.isRefreshing = false;
-      this.pendingRefresh = false;
-      this.showSyncIndicator("error");
-      this.syncIndicatorTimer = setTimeout(() => this.hideSyncIndicator(), 3000);
-    }, 20000);
+    if (shouldSignal) {
+      this.showSyncIndicator("syncing");
+      this.clearSyncTimers();
+      this.refreshWatchdogTimer = setTimeout(() => {
+        if (!this.isRefreshing) return;
+        this.isRefreshing = false;
+        this.pendingRefresh = false;
+        this.showSyncIndicator("error");
+        this.syncIndicatorTimer = setTimeout(
+          () => this.hideSyncIndicator(),
+          3000
+        );
+      }, 20000);
+    }
 
     try {
       debugLog("Refreshing website data...");
 
-      // Keep cached content for smooth refresh
-
-      // Reload content based on current page
       if (typeof loadDynamicContent === "function") {
         await loadDynamicContent(true, true);
         debugLog("Dynamic content reloaded");
       }
 
-      // Reload carousel if present (homepage)
       if (window.heroCarousel) {
         if (typeof window.heroCarousel.refresh === "function") {
           await window.heroCarousel.refresh(true, { showLoading: false });
@@ -331,7 +408,6 @@ class WebsiteAutoUpdater {
         window.initializeCarousel();
       }
 
-      // Also refresh cart if on order page
       if (
         window.location.pathname.includes("order") &&
         typeof renderCartOnOrderPage === "function"
@@ -340,21 +416,27 @@ class WebsiteAutoUpdater {
         debugLog("Cart refreshed");
       }
 
-      // Show success indicator
-      this.showSyncIndicator("updated");
-
-      // Show notification
-      this.showUpdateNotification();
-
-      // Hide indicator after 2 seconds
-      this.syncIndicatorTimer = setTimeout(() => this.hideSyncIndicator(), 2000);
+      if (shouldSignal) {
+        this.showSyncIndicator("updated");
+        this.showUpdateNotification();
+        this.syncIndicatorTimer = setTimeout(
+          () => this.hideSyncIndicator(),
+          2000
+        );
+      } else {
+        this.hideSyncIndicator();
+      }
     } catch (error) {
       console.error("Sync refresh failed:", error);
       this.hideSyncIndicator();
 
-      // Show error state briefly
-      this.showSyncIndicator("error");
-      this.syncIndicatorTimer = setTimeout(() => this.hideSyncIndicator(), 3000);
+      if (shouldSignal) {
+        this.showSyncIndicator("error");
+        this.syncIndicatorTimer = setTimeout(
+          () => this.hideSyncIndicator(),
+          3000
+        );
+      }
     } finally {
       this.isRefreshing = false;
       if (this.refreshWatchdogTimer) {
@@ -362,9 +444,17 @@ class WebsiteAutoUpdater {
         this.refreshWatchdogTimer = null;
       }
 
+      this.lastRenderedUpdateTs = Math.max(
+        this.lastRenderedUpdateTs,
+        updateTs || now
+      );
+      this.setMyLastCheck(this.lastRenderedUpdateTs);
+
       if (this.pendingRefresh) {
         this.pendingRefresh = false;
-        queueMicrotask(() => this.refreshDataWithUI());
+        const pendingTs = this.pendingTriggerTs || 0;
+        this.pendingTriggerTs = 0;
+        queueMicrotask(() => this.refreshDataWithUI(pendingTs, announce));
       }
     }
   }
@@ -467,12 +557,14 @@ const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 // General cache for all data
 const dataCache = new Map();
 const CACHE_DURATION_GENERAL = 24 * 60 * 60 * 1000; // 24 hours
-const MENU_CACHE_KEY = "toke_bakes_menu_cache_v1";
+const MENU_CACHE_KEY = "toke_bakes_menu_cache_v2";
 const CONTENT_CONTAINER_IDS = [
   "featured-container",
   "menu-container",
   "gallery-container",
 ];
+const CONTENT_CACHE_VERSION_KEY = "toke_bakes_content_cache_version";
+const CONTENT_CACHE_VERSION = "2";
 
 function toArray(value) {
   return Array.isArray(value) ? value : [];
@@ -1355,6 +1447,16 @@ function clearContentCaches() {
   } catch (e) {}
 }
 
+function ensureContentCacheVersion() {
+  try {
+    const stored = localStorage.getItem(CONTENT_CACHE_VERSION_KEY);
+    if (stored !== CONTENT_CACHE_VERSION) {
+      clearContentCaches();
+      localStorage.setItem(CONTENT_CACHE_VERSION_KEY, CONTENT_CACHE_VERSION);
+    }
+  } catch {}
+}
+
 function showConfigError() {
   CONTENT_CONTAINER_IDS.forEach((containerId) => {
     const container = document.getElementById(containerId);
@@ -1776,11 +1878,15 @@ if (!document.querySelector("#notification-styles")) {
     if (markSeen) {
       markLoaderAsSeen();
     }
+    loader.classList.add("fade-out");
     loader.style.opacity = "0";
     loader.style.pointerEvents = "none";
-    setTimeout(() => {
+    const finish = () => {
       loader.style.display = "none";
-    }, 260);
+      loader.classList.remove("fade-out");
+    };
+    loader.addEventListener("transitionend", finish, { once: true });
+    setTimeout(finish, 360);
   };
 
   const showLoader = () => {
@@ -1805,10 +1911,11 @@ if (!document.querySelector("#notification-styles")) {
     loader.style.display = "flex";
     loader.style.opacity = "1";
     loader.style.pointerEvents = "auto";
+    loader.classList.remove("fade-out");
     loader.style.transitionDuration = "260ms";
 
     // Fallback in case carousel event never fires
-    hideTimer = setTimeout(() => hideLoader(true), 2200);
+    hideTimer = setTimeout(() => hideLoader(true), 1800);
   };
 
   window.addEventListener("carousel:ready", () => {
@@ -2759,11 +2866,25 @@ function ensureScrollTopButton() {
     if (scrollingElement && typeof scrollingElement.scrollTop === "number") {
       return scrollingElement.scrollTop;
     }
-    return window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    return (
+      window.scrollY ||
+      (document.documentElement && document.documentElement.scrollTop) ||
+      (document.body && document.body.scrollTop) ||
+      0
+    );
   };
 
   const update = () => {
-    const shouldShow = getScrollTop() > 300;
+    const scrollTop = getScrollTop();
+    const doc =
+      document.scrollingElement || document.documentElement || document.body;
+    const maxScroll = (doc && doc.scrollHeight - doc.clientHeight) || 0;
+    const distanceToBottom = maxScroll - scrollTop;
+
+    // Show when past 220px OR when within 20% of the bottom
+    const shouldShow =
+      scrollTop > 220 || distanceToBottom <= Math.max(240, maxScroll * 0.2);
+
     btn.classList.toggle("show", shouldShow);
     // Inline fallback to avoid browser-specific style overrides
     btn.style.opacity = shouldShow ? "1" : "";
@@ -2783,7 +2904,16 @@ function ensureScrollTopButton() {
           homeScrollTicking = false;
           const el = document.getElementById("scroll-top-btn");
           if (!el) return;
-          const shouldShow = getScrollTop() > 300;
+          const scrollTop = getScrollTop();
+          const doc =
+            document.scrollingElement ||
+            document.documentElement ||
+            document.body;
+          const maxScroll = (doc && doc.scrollHeight - doc.clientHeight) || 0;
+          const distanceToBottom = maxScroll - scrollTop;
+          const shouldShow =
+            scrollTop > 220 ||
+            distanceToBottom <= Math.max(240, maxScroll * 0.2);
           el.classList.toggle("show", shouldShow);
           el.style.opacity = shouldShow ? "1" : "";
           el.style.pointerEvents = shouldShow ? "auto" : "";
@@ -2812,7 +2942,10 @@ function setupHomeScrollReveal() {
   const targets = [
     document.querySelector(".about-preview"),
     ...Array.from(document.querySelectorAll(".about-features .feature")),
+    document.querySelector(".hero-content"),
     ...Array.from(document.querySelectorAll("#featured-container .featured-card")),
+    ...Array.from(document.querySelectorAll("#menu-container .menu-item")),
+    ...Array.from(document.querySelectorAll("#gallery-container .gallery-card")),
   ].filter(Boolean);
 
   if (!("IntersectionObserver" in window)) {
@@ -2940,6 +3073,8 @@ window.addEventListener("cart:updated", () => {
 // Initialize when DOM is loaded
 document.addEventListener("DOMContentLoaded", async () => {
   debugLog("Initializing Toke Bakes with Enhanced Sync...");
+
+  ensureContentCacheVersion();
 
   // Initialize cart count immediately to prevent flash
   refreshCartCount();

@@ -51,6 +51,13 @@
         box-shadow: 0 0 30px rgba(230, 122, 0, 0.35);
         animation: loaderPulse 2s ease-in-out infinite;
       }
+      #loader.fade-out {
+        transition: opacity 0.35s ease;
+      }
+      #loader.fade-out img {
+        animation-duration: 1.05s;
+        box-shadow: 0 0 26px rgba(230, 122, 0, 0.35);
+      }
       @keyframes loaderPulse {
         0%,
         100% {

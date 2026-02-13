@@ -3,7 +3,9 @@
 const CAROUSEL_DEBUG = false;
 const CAROUSEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const CAROUSEL_READY_TIMEOUT_MS = 450;
-const CAROUSEL_FALLBACK_IMAGE = "images/logo.webp";
+const CAROUSEL_CACHE_VERSION = 2;
+const CAROUSEL_CACHE_VERSION_KEY = "hero_carousel_cache_version";
+const CAROUSEL_FALLBACK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
 const carouselDebugLog = (...args) => {
   if (CAROUSEL_DEBUG) console.log(...args);
 };
@@ -27,9 +29,64 @@ const normalizeCarouselAsset = (value) =>
         .trim()
         .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
 
+function ensureCarouselCacheVersion() {
+  try {
+    const current = localStorage.getItem(CAROUSEL_CACHE_VERSION_KEY);
+    if (String(current) !== String(CAROUSEL_CACHE_VERSION)) {
+      localStorage.removeItem("hero_carousel_data");
+      localStorage.setItem(
+        CAROUSEL_CACHE_VERSION_KEY,
+        String(CAROUSEL_CACHE_VERSION)
+      );
+    }
+  } catch {}
+}
+
+let carouselEmptyStylesAdded = false;
+function ensureCarouselEmptyStyles() {
+  if (carouselEmptyStylesAdded) return;
+  const style = document.createElement("style");
+  style.id = "carousel-empty-state-styles";
+  style.textContent = `
+    .hero-carousel.is-empty {
+      position: relative;
+      min-height: 240px;
+      background: linear-gradient(135deg, rgba(0,0,0,0.6), rgba(0,0,0,0.35));
+    }
+    .hero-carousel.is-empty .carousel-overlay,
+    .hero-carousel.is-empty .carousel-nav,
+    .hero-carousel.is-empty .carousel-dots {
+      display: none;
+    }
+    .carousel-empty-state {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: rgba(15, 10, 6, 0.82);
+      color: #fff;
+      font-size: 0.9rem;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+      pointer-events: none;
+      z-index: 12;
+    }
+    .carousel-empty-state i {
+      color: #ffd8ae;
+    }
+  `;
+  document.head.appendChild(style);
+  carouselEmptyStylesAdded = true;
+}
+
 class HeroCarousel {
   constructor() {
     carouselDebugLog("ðŸŽ  HeroCarousel constructor called");
+    ensureCarouselCacheVersion();
+    ensureCarouselEmptyStyles();
 
     this.container = document.querySelector(".hero-carousel");
     if (!this.container) {
@@ -63,6 +120,7 @@ class HeroCarousel {
     this.transitionTimeout = null;
     this.transitionDuration = 1100;
     this.queuedIndex = null;
+    this.emptyStateEl = null;
 
     // Smart loading helpers
     this.preloadedImages = new Set();
@@ -330,13 +388,7 @@ class HeroCarousel {
   }
 
   getFallbackSlides() {
-    return [
-      {
-        id: "default",
-        image: CAROUSEL_FALLBACK_IMAGE,
-        alt: "Toke Bakes Artisan Bakery",
-      },
-    ];
+    return [];
   }
 
   createSlidesSignature(slides = this.slides) {
@@ -459,7 +511,7 @@ class HeroCarousel {
 
       if (slides.length === 0) {
         carouselDebugWarn("No active carousel items found");
-        this.slides = this.getFallbackSlides();
+        this.slides = [];
       } else {
         this.slides = slides;
         carouselDebugLog(`âœ… Loaded ${this.slides.length} carousel slides`);
@@ -472,11 +524,11 @@ class HeroCarousel {
         );
       } catch {}
 
-      return { fromCache: false, isFresh: true };
+      return { fromCache: false, isFresh: true, hasSlides: this.slides.length > 0 };
     } catch (error) {
       console.error("Error loading carousel data:", error);
       if (!Array.isArray(this.slides) || this.slides.length === 0) {
-        this.slides = this.getFallbackSlides();
+        this.slides = [];
       }
       return { fromCache: false, isFresh: false, error: true };
     }
@@ -524,8 +576,37 @@ class HeroCarousel {
     delete this.container.dataset.loading;
   }
 
+  renderEmptyState() {
+    if (!this.container) return;
+    this.clearEmptyState();
+    this.container.classList.add("is-empty");
+    if (this.track) this.track.innerHTML = "";
+    if (this.dotsContainer) this.dotsContainer.innerHTML = "";
+    if (this.navContainer) this.navContainer.innerHTML = "";
+
+    const empty = document.createElement("div");
+    empty.className = "carousel-empty-state";
+    empty.innerHTML = `<i class="fas fa-image"></i><span>Add a hero slide in the Admin panel to display here.</span>`;
+    this.emptyStateEl = empty;
+    this.container.appendChild(empty);
+  }
+
+  clearEmptyState() {
+    if (this.emptyStateEl) {
+      this.emptyStateEl.remove();
+      this.emptyStateEl = null;
+    }
+    if (this.container) {
+      this.container.classList.remove("is-empty");
+    }
+  }
+
   setupCarousel(options = {}) {
-    if (this.slides.length === 0) return;
+    this.clearEmptyState();
+    if (this.slides.length === 0) {
+      this.renderEmptyState();
+      return;
+    }
 
     const preferredSlide = options?.preferredSlide || null;
     const preferredId =

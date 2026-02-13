@@ -422,6 +422,44 @@ function formatPrice(num) {
   return Number(num).toLocaleString("en-NG");
 }
 
+function removeItemFromUi(itemType, id) {
+  if (!id) return;
+  const selectorMap = {
+    featured: `#featured-items-list [data-id="${id}"]`,
+    menu: `#menu-items-list [data-id="${id}"]`,
+    gallery: `#gallery-admin-grid [data-id="${id}"]`,
+    carousel: `#carousel-admin-grid [data-id="${id}"]`,
+  };
+  const target = document.querySelector(selectorMap[itemType]);
+  if (!target) return;
+  target.classList.add("removing");
+  setTimeout(() => {
+    if (target && target.parentElement) {
+      target.remove();
+    }
+  }, 160);
+}
+
+function refreshListAfterDelete(itemType) {
+  try {
+    if (itemType === "featured") {
+      return renderFeaturedItems();
+    }
+    if (itemType === "menu") {
+      return Promise.all([renderMenuItems(), populateFeaturedMenuSelect()]);
+    }
+    if (itemType === "gallery") {
+      return renderGalleryItems();
+    }
+    if (itemType === "carousel") {
+      return renderCarouselItems();
+    }
+  } catch (error) {
+    console.error(`Refresh after delete failed for ${itemType}:`, error);
+  }
+  return Promise.resolve();
+}
+
 // Modified delete functions with modern confirmation dialog
 async function deleteItemByType(id, itemType) {
   const endpoint = getEndpointForType(itemType);
@@ -458,24 +496,22 @@ async function deleteItemByType(id, itemType) {
 
     const storagePath = extractStoragePath(itemDetails.image, bucket);
     await deleteFromStorage(bucket, storagePath);
-    showNotification(`${label} deleted!`, "success");
 
     tempImageCache.delete(id);
     removeCachedItemForType(itemType, id);
     invalidateEndpointCache(endpoint);
+    removeItemFromUi(itemType, id);
 
-    if (itemType === "featured") {
-      await renderFeaturedItems();
-    } else if (itemType === "menu") {
-      await Promise.all([renderMenuItems(), populateFeaturedMenuSelect()]);
-    } else if (itemType === "gallery") {
-      await renderGalleryItems();
-    } else if (itemType === "carousel") {
-      await renderCarouselItems();
-    }
+    const refreshPromise = refreshListAfterDelete(itemType);
+    refreshPromise.catch((error) =>
+      console.error(`Background refresh failed (${itemType}):`, error)
+    );
+    Promise.resolve(updateItemCounts()).catch((error) =>
+      console.error("Update counts failed:", error)
+    );
 
-    await updateItemCounts();
     dataSync.notifyDataChanged("delete", itemType);
+    showNotification(`${label} deleted!`, "success");
   } catch (error) {
     console.error(`Error deleting ${itemType} item:`, error);
     showNotification(`Failed to delete ${label.toLowerCase()}`, "error");

@@ -35,6 +35,19 @@
   box-sizing: border-box;
 }
 
+/* Remove default focus rings sitewide (per request) */
+:focus,
+:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+:focus:not(:focus-visible) {
+  outline: none !important;
+}
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
 html,
 body {
   height: 100%;

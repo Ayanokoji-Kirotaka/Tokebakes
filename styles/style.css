@@ -35,6 +35,19 @@
   box-sizing: border-box;
 }
 
+/* Remove default focus rings sitewide (per request) */
+:focus,
+:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+:focus:not(:focus-visible) {
+  outline: none !important;
+}
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
 html,
 body {
   height: 100%;
@@ -76,6 +89,15 @@ html[data-loader-seen="1"] #loader {
   border-radius: 50%;
   animation: enhancedPulse 2s ease-in-out infinite;
   box-shadow: 0 0 30px rgba(230, 122, 0, 0.2);
+}
+
+#loader.fade-out {
+  transition: opacity 0.35s ease;
+}
+
+#loader.fade-out img {
+  animation-duration: 1.05s;
+  box-shadow: 0 0 26px rgba(230, 122, 0, 0.35);
 }
 
 @keyframes enhancedPulse {
@@ -2954,6 +2976,15 @@ html {
 
 .item-card-content {
   padding: 1.75rem;
+}
+
+.admin-dashboard .item-card.removing,
+.admin-dashboard .gallery-admin-item.removing,
+.admin-dashboard .carousel-admin-item.removing {
+  opacity: 0.45;
+  transform: scale(0.985);
+  pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.16s ease;
 }
 
 .item-card-title {
