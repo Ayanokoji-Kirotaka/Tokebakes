@@ -672,10 +672,9 @@ const ThemeManager = {
       "Content-Type": "application/json",
     };
 
-    const deactivateUrl = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?theme_name=neq.${encodeURIComponent(
-      themeName
-    )}`;
-    await fetch(deactivateUrl, {
+    const deactivateUrl = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes`;
+    // Force all themes inactive first (avoids unique is_active index conflicts)
+    await fetch(`${deactivateUrl}?is_active=eq.true`, {
       method: "PATCH",
       headers: { ...baseHeaders, Prefer: "return=representation" },
       body: JSON.stringify({ is_active: false }),
@@ -690,14 +689,31 @@ const ThemeManager = {
     };
 
     const upsertUrl = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes`;
-    await fetch(upsertUrl, {
-      method: "POST",
-      headers: {
-        ...baseHeaders,
-        Prefer: "resolution=merge-duplicates,return=representation",
-      },
-      body: JSON.stringify(upsertBody),
-    });
+    const doUpsert = async () =>
+      fetch(upsertUrl, {
+        method: "POST",
+        headers: {
+          ...baseHeaders,
+          Prefer: "resolution=merge-duplicates,return=representation",
+        },
+        body: JSON.stringify(upsertBody),
+      });
+
+    let resp = await doUpsert();
+
+    // If unique constraint (409) still happens, hard-reset actives then retry once.
+    if (resp.status === 409) {
+      await fetch(`${deactivateUrl}?is_active=eq.true`, {
+        method: "PATCH",
+        headers: { ...baseHeaders, Prefer: "return=representation" },
+        body: JSON.stringify({ is_active: false }),
+      });
+      resp = await doUpsert();
+    }
+
+    if (!resp.ok) {
+      throw new Error(`Theme upsert failed (${resp.status})`);
+    }
 
     return true;
   },
