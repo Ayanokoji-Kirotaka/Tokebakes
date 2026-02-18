@@ -40,6 +40,12 @@ class DataSyncManager {
       this.syncBus.publishDataUpdate(operationType, itemType, {
         source: "admin",
       });
+
+      if (typeof this.syncBus.requestServerCheck === "function") {
+        Promise.resolve(
+          this.syncBus.requestServerCheck("admin-write", true)
+        ).catch(() => {});
+      }
       return;
     }
 
@@ -432,7 +438,19 @@ async function getItemDetails(itemId, itemType) {
 
 // Price formatting function
 function formatPrice(num) {
-  return Number(num).toLocaleString("en-NG");
+  const amount = Number(num);
+  const safe = Number.isFinite(amount) ? amount : 0;
+  const normalized = Math.round((safe + Number.EPSILON) * 100) / 100;
+  return normalized.toLocaleString("en-NG", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+}
+
+function toMoney(value, fallback = 0) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return fallback;
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
 }
 
 function toArray(value) {
@@ -465,12 +483,12 @@ function normalizeOptionValueRecord(record = {}) {
     id: String(record.id || "").trim(),
     group_id: String(record.group_id || "").trim(),
     name: toSafeString(record.name, "Option"),
-    price_adjustment: Number(record.price_adjustment || 0),
+    price_adjustment: toMoney(record.price_adjustment || 0, 0),
   };
 }
 
 function formatOptionAdjustmentLabel(value) {
-  const amount = Number(value || 0);
+  const amount = toMoney(value || 0, 0);
   if (amount === 0) return "No extra charge";
   const prefix = amount > 0 ? "+" : "-";
   return `${prefix}NGN ${formatPrice(Math.abs(amount))}`;
@@ -2601,7 +2619,8 @@ async function saveMenuItem(e) {
 
   const title = document.getElementById("menu-title").value.trim();
   const description = document.getElementById("menu-description").value.trim();
-  const priceValue = Number(document.getElementById("menu-price").value);
+  const rawPriceValue = Number(document.getElementById("menu-price").value);
+  const priceValue = toMoney(rawPriceValue, 0);
   const category =
     document.getElementById("menu-category").value.trim() || "pastries";
   const tagsRaw = document.getElementById("menu-tags").value;
@@ -2623,12 +2642,8 @@ async function saveMenuItem(e) {
     return;
   }
 
-  if (
-    Number.isNaN(priceValue) ||
-    priceValue < 1 ||
-    priceValue > 1000000
-  ) {
-    showNotification("Price must be between 1 and 1,000,000", "error");
+  if (!Number.isFinite(rawPriceValue) || rawPriceValue < 0) {
+    showNotification("Price must be 0 or higher", "error");
     return;
   }
 
@@ -2658,7 +2673,7 @@ async function saveMenuItem(e) {
     const formData = {
       title,
       description,
-      price: priceValue,
+      price: toMoney(priceValue, 0),
       image: upload.url,
       category,
       tags: parseTags(tagsRaw),
@@ -2757,7 +2772,7 @@ function getMenuOptionManagerElements() {
 function buildOptionValueRow(value = {}) {
   const valueId = escapeHtml(String(value.id || ""));
   const valueName = escapeHtml(toSafeString(value.name));
-  const priceAdjustment = Number(value.price_adjustment || 0);
+  const priceAdjustment = toMoney(value.price_adjustment || 0, 0);
   return `
     <div class="option-value-row" data-value-id="${valueId}">
       <input
@@ -2980,18 +2995,18 @@ function collectOptionValueRows() {
     const priceInput = row.querySelector(".option-value-price");
     const id = String(row.dataset.valueId || "").trim();
     const name = toSafeString(nameInput?.value);
-    const price = Number(priceInput?.value || 0);
+    const rawPrice = Number(priceInput?.value || 0);
 
     if (!name) return;
 
-    if (!Number.isFinite(price)) {
+    if (!Number.isFinite(rawPrice)) {
       throw new Error("Each option value must have a valid price adjustment.");
     }
 
     values.push({
       id: id || null,
       name,
-      price_adjustment: price,
+      price_adjustment: toMoney(rawPrice, 0),
     });
   });
 
@@ -3089,7 +3104,7 @@ async function saveOptionGroup(e) {
       const payload = {
         group_id: savedGroupId,
         name: value.name,
-        price_adjustment: Number(value.price_adjustment || 0),
+        price_adjustment: toMoney(value.price_adjustment || 0, 0),
       };
       if (value.id) {
         incomingIds.add(String(value.id));

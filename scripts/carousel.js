@@ -7,6 +7,10 @@ const CAROUSEL_FETCH_TIMEOUT_MS = 12000;
 const CAROUSEL_CACHE_VERSION = 2;
 const CAROUSEL_CACHE_VERSION_KEY = "hero_carousel_cache_version";
 const CAROUSEL_FALLBACK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
+const CAROUSEL_LAST_UPDATE_KEY = "toke_bakes_last_update";
+const CAROUSEL_LAST_PAYLOAD_KEY = "toke_bakes_last_update_payload";
+const CAROUSEL_DB_LAST_UPDATED_KEY = "toke_bakes_db_last_updated";
+const CAROUSEL_ASSET_VERSION_PARAM = "cv";
 const carouselDebugLog = (...args) => {
   if (CAROUSEL_DEBUG) console.log(...args);
 };
@@ -23,12 +27,57 @@ const isCarouselSlideActive = (value) => {
   }
   return true;
 };
-const normalizeCarouselAsset = (value) =>
-  value === null || value === undefined
-    ? ""
-    : String(value)
-        .trim()
-        .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
+const getCarouselContentVersionToken = () => {
+  let latest = 0;
+  try {
+    latest = Math.max(
+      Number(localStorage.getItem(CAROUSEL_DB_LAST_UPDATED_KEY) || "0"),
+      Number(localStorage.getItem(CAROUSEL_LAST_UPDATE_KEY) || "0")
+    );
+    const payloadRaw = localStorage.getItem(CAROUSEL_LAST_PAYLOAD_KEY);
+    if (payloadRaw) {
+      const payload = JSON.parse(payloadRaw);
+      latest = Math.max(latest, Number(payload?.timestamp) || 0);
+    }
+  } catch {}
+  return latest > 0 ? String(latest) : "";
+};
+
+const appendCarouselAssetVersion = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+  if (lower.startsWith("data:") || lower.startsWith("blob:")) return raw;
+
+  const version = getCarouselContentVersionToken();
+  if (!version) return raw;
+
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    parsed.searchParams.set(CAROUSEL_ASSET_VERSION_PARAM, version);
+    if (/^https?:\/\//i.test(raw) || raw.startsWith("//")) {
+      return parsed.toString();
+    }
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    const encodedVersion = encodeURIComponent(version);
+    if (raw.includes(`${CAROUSEL_ASSET_VERSION_PARAM}=`)) {
+      return raw.replace(
+        /([?&])cv=[^&#]*/i,
+        `$1${CAROUSEL_ASSET_VERSION_PARAM}=${encodedVersion}`
+      );
+    }
+    return `${raw}${raw.includes("?") ? "&" : "?"}${CAROUSEL_ASSET_VERSION_PARAM}=${encodedVersion}`;
+  }
+};
+
+const normalizeCarouselAsset = (value) => {
+  if (value === null || value === undefined) return "";
+  const normalized = String(value)
+    .trim()
+    .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
+  return appendCarouselAssetVersion(normalized);
+};
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = CAROUSEL_FETCH_TIMEOUT_MS) {
   if (typeof AbortController === "undefined") {

@@ -65,13 +65,31 @@ class WebsiteAutoUpdater {
 
     this.setupRealtimeSync();
 
-    // 2. Check for updates every 10 seconds (faster cross-device propagation)
-    this.startPolling(10000); // 10 seconds
+    const syncBusHasServerPolling =
+      this.syncBus &&
+      typeof this.syncBus.isServerSyncEnabled === "function" &&
+      this.syncBus.isServerSyncEnabled();
+
+    // Prefer sync-bus server polling when available, keep this as lighter backup.
+    if (syncBusHasServerPolling) {
+      this.dbCheckInterval = 90000;
+      this.startPolling(25000);
+    } else {
+      this.startPolling(10000);
+    }
 
     // 3. Check when user returns to tab
     this.boundVisibilityHandler = () => {
       if (!document.hidden) {
         debugLog("Tab became visible, checking for updates...");
+        if (
+          this.syncBus &&
+          typeof this.syncBus.requestServerCheck === "function"
+        ) {
+          Promise.resolve(
+            this.syncBus.requestServerCheck("website-visible", true)
+          ).catch(() => {});
+        }
         this.checkForUpdates();
       }
     };
@@ -79,12 +97,30 @@ class WebsiteAutoUpdater {
 
     // 4. Re-check as soon as connectivity is restored.
     this.boundOnlineHandler = () => {
+      if (
+        this.syncBus &&
+        typeof this.syncBus.requestServerCheck === "function"
+      ) {
+        Promise.resolve(
+          this.syncBus.requestServerCheck("website-online", true)
+        ).catch(() => {});
+      }
       this.checkForUpdates();
     };
     window.addEventListener("online", this.boundOnlineHandler);
 
     // 5. Initial check on page load (faster so recent admin edits appear sooner)
-    setTimeout(() => this.checkForUpdates(), 800);
+    setTimeout(() => {
+      if (
+        this.syncBus &&
+        typeof this.syncBus.requestServerCheck === "function"
+      ) {
+        Promise.resolve(
+          this.syncBus.requestServerCheck("website-init", true)
+        ).catch(() => {});
+      }
+      this.checkForUpdates();
+    }, 800);
 
     window.addEventListener(
       "beforeunload",
@@ -332,6 +368,18 @@ class WebsiteAutoUpdater {
 
     this.isCheckingUpdates = true;
     try {
+      const syncBusHasServerPolling =
+        this.syncBus &&
+        typeof this.syncBus.isServerSyncEnabled === "function" &&
+        this.syncBus.isServerSyncEnabled();
+
+      if (
+        syncBusHasServerPolling &&
+        typeof this.syncBus.requestServerCheck === "function"
+      ) {
+        await this.syncBus.requestServerCheck("website-check", false);
+      }
+
       const lastUpdate = this.getLatestUpdateTimestamp();
       const myLastCheck = this.getMyLastCheck();
 
@@ -340,6 +388,10 @@ class WebsiteAutoUpdater {
         this.setMyLastCheck(lastUpdate);
         await this.refreshDataWithUI(lastUpdate, true);
         return true;
+      }
+
+      if (syncBusHasServerPolling) {
+        return false;
       }
 
       const dbUpdated = await this.checkDatabaseForUpdates();
@@ -456,6 +508,7 @@ class WebsiteAutoUpdater {
       if (typeof clearContentCaches === "function") {
         clearContentCaches();
       }
+      requestDynamicCacheClearFromServiceWorker();
 
       if (typeof loadDynamicContent === "function") {
         await loadDynamicContent(true, true);
@@ -487,6 +540,8 @@ class WebsiteAutoUpdater {
         await renderCartOnOrderPage(true);
         debugLog("Cart refreshed");
       }
+
+      requestDynamicCacheClearFromServiceWorker();
 
       if (shouldSignal) {
         this.showSyncIndicator("updated");
@@ -521,6 +576,13 @@ class WebsiteAutoUpdater {
         updateTs || now
       );
       this.setMyLastCheck(this.lastRenderedUpdateTs);
+      try {
+        localStorage.setItem(
+          this.dbLastUpdateKey,
+          String(this.lastRenderedUpdateTs)
+        );
+        localStorage.setItem(this.lastUpdateKey, String(this.lastRenderedUpdateTs));
+      } catch {}
 
       if (this.pendingRefresh) {
         this.pendingRefresh = false;
@@ -641,6 +703,10 @@ const CONTENT_CONTAINER_IDS = [
 ];
 const CONTENT_CACHE_VERSION_KEY = "toke_bakes_content_cache_version";
 const CONTENT_CACHE_VERSION = "4";
+const CONTENT_LAST_UPDATE_KEY = "toke_bakes_last_update";
+const CONTENT_LAST_PAYLOAD_KEY = "toke_bakes_last_update_payload";
+const CONTENT_DB_LAST_UPDATED_KEY = "toke_bakes_db_last_updated";
+const CONTENT_ASSET_VERSION_PARAM = "cv";
 let cachedMenuOptionMap = new Map();
 let menuOptionsCacheTimestamp = 0;
 let inFlightMenuOptionRequest = null;
@@ -701,6 +767,58 @@ function looksLikeImageSrc(value) {
   return raw.includes("/");
 }
 
+function getLatestContentUpdateToken() {
+  let latest = 0;
+  try {
+    latest = Math.max(
+      Number(localStorage.getItem(CONTENT_DB_LAST_UPDATED_KEY) || "0"),
+      Number(localStorage.getItem(CONTENT_LAST_UPDATE_KEY) || "0")
+    );
+
+    const payloadRaw = localStorage.getItem(CONTENT_LAST_PAYLOAD_KEY);
+    if (payloadRaw) {
+      const payload = JSON.parse(payloadRaw);
+      latest = Math.max(latest, Number(payload?.timestamp) || 0);
+    }
+  } catch {}
+
+  return latest > 0 ? String(latest) : "";
+}
+
+function appendContentAssetVersion(src) {
+  const raw = toSafeString(src);
+  if (!raw) return "";
+
+  const lower = raw.toLowerCase();
+  if (lower.startsWith("data:") || lower.startsWith("blob:")) {
+    return raw;
+  }
+
+  const version = getLatestContentUpdateToken();
+  if (!version) return raw;
+
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    parsed.searchParams.set(CONTENT_ASSET_VERSION_PARAM, version);
+
+    if (/^https?:\/\//i.test(raw) || raw.startsWith("//")) {
+      return parsed.toString();
+    }
+
+    const relative = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    return relative || raw;
+  } catch {
+    const encodedVersion = encodeURIComponent(version);
+    if (raw.includes(`${CONTENT_ASSET_VERSION_PARAM}=`)) {
+      return raw.replace(
+        /([?&])cv=[^&#]*/i,
+        `$1${CONTENT_ASSET_VERSION_PARAM}=${encodedVersion}`
+      );
+    }
+    return `${raw}${raw.includes("?") ? "&" : "?"}${CONTENT_ASSET_VERSION_PARAM}=${encodedVersion}`;
+  }
+}
+
 function resolveImageForDisplay(rawValue, placeholderDataUri) {
   const normalized = normalizeAssetPath(rawValue);
   if (!normalized) return placeholderDataUri;
@@ -709,12 +827,37 @@ function resolveImageForDisplay(rawValue, placeholderDataUri) {
     return placeholderDataUri;
   }
   if (!looksLikeImageSrc(normalized)) return placeholderDataUri;
-  return normalized;
+  return appendContentAssetVersion(normalized);
 }
 
 function parseNumber(value, fallback = 0) {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
+}
+
+function toMoney(value, fallback = 0) {
+  const normalized = parseNumber(value, fallback);
+  if (!Number.isFinite(normalized)) return fallback;
+  return Math.round((normalized + Number.EPSILON) * 100) / 100;
+}
+
+function moneyToCents(value) {
+  return Math.round(toMoney(value, 0) * 100);
+}
+
+function centsToMoney(value) {
+  return Math.round(parseNumber(value, 0)) / 100;
+}
+
+function addMoney(...values) {
+  const cents = values.reduce((sum, value) => sum + moneyToCents(value), 0);
+  return centsToMoney(cents);
+}
+
+function multiplyMoney(amount, quantity = 1) {
+  const qty = parseNumber(quantity, 0);
+  const totalCents = Math.round(moneyToCents(amount) * qty);
+  return centsToMoney(totalCents);
 }
 
 function parseBoolean(value, fallback = true) {
@@ -1764,6 +1907,33 @@ function waitForThemeReady(timeoutMs = 1200) {
   });
 }
 
+function requestDynamicCacheClearFromServiceWorker() {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return;
+  }
+
+  const notify = (worker) => {
+    if (!worker) return;
+    try {
+      worker.postMessage({ type: "CLEAR_DYNAMIC_CACHES" });
+    } catch {}
+  };
+
+  if (navigator.serviceWorker.controller) {
+    notify(navigator.serviceWorker.controller);
+    return;
+  }
+
+  navigator.serviceWorker
+    .getRegistration()
+    .then((registration) => {
+      notify(
+        registration?.active || registration?.waiting || registration?.installing
+      );
+    })
+    .catch(() => {});
+}
+
 function clearContentCaches() {
   cachedMenuItems = null;
   cacheTimestamp = null;
@@ -1956,7 +2126,10 @@ const BUSINESS_EMAIL = "tokebakes@gmail.com";
 
 /* Utility functions */
 function formatPrice(num) {
-  return Number(num).toLocaleString("en-NG");
+  return toMoney(num, 0).toLocaleString("en-NG", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
 }
 
 function isMenuItemAvailable(item) {
@@ -2031,15 +2204,16 @@ function normalizeSelectedOptionGroups(rawOptions) {
 }
 
 function getSelectedOptionsAdjustment(selectedOptions) {
-  return normalizeSelectedOptionGroups(selectedOptions).reduce((sum, group) => {
-    return (
+  const cents = normalizeSelectedOptionGroups(selectedOptions).reduce(
+    (sum, group) =>
       sum +
       group.values.reduce(
-        (valueSum, value) => valueSum + parseNumber(value.price_adjustment, 0),
+        (valueSum, value) => valueSum + moneyToCents(value.price_adjustment),
         0
-      )
-    );
-  }, 0);
+      ),
+    0
+  );
+  return centsToMoney(cents);
 }
 
 function buildCartConfigurationKey({
@@ -2055,7 +2229,7 @@ function buildCartConfigurationKey({
     values: group.values.map((value) => ({
       id: value.id || "",
       name: value.name,
-      price_adjustment: parseNumber(value.price_adjustment, 0).toFixed(2),
+      price_adjustment: toMoney(value.price_adjustment, 0).toFixed(2),
     })),
   }));
   const messageToken = toSafeString(customMessage).trim().toLowerCase();
@@ -2064,27 +2238,27 @@ function buildCartConfigurationKey({
 
 function getCartItemBasePrice(item) {
   const explicitBase = Number(item?.base_price);
-  if (Number.isFinite(explicitBase)) return explicitBase;
+  if (Number.isFinite(explicitBase)) return toMoney(explicitBase, 0);
 
   const unitPrice = Number(item?.unit_price ?? item?.price);
   const adjustment = Number(item?.option_adjustment);
   if (Number.isFinite(unitPrice) && Number.isFinite(adjustment)) {
-    return unitPrice - adjustment;
+    return addMoney(unitPrice, -adjustment);
   }
 
-  return Number.isFinite(unitPrice) ? unitPrice : 0;
+  return Number.isFinite(unitPrice) ? toMoney(unitPrice, 0) : 0;
 }
 
 function getCartItemOptionAdjustment(item) {
   const explicit = Number(item?.option_adjustment);
-  if (Number.isFinite(explicit)) return explicit;
-  return getSelectedOptionsAdjustment(item?.selected_options);
+  if (Number.isFinite(explicit)) return toMoney(explicit, 0);
+  return toMoney(getSelectedOptionsAdjustment(item?.selected_options), 0);
 }
 
 function getCartItemUnitPrice(item) {
   const explicit = Number(item?.unit_price ?? item?.price);
-  if (Number.isFinite(explicit)) return explicit;
-  return getCartItemBasePrice(item) + getCartItemOptionAdjustment(item);
+  if (Number.isFinite(explicit)) return toMoney(explicit, 0);
+  return addMoney(getCartItemBasePrice(item), getCartItemOptionAdjustment(item));
 }
 
 function normalizeCartEntry(rawItem = {}) {
@@ -2096,11 +2270,11 @@ function normalizeCartEntry(rawItem = {}) {
 
   const rawBase = Number(rawItem.base_price);
   const basePrice = Number.isFinite(rawBase)
-    ? rawBase
-    : parseNumber(rawItem.unit_price ?? rawItem.price, 0) - optionAdjustment;
-  const unitPrice = parseNumber(
+    ? toMoney(rawBase, 0)
+    : addMoney(parseNumber(rawItem.unit_price ?? rawItem.price, 0), -optionAdjustment);
+  const unitPrice = toMoney(
     rawItem.unit_price ?? rawItem.price,
-    basePrice + optionAdjustment
+    addMoney(basePrice, optionAdjustment)
   );
   const customMessage = toSafeString(
     rawItem.custom_message ?? rawItem.customMessage
@@ -2222,16 +2396,16 @@ async function validateCartItems() {
           return;
         }
 
-        const currentBasePrice = Number(currentItem.price);
+        const currentBasePrice = toMoney(currentItem.price, 0);
         const cartBasePrice = getCartItemBasePrice(cartItem);
         const optionAdjustment = getCartItemOptionAdjustment(cartItem);
-        const currentUnitPrice = currentBasePrice + optionAdjustment;
+        const currentUnitPrice = addMoney(currentBasePrice, optionAdjustment);
         const cartUnitPrice = getCartItemUnitPrice(cartItem);
 
         if (
-          !Number.isNaN(currentBasePrice) &&
-          !Number.isNaN(cartBasePrice) &&
-          currentBasePrice !== cartBasePrice
+          Number.isFinite(currentBasePrice) &&
+          Number.isFinite(cartBasePrice) &&
+          moneyToCents(currentBasePrice) !== moneyToCents(cartBasePrice)
         ) {
           validationResults.push({
             index,
@@ -2252,10 +2426,10 @@ async function validateCartItems() {
             status: "valid",
             message: null,
             oldPrice: cartUnitPrice,
-            newPrice: Number.isNaN(currentBasePrice)
+            newPrice: !Number.isFinite(currentBasePrice)
               ? cartUnitPrice
               : currentUnitPrice,
-            newBasePrice: Number.isNaN(currentBasePrice)
+            newBasePrice: !Number.isFinite(currentBasePrice)
               ? cartBasePrice
               : currentBasePrice,
           });
@@ -2286,10 +2460,10 @@ function updateCartWithValidation(validationResults) {
 
     if (result.status === "price_changed" && result.newPrice !== null) {
       if (Number.isFinite(Number(result.newBasePrice))) {
-        item.base_price = Number(result.newBasePrice);
+        item.base_price = toMoney(result.newBasePrice, 0);
       }
-      item.unit_price = Number(result.newPrice);
-      item.price = result.newPrice;
+      item.unit_price = toMoney(result.newPrice, getCartItemUnitPrice(item));
+      item.price = item.unit_price;
       changesMade = true;
     }
 
@@ -2315,7 +2489,7 @@ function updateCartWithValidation(validationResults) {
 }
 
 function formatOptionPriceAdjustment(adjustment) {
-  const value = parseNumber(adjustment, 0);
+  const value = toMoney(adjustment, 0);
   if (value === 0) return "";
   const prefix = value > 0 ? "+" : "-";
   return ` (${prefix}NGN ${formatPrice(Math.abs(value))})`;
@@ -2344,8 +2518,8 @@ function getOrderItemOptionLines(item) {
 }
 
 function getOrderItemMessageLines(item) {
-  const unitPrice = parseNumber(item?.price, 0);
-  const quantity = Math.max(1, parseNumber(item?.qty, 1));
+  const unitPrice = toMoney(item?.price, 0);
+  const quantity = Math.max(1, Math.floor(parseNumber(item?.qty, 1)));
   const baseLine = `- ${item?.name || "Item"} x ${quantity} ${
     unitPrice ? `(NGN ${formatPrice(unitPrice)} each)` : ""
   }`;
@@ -2611,7 +2785,10 @@ if (!document.querySelector("#notification-styles")) {
 function refreshCartCount() {
   const countEls = document.querySelectorAll("#cart-count");
   const cart = readCart();
-  const totalItems = cart.reduce((s, it) => s + (it.quantity || 1), 0);
+  const totalItems = cart.reduce(
+    (sum, item) => sum + Math.max(1, Math.floor(parseNumber(item?.quantity, 1))),
+    0
+  );
 
   countEls.forEach((el) => {
     el.textContent = totalItems;
@@ -2628,13 +2805,40 @@ function refreshCartCount() {
 
 /* ================== IMPROVED MOBILE MENU ================== */
 let mobileMenuOutsideClickHandler = null;
+const HOME_MENU_DISMISSED_KEY = "toke_home_menu_dismissed";
+
+function getHomeMenuDismissedState() {
+  try {
+    return window.sessionStorage.getItem(HOME_MENU_DISMISSED_KEY) === "1";
+  } catch {
+    return window.__homeMenuDismissed === true;
+  }
+}
+
+function setHomeMenuDismissedState(isDismissed) {
+  const dismissed = Boolean(isDismissed);
+  window.__homeMenuDismissed = dismissed;
+  try {
+    if (dismissed) {
+      window.sessionStorage.setItem(HOME_MENU_DISMISSED_KEY, "1");
+    } else {
+      window.sessionStorage.removeItem(HOME_MENU_DISMISSED_KEY);
+    }
+  } catch {}
+}
+
+function shouldAutoOpenHomeMenu() {
+  const isMobileViewport =
+    window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+  return isMobileViewport && isHomePageRuntime() && !getHomeMenuDismissedState();
+}
 
 function initMobileMenu() {
   const toggleBtn = document.getElementById("navbarToggle");
   const navList = document.querySelector(".navbar ul");
   const isMobileViewport =
     window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
-  const shouldDefaultOpen = isMobileViewport && isHomePageRuntime();
+  const shouldDefaultOpen = shouldAutoOpenHomeMenu();
 
   if (toggleBtn && navList) {
     // Remove any existing listeners first
@@ -2650,12 +2854,22 @@ function initMobileMenu() {
 
     freshToggle.addEventListener("click", (e) => {
       e.stopPropagation();
+      const wasOpen = freshNavList.classList.contains("show");
       freshNavList.classList.toggle("show");
+      if (
+        window.matchMedia &&
+        window.matchMedia("(max-width: 768px)").matches &&
+        isHomePageRuntime()
+      ) {
+        setHomeMenuDismissedState(wasOpen);
+      }
     });
 
     // Mobile UX: keep menu open by default on homepage
     if (shouldDefaultOpen) {
       freshNavList.classList.add("show");
+    } else if (isMobileViewport && isHomePageRuntime()) {
+      freshNavList.classList.remove("show");
     }
 
     if (!window.mobileMenuResizeListenerBound) {
@@ -2667,8 +2881,11 @@ function initMobileMenu() {
           if (!currentNavList) return;
           const mobileNow =
             window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
-          const shouldAutoOpenHomeMenu = mobileNow && isHomePageRuntime();
-          if (shouldAutoOpenHomeMenu) {
+          if (!mobileNow) {
+            currentNavList.classList.remove("show");
+            return;
+          }
+          if (shouldAutoOpenHomeMenu()) {
             currentNavList.classList.add("show");
           }
         },
@@ -2688,6 +2905,13 @@ function initMobileMenu() {
         !e.target.closest("#navbarToggle")
       ) {
         freshNavList.classList.remove("show");
+        if (
+          window.matchMedia &&
+          window.matchMedia("(max-width: 768px)").matches &&
+          isHomePageRuntime()
+        ) {
+          setHomeMenuDismissedState(true);
+        }
       }
     };
     document.addEventListener("click", mobileMenuOutsideClickHandler);
@@ -2696,6 +2920,13 @@ function initMobileMenu() {
     freshNavList.addEventListener("click", (e) => {
       if (e.target.closest("a")) {
         freshNavList.classList.remove("show");
+        if (
+          window.matchMedia &&
+          window.matchMedia("(max-width: 768px)").matches &&
+          isHomePageRuntime()
+        ) {
+          setHomeMenuDismissedState(true);
+        }
       }
     });
 
@@ -3169,7 +3400,10 @@ function getConfiguratorSelectedOptions() {
         return;
       }
 
-      adjustmentTotal += parseNumber(selectedValue.price_adjustment, 0);
+      adjustmentTotal = addMoney(
+        adjustmentTotal,
+        toMoney(selectedValue.price_adjustment, 0)
+      );
       selectedGroups.push({
         group_id: group.id,
         group_name: group.name,
@@ -3178,7 +3412,7 @@ function getConfiguratorSelectedOptions() {
           {
             id: selectedValue.id,
             name: selectedValue.name,
-            price_adjustment: parseNumber(selectedValue.price_adjustment, 0),
+            price_adjustment: toMoney(selectedValue.price_adjustment, 0),
           },
         ],
       });
@@ -3197,10 +3431,11 @@ function getConfiguratorSelectedOptions() {
 
     if (selectedValues.length === 0) return;
 
-    adjustmentTotal += selectedValues.reduce(
-      (sum, value) => sum + parseNumber(value.price_adjustment, 0),
+    const groupAdjustment = selectedValues.reduce(
+      (sum, value) => addMoney(sum, toMoney(value.price_adjustment, 0)),
       0
     );
+    adjustmentTotal = addMoney(adjustmentTotal, groupAdjustment);
     selectedGroups.push({
       group_id: group.id,
       group_name: group.name,
@@ -3208,7 +3443,7 @@ function getConfiguratorSelectedOptions() {
       values: selectedValues.map((value) => ({
         id: value.id,
         name: value.name,
-        price_adjustment: parseNumber(value.price_adjustment, 0),
+        price_adjustment: toMoney(value.price_adjustment, 0),
       })),
     });
   });
@@ -3253,7 +3488,7 @@ function renderConfiguratorGroupOptions() {
               : (
                   productConfiguratorState.selectedMultiple.get(group.id) || new Set()
                 ).has(valueId);
-          const adjustment = parseNumber(value.price_adjustment, 0);
+          const adjustment = toMoney(value.price_adjustment, 0);
           const adjustmentLabel =
             adjustment === 0
               ? "No extra"
@@ -3294,10 +3529,10 @@ function renderConfiguratorTotals() {
   if (!item) return;
 
   const { adjustmentTotal } = getConfiguratorSelectedOptions();
-  const basePrice = parseNumber(item.price, 0);
-  const unitPrice = Math.max(0, basePrice + adjustmentTotal);
+  const basePrice = toMoney(item.price, 0);
+  const unitPrice = Math.max(0, addMoney(basePrice, adjustmentTotal));
   const quantity = Math.max(1, productConfiguratorState.quantity);
-  const totalPrice = unitPrice * quantity;
+  const totalPrice = multiplyMoney(unitPrice, quantity);
 
   dom.qtyValue.textContent = String(quantity);
   dom.totalPrice.textContent = `NGN ${formatPrice(totalPrice)}`;
@@ -3338,7 +3573,7 @@ async function openProductConfigurator(item) {
   dom.image.alt = item.title;
   dom.title.textContent = item.title;
   dom.description.textContent = item.description || "";
-  dom.basePrice.textContent = `NGN ${formatPrice(item.price || 0)}`;
+  dom.basePrice.textContent = `NGN ${formatPrice(toMoney(item.price, 0))}`;
   dom.customMessage.value = "";
 
   renderConfiguratorGroupOptions();
@@ -3366,8 +3601,8 @@ function buildConfiguredCartItem() {
     productConfiguratorDom?.customMessage?.value
   ).trim();
   const { selectedGroups, adjustmentTotal } = getConfiguratorSelectedOptions();
-  const basePrice = parseNumber(item?.price, 0);
-  const unitPrice = Math.max(0, basePrice + adjustmentTotal);
+  const basePrice = toMoney(item?.price, 0);
+  const unitPrice = Math.max(0, addMoney(basePrice, adjustmentTotal));
   const configurationKey = buildCartConfigurationKey({
     id: item?.id,
     name: item?.title,
@@ -3411,7 +3646,9 @@ function submitConfiguredProduct(mode = "cart") {
     );
 
     if (existing) {
-      existing.quantity = (existing.quantity || 1) + configuredEntry.quantity;
+      existing.quantity =
+        Math.max(1, Math.floor(parseNumber(existing.quantity, 1))) +
+        Math.max(1, Math.floor(parseNumber(configuredEntry.quantity, 1)));
       existing.base_price = configuredEntry.base_price;
       existing.option_adjustment = configuredEntry.option_adjustment;
       existing.unit_price = configuredEntry.unit_price;
@@ -3549,7 +3786,7 @@ function initOrderFunctionality() {
       items: cart.map((it) => ({
         name: it.name,
         price: getCartItemUnitPrice(it),
-        qty: it.quantity || 1,
+        qty: Math.max(1, Math.floor(parseNumber(it.quantity, 1))),
         selected_options: normalizeSelectedOptionGroups(it.selected_options),
         custom_message: toSafeString(it.custom_message).trim() || null,
       })),
@@ -3573,18 +3810,20 @@ function showOrderOptions(orderData) {
     const list = document.createElement("div");
 
     orderData.items.forEach((it) => {
+      const itemQty = Math.max(1, Math.floor(parseNumber(it.qty, 1)));
+      const itemUnitPrice = toMoney(it.price, 0);
       const row = document.createElement("div");
       row.className = "summary-row";
 
-      if (it.qty > 1) {
+      if (itemQty > 1) {
         row.innerHTML = `
           <div class="s-left">${escapeHtml(it.name)}</div>
-          <div class="s-right">${it.qty}x NGN ${formatPrice(it.price)}</div>
+          <div class="s-right">${itemQty}x NGN ${formatPrice(itemUnitPrice)}</div>
         `;
       } else {
         row.innerHTML = `
           <div class="s-left">${escapeHtml(it.name)}</div>
-          <div class="s-right">NGN ${formatPrice(it.price)}</div>
+          <div class="s-right">NGN ${formatPrice(itemUnitPrice)}</div>
         `;
       }
       list.appendChild(row);
@@ -3597,13 +3836,13 @@ function showOrderOptions(orderData) {
         list.appendChild(optionRow);
       });
 
-      if (it.qty > 1) {
+      if (itemQty > 1) {
         const subtotalRow = document.createElement("div");
         subtotalRow.className = "summary-subtotal";
         subtotalRow.innerHTML = `
           <div class="s-left"><em>Subtotal</em></div>
           <div class="s-right"><em>NGN ${formatPrice(
-            it.price * it.qty
+            multiplyMoney(itemUnitPrice, itemQty)
           )}</em></div>
         `;
         list.appendChild(subtotalRow);
@@ -3612,10 +3851,11 @@ function showOrderOptions(orderData) {
 
     summaryEl.appendChild(list);
 
-    const total = orderData.items.reduce(
-      (s, it) => s + (it.price || 0) * (it.qty || 1),
-      0
-    );
+    const total = orderData.items.reduce((sum, it) => {
+      const itemQty = Math.max(1, Math.floor(parseNumber(it.qty, 1)));
+      const itemUnitPrice = toMoney(it.price, 0);
+      return addMoney(sum, multiplyMoney(itemUnitPrice, itemQty));
+    }, 0);
     const totalRow = document.createElement("div");
     totalRow.className = "summary-total";
     totalRow.innerHTML = `
@@ -3671,6 +3911,12 @@ function initBottomSheet() {
         : null;
       if (!orderData) return;
 
+      const orderTotal = toArray(orderData.items).reduce((sum, it) => {
+        const itemQty = Math.max(1, Math.floor(parseNumber(it?.qty, 1)));
+        const itemUnitPrice = toMoney(it?.price, 0);
+        return addMoney(sum, multiplyMoney(itemUnitPrice, itemQty));
+      }, 0);
+
       if (gmailBtn) {
         const lines = [
           "Hello Toke Bakes,",
@@ -3679,12 +3925,7 @@ function initBottomSheet() {
           "",
           ...orderData.items.flatMap((it) => getOrderItemMessageLines(it)),
           "",
-          `Order total: NGN ${formatPrice(
-            orderData.items.reduce(
-              (s, it) => s + (it.price || 0) * (it.qty || 1),
-              0
-            )
-          )}`,
+          `Order total: NGN ${formatPrice(orderTotal)}`,
           "",
           "Name: ",
           "Phone: ",
@@ -3712,12 +3953,7 @@ function initBottomSheet() {
           "I would like to place the following order:",
           ...orderData.items.flatMap((it) => getOrderItemMessageLines(it)),
           "",
-          `Order total: NGN ${formatPrice(
-            orderData.items.reduce(
-              (s, it) => s + (it.price || 0) * (it.qty || 1),
-              0
-            )
-          )}`,
+          `Order total: NGN ${formatPrice(orderTotal)}`,
           "",
           "Name:",
           "Phone:",
@@ -3795,6 +4031,7 @@ async function renderCartOnOrderPage(shouldValidate = true) {
       // Check if item is unavailable
       const isUnavailable = item.unavailable;
       const unitPrice = getCartItemUnitPrice(item);
+      const quantity = Math.max(1, Math.floor(parseNumber(item.quantity, 1)));
       const optionLines = getOrderItemOptionLines(item);
       const optionLinesHtml =
         optionLines.length > 0
@@ -3826,14 +4063,14 @@ async function renderCartOnOrderPage(shouldValidate = true) {
           ${optionLinesHtml}
           <div class="qty-controls">
             <button class="qty-btn decrease" ${
-              isUnavailable || (item.quantity || 1) <= 1 ? "disabled" : ""
+              isUnavailable || quantity <= 1 ? "disabled" : ""
             }>-</button>
-            <span class="qty-display">${item.quantity}</span>
+            <span class="qty-display">${quantity}</span>
             <button class="qty-btn increase" ${
               isUnavailable ? "disabled" : ""
             }>+</button>
             <div style="margin-left:auto;font-weight:700;">NGN ${formatPrice(
-              unitPrice * (item.quantity || 1)
+              multiplyMoney(unitPrice, quantity)
             )}</div>
           </div>
         </div>
@@ -4038,6 +4275,7 @@ function initModern3DInteractions() {
 let homeRevealObserver = null;
 let homeScrollListenerAttached = false;
 let homeScrollTicking = false;
+let homeScrollToTopRaf = null;
 
 function ensureHomeEnhancementStyles() {
   if (document.getElementById("home-enhancement-styles")) return;
@@ -4064,6 +4302,46 @@ function ensureHomeEnhancementStyles() {
         transition: none;
       }
     }
+    .featured-card,
+    .menu-item,
+    .cms-menu-item,
+    .gallery-card,
+    .item-card {
+      height: 100%;
+    }
+    .menu-item h3,
+    .cms-menu-item h3,
+    .featured-card-body h4,
+    .item-card-title,
+    .gallery-card figcaption,
+    .featured-card-body p,
+    .menu-item p,
+    .cms-menu-item p,
+    .item-card-desc {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+    @media (max-width: 768px) {
+      .featured-card-body h4,
+      .menu-item h3,
+      .cms-menu-item h3,
+      .item-card-title,
+      .gallery-card figcaption {
+        display: -webkit-box !important;
+        -webkit-line-clamp: 2 !important;
+        -webkit-box-orient: vertical !important;
+        overflow: hidden !important;
+      }
+      .featured-card-body p,
+      .menu-item p,
+      .cms-menu-item p,
+      .item-card-desc {
+        display: -webkit-box !important;
+        -webkit-line-clamp: 3 !important;
+        -webkit-box-orient: vertical !important;
+        overflow: hidden !important;
+      }
+    }
   `;
   document.head.appendChild(style);
 }
@@ -4087,49 +4365,9 @@ function ensureScrollTopButton() {
     document.body.appendChild(btn);
   }
 
-  if (!btn.dataset.bound) {
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      const scrollingElement =
-        document.scrollingElement || document.documentElement || document.body;
-
-      const tryScrollToTop = (target) => {
-        if (!target) return false;
-        try {
-          if (typeof target.scrollTo === "function") {
-            target.scrollTo({ top: 0, left: 0, behavior: "smooth" });
-            return true;
-          }
-        } catch {}
-
-        try {
-          // Fallback for older browsers that don't accept options objects.
-          if (typeof target.scrollTo === "function") {
-            target.scrollTo(0, 0);
-            return true;
-          }
-        } catch {}
-
-        try {
-          if ("scrollTop" in target) {
-            target.scrollTop = 0;
-            return true;
-          }
-        } catch {}
-
-        return false;
-      };
-
-      // Prefer element scrolling, but always fallback to window as well.
-      tryScrollToTop(scrollingElement);
-      tryScrollToTop(window);
-      try {
-        document.documentElement.scrollTop = 0;
-        document.body.scrollTop = 0;
-      } catch {}
-    });
-    btn.dataset.bound = "true";
-  }
+  const prefersReducedMotion = () =>
+    window.matchMedia &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const getScrollTop = () => {
     const scrollingElement =
@@ -4145,19 +4383,83 @@ function ensureScrollTopButton() {
     );
   };
 
-  const update = () => {
+  const setScrollTop = (value) => {
+    const top = Math.max(0, Number(value) || 0);
+    try {
+      window.scrollTo(0, top);
+    } catch {}
+    try {
+      if (document.scrollingElement) {
+        document.scrollingElement.scrollTop = top;
+      }
+    } catch {}
+    try {
+      document.documentElement.scrollTop = top;
+      document.body.scrollTop = top;
+    } catch {}
+  };
+
+  const slowSmoothScrollToTop = () => {
+    const start = getScrollTop();
+    if (start <= 0) return;
+
+    if (prefersReducedMotion()) {
+      setScrollTop(0);
+      return;
+    }
+
+    if (homeScrollToTopRaf) {
+      cancelAnimationFrame(homeScrollToTopRaf);
+      homeScrollToTopRaf = null;
+    }
+
+    const duration = Math.max(750, Math.min(1800, Math.round(start * 0.55)));
+    const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+    let animationStart = null;
+
+    const tick = (timestamp) => {
+      if (animationStart === null) animationStart = timestamp;
+      const elapsed = timestamp - animationStart;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = easeOutCubic(progress);
+      const nextTop = Math.round(start * (1 - eased));
+      setScrollTop(nextTop);
+
+      if (progress < 1) {
+        homeScrollToTopRaf = requestAnimationFrame(tick);
+      } else {
+        homeScrollToTopRaf = null;
+        setScrollTop(0);
+      }
+    };
+
+    homeScrollToTopRaf = requestAnimationFrame(tick);
+  };
+
+  const shouldShowNearBottom = () => {
     const scrollTop = getScrollTop();
     const doc =
       document.scrollingElement || document.documentElement || document.body;
     const maxScroll = (doc && doc.scrollHeight - doc.clientHeight) || 0;
     const distanceToBottom = maxScroll - scrollTop;
+    const nearBottomThreshold = Math.max(
+      160,
+      Math.min(520, Math.round(maxScroll * 0.15))
+    );
+    return maxScroll > 0 && distanceToBottom <= nearBottomThreshold;
+  };
 
-    // Show when past 220px OR when within 20% of the bottom
-    const shouldShow =
-      scrollTop > 220 || distanceToBottom <= Math.max(240, maxScroll * 0.2);
+  if (!btn.dataset.bound) {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      slowSmoothScrollToTop();
+    });
+    btn.dataset.bound = "true";
+  }
 
+  const update = () => {
+    const shouldShow = shouldShowNearBottom();
     btn.classList.toggle("show", shouldShow);
-    // Inline fallback to avoid browser-specific style overrides
     btn.style.opacity = shouldShow ? "1" : "";
     btn.style.pointerEvents = shouldShow ? "auto" : "";
   };
@@ -4175,16 +4477,7 @@ function ensureScrollTopButton() {
           homeScrollTicking = false;
           const el = document.getElementById("scroll-top-btn");
           if (!el) return;
-          const scrollTop = getScrollTop();
-          const doc =
-            document.scrollingElement ||
-            document.documentElement ||
-            document.body;
-          const maxScroll = (doc && doc.scrollHeight - doc.clientHeight) || 0;
-          const distanceToBottom = maxScroll - scrollTop;
-          const shouldShow =
-            scrollTop > 220 ||
-            distanceToBottom <= Math.max(240, maxScroll * 0.2);
+          const shouldShow = shouldShowNearBottom();
           el.classList.toggle("show", shouldShow);
           el.style.opacity = shouldShow ? "1" : "";
           el.style.pointerEvents = shouldShow ? "auto" : "";
@@ -4298,11 +4591,16 @@ function setupCartEventListeners() {
       e.stopPropagation();
 
       if (target.classList.contains("increase")) {
-        cart[index].quantity = (cart[index].quantity || 1) + 1;
+        cart[index].quantity =
+          Math.max(1, Math.floor(parseNumber(cart[index].quantity, 1))) + 1;
       } else if (target.classList.contains("decrease")) {
         // Do not allow quantity to drop below 1
-        if (cart[index].quantity > 1) {
-          cart[index].quantity = cart[index].quantity - 1;
+        const currentQty = Math.max(
+          1,
+          Math.floor(parseNumber(cart[index].quantity, 1))
+        );
+        if (currentQty > 1) {
+          cart[index].quantity = currentQty - 1;
         } else {
           row.classList.remove("qty-bump");
           // Force reflow so animation retriggers

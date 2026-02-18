@@ -1,4 +1,4 @@
-const SW_VERSION = "v6";
+const SW_VERSION = "v7";
 const CACHE_PREFIX = "toke-bakes";
 const CACHE_NAMES = {
   precache: `${CACHE_PREFIX}-precache-${SW_VERSION}`,
@@ -97,6 +97,11 @@ self.addEventListener("message", (event) => {
 
   if (message.type === "PRUNE_CACHES") {
     event.waitUntil(pruneAllCaches());
+    return;
+  }
+
+  if (message.type === "CLEAR_DYNAMIC_CACHES") {
+    event.waitUntil(clearDynamicCaches());
   }
 });
 
@@ -291,6 +296,15 @@ async function pruneAllCaches() {
   ]);
 }
 
+async function clearDynamicCaches() {
+  await Promise.all([
+    caches.delete(CACHE_NAMES.pages),
+    caches.delete(CACHE_NAMES.images),
+    caches.delete(CACHE_NAMES.api),
+    caches.delete(CACHE_NAMES.meta),
+  ]);
+}
+
 async function networkFirst(request, options = {}, event) {
   const {
     cacheName,
@@ -443,11 +457,20 @@ async function routeRequest(request, event) {
     );
   }
 
-  if (
-    isScriptOrStyleRequest(request, url) ||
-    isFontRequest(request, url) ||
-    isDataAssetRequest(url)
-  ) {
+  if (isScriptOrStyleRequest(request, url)) {
+    return networkFirst(
+      request,
+      {
+        cacheName: CACHE_NAMES.assets,
+        timeoutMs: 10000,
+        fetchOptions: { cache: "no-cache" },
+        allowOpaque: true,
+      },
+      event
+    );
+  }
+
+  if (isFontRequest(request, url) || isDataAssetRequest(url)) {
     return staleWhileRevalidate(
       request,
       {
