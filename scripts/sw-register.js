@@ -12,6 +12,9 @@
   if (!isSecureContext) return;
 
   let isRefreshing = false;
+  let registrationRef = null;
+  let updateTimer = null;
+  const SW_UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
   const reloadOnce = () => {
     if (isRefreshing) return;
@@ -21,15 +24,41 @@
 
   navigator.serviceWorker.addEventListener("controllerchange", reloadOnce);
 
+  const checkForSwUpdates = () => {
+    if (!registrationRef) return;
+    if (document.hidden) return;
+    registrationRef.update().catch(() => {});
+  };
+
+  const scheduleUpdateChecks = () => {
+    if (updateTimer) {
+      clearInterval(updateTimer);
+    }
+
+    updateTimer = setInterval(() => {
+      checkForSwUpdates();
+    }, SW_UPDATE_CHECK_INTERVAL_MS);
+
+    window.addEventListener("online", checkForSwUpdates);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) {
+        checkForSwUpdates();
+      }
+    });
+  };
+
   const registerWorker = async () => {
     try {
       const registration = await navigator.serviceWorker.register(
         "service-worker.js"
       );
+      registrationRef = registration;
 
       const promptWorkerActivation = (worker) => {
         if (!worker) return;
-        worker.postMessage({ type: "SKIP_WAITING" });
+        try {
+          worker.postMessage({ type: "SKIP_WAITING" });
+        } catch {}
       };
 
       if (registration.waiting) {
@@ -50,10 +79,8 @@
         });
       });
 
-      // Check in the background for new SW versions.
-      setInterval(() => {
-        registration.update().catch(() => {});
-      }, 10 * 60 * 1000);
+      scheduleUpdateChecks();
+      checkForSwUpdates();
     } catch {
       // Silent fail for non-critical offline caching.
     }

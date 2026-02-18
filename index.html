@@ -13,6 +13,12 @@
       content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
     />
     <link rel="canonical" href="https://tokebakes-ten.vercel.app/" />
+    <link
+      rel="preconnect"
+      href="https://lmqoflcikfcxoeyinjus.supabase.co"
+      crossorigin
+    />
+    <link rel="dns-prefetch" href="//lmqoflcikfcxoeyinjus.supabase.co" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Toke Bakes" />
@@ -203,6 +209,42 @@
         setTimeout(() => {
           document.documentElement.classList.remove("theme-loading");
         }, 4000);
+      })();
+    </script>
+    <script>
+      (function preloadHeroImageFromCache() {
+        try {
+          const raw = localStorage.getItem("hero_carousel_data");
+          if (!raw) return;
+
+          const parsed = JSON.parse(raw);
+          const slides = Array.isArray(parsed?.data) ? parsed.data : [];
+          const first = slides.find((slide) => slide && slide.image);
+          if (!first || !first.image) return;
+
+          const imageUrl = String(first.image).trim();
+          if (!imageUrl) return;
+          const existingPreload = Array.from(
+            document.querySelectorAll('link[rel="preload"][as="image"]')
+          ).some((el) => {
+            try {
+              return el.href === new URL(imageUrl, window.location.href).href;
+            } catch {
+              return false;
+            }
+          });
+          if (existingPreload) {
+            return;
+          }
+
+          const preload = document.createElement("link");
+          preload.rel = "preload";
+          preload.as = "image";
+          preload.href = imageUrl;
+          preload.fetchPriority = "high";
+          preload.crossOrigin = "anonymous";
+          document.head.appendChild(preload);
+        } catch {}
       })();
     </script>
     <link rel="manifest" href="manifest.json" />

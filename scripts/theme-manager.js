@@ -97,8 +97,8 @@ const ThemeManager = {
 
   /* ================== NEW: THEME AUTO-UPDATE SYSTEM ================== */
   setupThemeAutoUpdate() {
-    // Check for theme updates every 8 seconds (faster cross-device sync)
-    setInterval(() => this.checkForThemeUpdates(), 8000);
+    // Check for theme updates periodically without over-polling low-end devices.
+    setInterval(() => this.checkForThemeUpdates(), 15000);
 
     // Also check when page becomes visible
     document.addEventListener("visibilitychange", () => {
@@ -276,15 +276,6 @@ const ThemeManager = {
             timestamp: tsNumber,
             source: "admin-theme",
           });
-
-          if (typeof window.TokeUpdateSync.publishDataUpdate === "function") {
-            window.TokeUpdateSync.publishDataUpdate("update", "theme", {
-              source: "admin-theme",
-              themeFile: normalizedCssFile,
-              themeName,
-              timestamp: tsNumber,
-            });
-          }
         } else if (this.themeChannel) {
           this.themeChannel.postMessage({
             type: "THEME_CHANGED",
@@ -293,32 +284,6 @@ const ThemeManager = {
             themeName,
             timestamp: tsNumber,
           });
-
-          const fallbackPayload = {
-            type: "DATA_UPDATED",
-            timestamp: tsNumber,
-            operation: "update",
-            itemType: "theme",
-            source: "admin-theme",
-            themeFile: normalizedCssFile,
-            themeName,
-          };
-
-          try {
-            localStorage.setItem("toke_bakes_last_update", String(tsNumber));
-            localStorage.setItem(
-              "toke_bakes_last_update_payload",
-              JSON.stringify(fallbackPayload)
-            );
-          } catch {}
-
-          try {
-            window.dispatchEvent(
-              new CustomEvent("toke:data-updated", {
-                detail: fallbackPayload,
-              })
-            );
-          } catch {}
         }
       }
     }
@@ -736,8 +701,10 @@ const ThemeManager = {
         headers: {
           apikey: SUPABASE_CONFIG.ANON_KEY,
           Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-          Cache: "no-store",
+          Pragma: "no-cache",
+          "Cache-Control": "no-store",
         },
+        cache: "no-store",
       });
 
       if (!response.ok) {

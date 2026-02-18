@@ -3,6 +3,7 @@
 const CAROUSEL_DEBUG = false;
 const CAROUSEL_CACHE_TTL_MS = 60 * 1000; // 1 minute
 const CAROUSEL_READY_TIMEOUT_MS = 450;
+const CAROUSEL_FETCH_TIMEOUT_MS = 12000;
 const CAROUSEL_CACHE_VERSION = 2;
 const CAROUSEL_CACHE_VERSION_KEY = "hero_carousel_cache_version";
 const CAROUSEL_FALLBACK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
@@ -28,6 +29,23 @@ const normalizeCarouselAsset = (value) =>
     : String(value)
         .trim()
         .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = CAROUSEL_FETCH_TIMEOUT_MS) {
+  if (typeof AbortController === "undefined") {
+    return fetch(url, options);
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 function ensureCarouselCacheVersion() {
   try {
@@ -485,16 +503,24 @@ class HeroCarousel {
       };
 
       const doFetch = async (simpleOrder = false) => {
-        const requestUrl = buildUrl(simpleOrder);
-        const response = await fetch(requestUrl, {
-          cache: forceRefresh ? "no-store" : "default",
-          headers: {
-            apikey: SUPABASE_CONFIG.ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-            "Content-Type": "application/json",
-            Accept: "application/json",
+        const requestUrl = forceRefresh
+          ? `${buildUrl(simpleOrder)}&_=` + Date.now()
+          : buildUrl(simpleOrder);
+        const response = await fetchWithTimeout(
+          requestUrl,
+          {
+            cache: "no-store",
+            headers: {
+              apikey: SUPABASE_CONFIG.ANON_KEY,
+              Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              Pragma: "no-cache",
+              "Cache-Control": "no-store",
+            },
           },
-        });
+          CAROUSEL_FETCH_TIMEOUT_MS
+        );
 
         if (!response.ok) {
           const errText = await response.text().catch(() => "");
@@ -1159,8 +1185,18 @@ function refreshCarouselFromSync(payload = {}) {
 
   if (payload.type !== "DATA_UPDATED") return;
   if (payload.itemType !== "carousel" && payload.itemType !== "all") return;
+  const ts = Number(payload.timestamp) || 0;
+  if (ts && ts <= Number(window.__carouselLastSyncTs || 0)) {
+    return;
+  }
+  if (ts) {
+    window.__carouselLastSyncTs = ts;
+  }
 
   carouselDebugLog("Refreshing carousel from sync payload", payload);
+  try {
+    localStorage.removeItem("hero_carousel_data");
+  } catch {}
   window.heroCarousel.refresh(true, { showLoading: false });
 }
 

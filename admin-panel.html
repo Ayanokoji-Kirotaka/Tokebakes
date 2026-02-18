@@ -6,6 +6,12 @@
     <title>Admin Panel | Toke Bakes</title>
     <meta name="description" content="Administrative panel for managing Toke Bakes website content." />
     <meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex" />
+    <link
+      rel="preconnect"
+      href="https://lmqoflcikfcxoeyinjus.supabase.co"
+      crossorigin
+    />
+    <link rel="dns-prefetch" href="//lmqoflcikfcxoeyinjus.supabase.co" />
     <script>
       (function () {
         const normalizeAssetPath = (value) => {
@@ -132,6 +138,134 @@
     <script src="scripts/config.js" defer></script>
     <script src="scripts/update-sync.js" defer></script>
     <script src="scripts/theme-manager.js" defer></script>
+    <style>
+      .btn-options {
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .menu-options-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 6500;
+        display: none;
+      }
+      .menu-options-modal.active {
+        display: block;
+      }
+      .menu-options-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(17, 14, 11, 0.55);
+      }
+      .menu-options-panel {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: min(620px, 96vw);
+        background: var(--background);
+        color: var(--text);
+        border-left: 1px solid var(--border);
+        box-shadow: -18px 0 32px rgba(0, 0, 0, 0.22);
+        display: flex;
+        flex-direction: column;
+      }
+      .menu-options-header {
+        padding: 1rem 1.1rem 0.85rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .menu-options-header h3 {
+        margin: 0;
+      }
+      .menu-options-header p {
+        margin: 0.3rem 0 0;
+        color: var(--text-light);
+      }
+      .menu-options-close {
+        position: absolute;
+        right: 0.8rem;
+        top: 0.75rem;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
+      }
+      .menu-options-body {
+        overflow-y: auto;
+        padding: 1rem 1.1rem 1.3rem;
+      }
+      .option-group-form {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 0.8rem;
+        margin-bottom: 1rem;
+        background: var(--surface);
+      }
+      .option-values-editor {
+        margin-top: 0.75rem;
+        display: grid;
+        gap: 0.55rem;
+      }
+      .option-value-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 130px 42px;
+        gap: 0.45rem;
+        align-items: center;
+      }
+      .option-value-row button {
+        width: 100%;
+      }
+      .option-groups-list {
+        display: grid;
+        gap: 0.8rem;
+      }
+      .option-group-card {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 0.75rem;
+        background: var(--surface);
+      }
+      .option-group-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-bottom: 0.45rem;
+      }
+      .option-meta-pill {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 0.17rem 0.5rem;
+      }
+      .option-group-values {
+        margin: 0.45rem 0 0;
+        padding-left: 1rem;
+        color: var(--text-light);
+      }
+      .option-group-actions {
+        margin-top: 0.65rem;
+        display: flex;
+        gap: 0.45rem;
+      }
+      body.menu-options-open {
+        overflow: hidden;
+      }
+      @media (max-width: 768px) {
+        .menu-options-panel {
+          width: 100%;
+        }
+        .option-value-row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
   </head>
   <body>
     <!-- <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes" /></div> -->
@@ -1189,6 +1323,100 @@
           </p>
         </div>
       </footer>
+    </div>
+
+    <div id="menu-options-modal" class="menu-options-modal" aria-hidden="true">
+      <div class="menu-options-backdrop" data-options-close="true"></div>
+      <section
+        class="menu-options-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="menu-options-title"
+      >
+        <button
+          type="button"
+          class="menu-options-close"
+          data-options-close="true"
+          aria-label="Close options manager"
+        >
+          x
+        </button>
+        <div class="menu-options-header">
+          <h3 id="menu-options-title">Product Configurator Options</h3>
+          <p id="menu-options-product-label">Select a menu item to begin.</p>
+        </div>
+        <div class="menu-options-body">
+          <form id="option-group-form" class="admin-form option-group-form">
+            <input type="hidden" id="option-group-id" value="" />
+            <div class="form-row">
+              <div class="form-group">
+                <label for="option-group-name"
+                  ><i class="fas fa-list"></i> Group Name</label
+                >
+                <input
+                  type="text"
+                  id="option-group-name"
+                  placeholder="e.g., Flavour, Size, Toppings"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label for="option-group-type"
+                  ><i class="fas fa-dot-circle"></i> Type</label
+                >
+                <select id="option-group-type">
+                  <option value="single">Single Select</option>
+                  <option value="multiple">Multiple Select</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="option-group-required"
+                  ><i class="fas fa-asterisk"></i> Required</label
+                >
+                <select id="option-group-required">
+                  <option value="false">No</option>
+                  <option value="true">Yes</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="option-group-max"
+                  ><i class="fas fa-layer-group"></i> Max Selections
+                  (multiple only)</label
+                >
+                <input
+                  type="number"
+                  id="option-group-max"
+                  min="1"
+                  placeholder="Leave empty for unlimited"
+                />
+              </div>
+            </div>
+
+            <h4 style="margin: 0.6rem 0 0.3rem">Option Values</h4>
+            <div id="option-values-editor" class="option-values-editor"></div>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              id="add-option-value-row"
+            >
+              <i class="fas fa-plus"></i> Add Option Value
+            </button>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-admin" id="save-option-group">
+                <i class="fas fa-save"></i> Save Group
+              </button>
+              <button type="button" class="btn btn-secondary" id="reset-option-group">
+                <i class="fas fa-undo"></i> Clear
+              </button>
+            </div>
+          </form>
+
+          <div id="option-groups-status" class="form-help"></div>
+          <div id="option-groups-list" class="option-groups-list"></div>
+        </div>
+      </section>
     </div>
 
     <!-- Hidden file input for import -->

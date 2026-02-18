@@ -27,7 +27,7 @@ class WebsiteAutoUpdater {
     this.lastPayloadKey = "toke_bakes_last_update_payload";
     this.dbLastUpdateKey = "toke_bakes_db_last_updated";
     this.myLastCheckKey = "toke_bakes_last_check";
-    this.dbCheckInterval = 60000;
+    this.dbCheckInterval = 30000;
     this.lastDbCheck = 0;
     this.broadcastChannel = null;
     this.syncBus = null;
@@ -35,6 +35,7 @@ class WebsiteAutoUpdater {
     this.boundStorageFallback = null;
     this.boundCustomFallback = null;
     this.pollingInterval = null;
+    this.isCheckingUpdates = false;
     this.isRefreshing = false;
     this.pendingRefresh = false;
     this.pendingTriggerTs = 0;
@@ -42,10 +43,14 @@ class WebsiteAutoUpdater {
     this.minRefreshGapMs = 1200;
     this.syncIndicatorTimer = null;
     this.refreshWatchdogTimer = null;
+    this.boundVisibilityHandler = null;
+    this.boundOnlineHandler = null;
     this.lastRenderedUpdateTs =
       Number(localStorage.getItem(this.dbLastUpdateKey)) ||
       Number(localStorage.getItem(this.lastUpdateKey)) ||
       0;
+    this.lastCheckMemory =
+      Number(localStorage.getItem(this.myLastCheckKey)) || 0;
     this.init();
   }
 
@@ -64,14 +69,21 @@ class WebsiteAutoUpdater {
     this.startPolling(10000); // 10 seconds
 
     // 3. Check when user returns to tab
-    document.addEventListener("visibilitychange", () => {
+    this.boundVisibilityHandler = () => {
       if (!document.hidden) {
         debugLog("Tab became visible, checking for updates...");
         this.checkForUpdates();
       }
-    });
+    };
+    document.addEventListener("visibilitychange", this.boundVisibilityHandler);
 
-    // 4. Initial check on page load (faster so recent admin edits appear sooner)
+    // 4. Re-check as soon as connectivity is restored.
+    this.boundOnlineHandler = () => {
+      this.checkForUpdates();
+    };
+    window.addEventListener("online", this.boundOnlineHandler);
+
+    // 5. Initial check on page load (faster so recent admin edits appear sooner)
     setTimeout(() => this.checkForUpdates(), 800);
 
     window.addEventListener(
@@ -88,6 +100,7 @@ class WebsiteAutoUpdater {
       this.syncBus = window.TokeUpdateSync;
       this.unsubscribeSync = this.syncBus.subscribe((payload) => {
         if (!payload || payload.type !== "DATA_UPDATED") return;
+        if (payload.itemType === "theme") return;
         debugLog("Update received via shared sync bus", payload);
         this.handleExternalUpdate(payload);
       });
@@ -100,6 +113,7 @@ class WebsiteAutoUpdater {
         this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
         this.broadcastChannel.onmessage = (event) => {
           if (event?.data?.type === "DATA_UPDATED") {
+            if (event.data.itemType === "theme") return;
             debugLog("BroadcastChannel update received!", event.data);
             this.handleExternalUpdate(event.data);
           }
@@ -116,6 +130,7 @@ class WebsiteAutoUpdater {
         try {
           const parsed = JSON.parse(event.newValue);
           if (parsed?.type === "DATA_UPDATED") {
+            if (parsed?.itemType === "theme") return;
             this.handleExternalUpdate(parsed);
           }
           return;
@@ -126,6 +141,7 @@ class WebsiteAutoUpdater {
         this.handleExternalUpdate({
           type: "DATA_UPDATED",
           timestamp: event.newValue,
+          itemType: "all",
         });
       }
     };
@@ -134,6 +150,7 @@ class WebsiteAutoUpdater {
     this.boundCustomFallback = (event) => {
       const detail = event?.detail || {};
       if (detail.type === "DATA_UPDATED") {
+        if (detail.itemType === "theme") return;
         this.handleExternalUpdate(detail);
       }
     };
@@ -169,6 +186,16 @@ class WebsiteAutoUpdater {
       this.boundCustomFallback = null;
     }
 
+    if (this.boundVisibilityHandler) {
+      document.removeEventListener("visibilitychange", this.boundVisibilityHandler);
+      this.boundVisibilityHandler = null;
+    }
+
+    if (this.boundOnlineHandler) {
+      window.removeEventListener("online", this.boundOnlineHandler);
+      this.boundOnlineHandler = null;
+    }
+
     if (this.syncIndicatorTimer) {
       clearTimeout(this.syncIndicatorTimer);
       this.syncIndicatorTimer = null;
@@ -182,13 +209,17 @@ class WebsiteAutoUpdater {
 
   setMyLastCheck(value) {
     const ts = Number(value) || 0;
+    this.lastCheckMemory = Math.max(this.lastCheckMemory || 0, ts);
     try {
       localStorage.setItem(this.myLastCheckKey, String(ts));
     } catch {}
   }
 
   getMyLastCheck() {
-    return Number(localStorage.getItem(this.myLastCheckKey) || "0");
+    const stored = Number(localStorage.getItem(this.myLastCheckKey) || "0");
+    const effective = Math.max(this.lastCheckMemory || 0, stored || 0);
+    this.lastCheckMemory = effective;
+    return effective;
   }
 
   async fetchSiteLastUpdated() {
@@ -197,7 +228,7 @@ class WebsiteAutoUpdater {
     }
 
     try {
-      const response = await fetch(
+      const response = await fetchWithTimeout(
         `${SUPABASE_CONFIG.URL}/rest/v1/rpc/site_last_updated`,
         {
           method: "POST",
@@ -205,8 +236,12 @@ class WebsiteAutoUpdater {
             apikey: SUPABASE_CONFIG.ANON_KEY,
             Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
             "Content-Type": "application/json",
+            Pragma: "no-cache",
+            "Cache-Control": "no-store",
           },
-        }
+          cache: "no-store",
+        },
+        SUPABASE_FETCH_TIMEOUT_MS
       );
 
       if (!response.ok) {
@@ -263,30 +298,55 @@ class WebsiteAutoUpdater {
     const localTs = Number(localStorage.getItem(this.lastUpdateKey) || "0");
 
     let payloadTs = 0;
+    let payloadType = "";
+    let payloadItemType = "";
     try {
       const payloadRaw = localStorage.getItem(this.lastPayloadKey);
       if (payloadRaw) {
         const parsed = JSON.parse(payloadRaw);
         payloadTs = Number(parsed?.timestamp) || 0;
+        payloadType = parsed?.type || "";
+        payloadItemType = parsed?.itemType || "";
       }
     } catch {}
+
+    // Ignore non-content events (e.g. theme metadata broadcasts)
+    // so we don't trigger the website content sync indicator repeatedly.
+    if (payloadTs && payloadType && payloadType !== "DATA_UPDATED") {
+      return 0;
+    }
+
+    // Theme updates are handled by theme-manager.js and should not trigger
+    // a full content refresh loop on the public pages.
+    if (payloadTs && payloadItemType === "theme") {
+      return localTs === payloadTs ? 0 : localTs;
+    }
 
     return Math.max(localTs, payloadTs);
   }
 
   async checkForUpdates() {
-    const lastUpdate = this.getLatestUpdateTimestamp();
-    const myLastCheck = this.getMyLastCheck();
-
-    if (lastUpdate && lastUpdate > myLastCheck) {
-      debugLog("Update detected via localStorage/timestamp");
-      this.setMyLastCheck(lastUpdate);
-      await this.refreshDataWithUI(lastUpdate, true);
-      return true;
+    if (this.isCheckingUpdates) {
+      return false;
     }
 
-    const dbUpdated = await this.checkDatabaseForUpdates();
-    return dbUpdated;
+    this.isCheckingUpdates = true;
+    try {
+      const lastUpdate = this.getLatestUpdateTimestamp();
+      const myLastCheck = this.getMyLastCheck();
+
+      if (lastUpdate && lastUpdate > myLastCheck) {
+        debugLog("Update detected via localStorage/timestamp");
+        this.setMyLastCheck(lastUpdate);
+        await this.refreshDataWithUI(lastUpdate, true);
+        return true;
+      }
+
+      const dbUpdated = await this.checkDatabaseForUpdates();
+      return dbUpdated;
+    } finally {
+      this.isCheckingUpdates = false;
+    }
   }
 
   async checkDatabaseForUpdates() {
@@ -301,7 +361,7 @@ class WebsiteAutoUpdater {
     this.lastDbCheck = now;
 
     try {
-      const response = await fetch(
+      const response = await fetchWithTimeout(
         `${SUPABASE_CONFIG.URL}/rest/v1/rpc/site_last_updated`,
         {
           method: "POST",
@@ -309,8 +369,12 @@ class WebsiteAutoUpdater {
             apikey: SUPABASE_CONFIG.ANON_KEY,
             Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
             "Content-Type": "application/json",
+            Pragma: "no-cache",
+            "Cache-Control": "no-store",
           },
-        }
+          cache: "no-store",
+        },
+        SUPABASE_FETCH_TIMEOUT_MS
       );
 
       if (!response.ok) {
@@ -324,11 +388,10 @@ class WebsiteAutoUpdater {
       const parsed = Date.parse(value);
       if (Number.isNaN(parsed)) return false;
 
-      const lastKnown = Number(
-        localStorage.getItem(this.dbLastUpdateKey) || "0"
-      );
+      const lastKnown = Number(localStorage.getItem(this.dbLastUpdateKey) || "0");
+      const comparisonBaseline = Math.max(lastKnown, this.lastRenderedUpdateTs || 0);
 
-      if (parsed > lastKnown) {
+      if (parsed > comparisonBaseline) {
         localStorage.setItem(this.dbLastUpdateKey, parsed.toString());
         this.setMyLastCheck(parsed);
         await this.refreshDataWithUI(parsed, true);
@@ -561,19 +624,44 @@ const debugWarn = (...args) => {
 // Cache for menu items to reduce API calls
 let cachedMenuItems = null;
 let cacheTimestamp = null;
-const CACHE_DURATION = 0; // disable cache for cross-device freshness
+const CACHE_DURATION = 60 * 1000; // 1 minute
 
 // General cache for all data
 const dataCache = new Map();
-const CACHE_DURATION_GENERAL = 0; // disable general cache
+const inFlightSupabaseRequests = new Map();
+const SUPABASE_FETCH_TIMEOUT_MS = 12000;
+const CACHE_DURATION_GENERAL = 60 * 1000; // 1 minute
 const MENU_CACHE_KEY = "toke_bakes_menu_cache_v2";
+const MENU_OPTIONS_CACHE_KEY = "toke_bakes_menu_options_cache_v1";
+const MENU_OPTIONS_CACHE_DURATION = 60 * 1000;
 const CONTENT_CONTAINER_IDS = [
   "featured-container",
   "menu-container",
   "gallery-container",
 ];
 const CONTENT_CACHE_VERSION_KEY = "toke_bakes_content_cache_version";
-const CONTENT_CACHE_VERSION = "2";
+const CONTENT_CACHE_VERSION = "4";
+let cachedMenuOptionMap = new Map();
+let menuOptionsCacheTimestamp = 0;
+let inFlightMenuOptionRequest = null;
+let renderedMenuItemLookup = new Map();
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = SUPABASE_FETCH_TIMEOUT_MS) {
+  if (typeof AbortController === "undefined") {
+    return fetch(url, options);
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 function toArray(value) {
   return Array.isArray(value) ? value : [];
@@ -753,6 +841,208 @@ function normalizeMenuItems(items) {
   return sortByDisplayAndCreated(normalized);
 }
 
+function normalizeOptionType(value) {
+  const raw = toSafeString(value, "single").toLowerCase();
+  return raw === "multiple" ? "multiple" : "single";
+}
+
+function normalizeProductOptionGroup(rawGroup = {}, index = 0) {
+  const productId = normalizeItemId(rawGroup.product_id);
+  if (!productId) return null;
+
+  const type = normalizeOptionType(rawGroup.type);
+  const maxSelectionsRaw = parseNumber(rawGroup.max_selections, null);
+  const maxSelections =
+    type === "multiple" && Number.isFinite(maxSelectionsRaw) && maxSelectionsRaw > 0
+      ? Math.floor(maxSelectionsRaw)
+      : null;
+
+  return {
+    id: normalizeItemId(rawGroup.id) || `group-${index}`,
+    product_id: productId,
+    name: toSafeString(rawGroup.name, "Options"),
+    type,
+    required: parseBoolean(rawGroup.required, false),
+    max_selections: maxSelections,
+    created_at: rawGroup.created_at || rawGroup.createdAt || null,
+  };
+}
+
+function normalizeProductOptionValue(rawValue = {}, index = 0) {
+  const groupId = normalizeItemId(rawValue.group_id);
+  if (!groupId) return null;
+
+  return {
+    id: normalizeItemId(rawValue.id) || `value-${index}`,
+    group_id: groupId,
+    name: toSafeString(rawValue.name, "Option"),
+    price_adjustment: parseNumber(rawValue.price_adjustment, 0),
+    created_at: rawValue.created_at || rawValue.createdAt || null,
+  };
+}
+
+function getMenuOptionGroupsEndpoint() {
+  return (
+    window.API_ENDPOINTS?.MENU_OPTION_GROUPS || "/rest/v1/product_option_groups"
+  );
+}
+
+function getMenuOptionValuesEndpoint() {
+  return (
+    window.API_ENDPOINTS?.MENU_OPTION_VALUES || "/rest/v1/product_option_values"
+  );
+}
+
+function buildMenuOptionMap(groups = [], values = []) {
+  const valuesByGroup = new Map();
+  values.forEach((value, index) => {
+    const normalizedValue = normalizeProductOptionValue(value, index);
+    if (!normalizedValue) return;
+    const list = valuesByGroup.get(normalizedValue.group_id) || [];
+    list.push(normalizedValue);
+    valuesByGroup.set(normalizedValue.group_id, list);
+  });
+
+  const optionMap = new Map();
+  groups.forEach((group, index) => {
+    const normalizedGroup = normalizeProductOptionGroup(group, index);
+    if (!normalizedGroup) return;
+
+    const productKey = normalizeItemId(normalizedGroup.product_id);
+    const currentGroups = optionMap.get(productKey) || [];
+    const groupValues = (valuesByGroup.get(normalizedGroup.id) || []).sort(
+      (a, b) => {
+        const aDate = Date.parse(a.created_at || "") || 0;
+        const bDate = Date.parse(b.created_at || "") || 0;
+        if (aDate !== bDate) return aDate - bDate;
+        return a.name.localeCompare(b.name);
+      }
+    );
+
+    currentGroups.push({
+      ...normalizedGroup,
+      values: groupValues,
+    });
+    optionMap.set(productKey, currentGroups);
+  });
+
+  optionMap.forEach((groupList, productKey) => {
+    const sortedGroups = [...groupList].sort((a, b) => {
+      const aDate = Date.parse(a.created_at || "") || 0;
+      const bDate = Date.parse(b.created_at || "") || 0;
+      if (aDate !== bDate) return aDate - bDate;
+      return a.name.localeCompare(b.name);
+    });
+    optionMap.set(productKey, sortedGroups);
+  });
+
+  return optionMap;
+}
+
+function cacheMenuOptionsLocally(groups, values) {
+  try {
+    localStorage.setItem(
+      MENU_OPTIONS_CACHE_KEY,
+      JSON.stringify({
+        timestamp: Date.now(),
+        groups: toArray(groups),
+        values: toArray(values),
+      })
+    );
+  } catch {}
+}
+
+function readMenuOptionsFromLocalCache() {
+  try {
+    const raw = localStorage.getItem(MENU_OPTIONS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.groups) || !Array.isArray(parsed.values)) {
+      return null;
+    }
+    return {
+      timestamp: Number(parsed.timestamp) || 0,
+      map: buildMenuOptionMap(parsed.groups, parsed.values),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function getMenuOptionMap(forceRefresh = false) {
+  const now = Date.now();
+  if (
+    !forceRefresh &&
+    menuOptionsCacheTimestamp &&
+    now - menuOptionsCacheTimestamp < MENU_OPTIONS_CACHE_DURATION
+  ) {
+    return cachedMenuOptionMap;
+  }
+
+  if (!forceRefresh && inFlightMenuOptionRequest) {
+    return inFlightMenuOptionRequest;
+  }
+
+  const requestPromise = (async () => {
+    try {
+      const groupEndpoint = getMenuOptionGroupsEndpoint();
+      const valueEndpoint = getMenuOptionValuesEndpoint();
+      const groupsQuery =
+        "?select=id,product_id,name,type,required,max_selections,created_at,updated_at&order=created_at.asc";
+      const valuesQuery =
+        "?select=id,group_id,name,price_adjustment,created_at,updated_at&order=created_at.asc";
+
+      const [groupsRaw, valuesRaw] = await Promise.all([
+        loadFromSupabase(groupEndpoint, groupsQuery, { forceRefresh }),
+        loadFromSupabase(valueEndpoint, valuesQuery, { forceRefresh }),
+      ]);
+
+      const groups = toArray(groupsRaw);
+      const values = toArray(valuesRaw);
+      const optionMap = buildMenuOptionMap(groups, values);
+      cachedMenuOptionMap = optionMap;
+      menuOptionsCacheTimestamp = Date.now();
+      cacheMenuOptionsLocally(groups, values);
+      return optionMap;
+    } catch (error) {
+      debugWarn("Product option fetch failed; using fallback if available:", error);
+
+      const localCache = readMenuOptionsFromLocalCache();
+      if (localCache) {
+        cachedMenuOptionMap = localCache.map;
+        menuOptionsCacheTimestamp = localCache.timestamp || Date.now();
+        return cachedMenuOptionMap;
+      }
+
+      if (cachedMenuOptionMap && menuOptionsCacheTimestamp) {
+        return cachedMenuOptionMap;
+      }
+
+      cachedMenuOptionMap = new Map();
+      menuOptionsCacheTimestamp = Date.now();
+      return cachedMenuOptionMap;
+    }
+  })();
+
+  if (!forceRefresh) {
+    inFlightMenuOptionRequest = requestPromise;
+  }
+
+  try {
+    return await requestPromise;
+  } finally {
+    if (!forceRefresh) {
+      inFlightMenuOptionRequest = null;
+    }
+  }
+}
+
+function getOptionsForMenuItem(itemId) {
+  const key = normalizeItemId(itemId);
+  if (!key) return [];
+  return cachedMenuOptionMap.get(key) || [];
+}
+
 function normalizeGalleryItems(items) {
   const normalized = toArray(items).map((item, index) =>
     normalizeGalleryItem(item, index)
@@ -829,37 +1119,64 @@ async function loadFromSupabase(endpoint, query = "", options = {}) {
     throw new Error("Supabase configuration not found");
   }
 
+  if (!forceRefresh && inFlightSupabaseRequests.has(cacheKey)) {
+    return inFlightSupabaseRequests.get(cacheKey);
+  }
+
   const requestUrl = forceRefresh
     ? `${SUPABASE_CONFIG.URL}${endpoint}${normalizedQuery}${
         normalizedQuery.includes("?") ? "&" : "?"
       }_=${now}`
     : `${SUPABASE_CONFIG.URL}${endpoint}${normalizedQuery}`;
 
-  const response = await fetch(requestUrl, {
-    headers: {
-      apikey: SUPABASE_CONFIG.ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-      "Content-Type": "application/json",
-      Pragma: "no-cache",
-      "Cache-Control": "no-store",
-    },
-    cache: "no-store",
-  });
+  const requestPromise = (async () => {
+    const response = await fetchWithTimeout(
+      requestUrl,
+      {
+        headers: {
+          apikey: SUPABASE_CONFIG.ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+          "Content-Type": "application/json",
+          Pragma: "no-cache",
+          "Cache-Control": "no-store",
+        },
+        cache: "no-store",
+      },
+      SUPABASE_FETCH_TIMEOUT_MS
+    );
 
-  if (!response.ok) {
-    throw new Error(`Supabase request failed (${response.status})`);
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      throw new Error(
+        `Supabase request failed (${response.status})${
+          errorText ? `: ${errorText.slice(0, 140)}` : ""
+        }`
+      );
+    }
+
+    const data = await response.json();
+    const result = Array.isArray(data) ? data : [];
+
+    // Cache the result
+    if (CACHE_DURATION_GENERAL > 0) {
+      dataCache.set(cacheKey, { data: result, timestamp: now });
+      debugLog(`Cached data for ${endpoint}`);
+    }
+
+    return result;
+  })();
+
+  if (!forceRefresh) {
+    inFlightSupabaseRequests.set(cacheKey, requestPromise);
   }
 
-  const data = await response.json();
-  const result = Array.isArray(data) ? data : [];
-
-  // Cache the result
-  if (CACHE_DURATION_GENERAL > 0) {
-    dataCache.set(cacheKey, { data: result, timestamp: now });
-    debugLog(`Cached data for ${endpoint}`);
+  try {
+    return await requestPromise;
+  } finally {
+    if (!forceRefresh) {
+      inFlightSupabaseRequests.delete(cacheKey);
+    }
   }
-
-  return result;
 }
 
 // Get menu items with caching
@@ -1097,6 +1414,7 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
     const cachedAvailable = cachedData.filter(isMenuItemAvailable);
     if (cachedAvailable.length > 0) {
       renderMenuItems(container, cachedAvailable);
+      Promise.resolve(getMenuOptionMap(forceReload)).catch(() => {});
     } else {
       container.innerHTML = `
         <div class="empty-state">
@@ -1125,7 +1443,11 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
 
   try {
     // Try to load fresh data
-    const allItems = normalizeMenuItems(await getMenuItems(forceReload));
+    const [menuItems] = await Promise.all([
+      getMenuItems(forceReload),
+      getMenuOptionMap(forceReload),
+    ]);
+    const allItems = normalizeMenuItems(menuItems);
 
     // Update cache (even if empty) so stale content doesn't linger.
     cachedMenuItems = allItems;
@@ -1170,6 +1492,7 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
       );
       if (fallbackAvailable.length > 0) {
         renderMenuItems(container, fallbackAvailable);
+        Promise.resolve(getMenuOptionMap(false)).catch(() => {});
       } else {
         container.innerHTML = `
           <div class="empty-state">
@@ -1444,13 +1767,21 @@ function waitForThemeReady(timeoutMs = 1200) {
 function clearContentCaches() {
   cachedMenuItems = null;
   cacheTimestamp = null;
+  cachedMenuOptionMap = new Map();
+  menuOptionsCacheTimestamp = 0;
+  inFlightMenuOptionRequest = null;
+  renderedMenuItemLookup = new Map();
 
   if (dataCache && dataCache.clear) {
     dataCache.clear();
   }
+  if (inFlightSupabaseRequests && inFlightSupabaseRequests.clear) {
+    inFlightSupabaseRequests.clear();
+  }
 
   try {
     localStorage.removeItem(MENU_CACHE_KEY);
+    localStorage.removeItem(MENU_OPTIONS_CACHE_KEY);
     if (window.API_ENDPOINTS?.FEATURED) {
       localStorage.removeItem(`${window.API_ENDPOINTS.FEATURED}_data`);
     }
@@ -1490,12 +1821,19 @@ function renderFeaturedItems(container, items) {
   const safeItems = normalizeFeaturedItems(items).filter(isFeaturedActive);
   container.innerHTML = safeItems
     .map(
-      (item) => `
+      (item, index) => {
+        const isPriority = index === 0;
+        return `
           <article class="featured-card" data-ripple="true">
             <div class="featured-card-media">
               <img src="${item.image}" alt="${escapeHtml(
                 item.title
-              )}" loading="lazy" decoding="async"
+              )}" loading="${
+                isPriority ? "eager" : "lazy"
+              }" decoding="async" fetchpriority="${
+                isPriority ? "high" : "auto"
+              }" width="800" height="600"
+              sizes="(max-width: 640px) 92vw, (max-width: 1024px) 45vw, 360px"
                    onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkZlYXR1cmVkPC90ZXh0Pjwvc3ZnPg==';">
               <span class="featured-card-glow" aria-hidden="true"></span>
             </div>
@@ -1504,7 +1842,8 @@ function renderFeaturedItems(container, items) {
               <p>${escapeHtml(item.description)}</p>
             </div>
           </article>
-        `
+        `;
+      }
     )
     .join("");
 
@@ -1512,23 +1851,48 @@ function renderFeaturedItems(container, items) {
 
 function renderMenuItems(container, items) {
   const safeItems = normalizeMenuItems(items).filter(isMenuItemAvailable);
+  renderedMenuItemLookup = new Map();
+  safeItems.forEach((item) => {
+    const itemId = normalizeItemId(item.id);
+    if (itemId) {
+      renderedMenuItemLookup.set(itemId, item);
+    }
+  });
+
   container.innerHTML = safeItems
     .map(
-      (item) => `
-          <div class="menu-item" data-ripple="true" data-item="${escapeHtml(
-            item.title
-          )}" data-price="${item.price}" data-id="${item.id || ""}">
+      (item, index) => {
+        const isPriority = index === 0;
+        const itemId = normalizeItemId(item.id);
+        const priceLabel = Number(item.price) > 0 ? formatPrice(item.price) : "0";
+        return `
+          <div class="menu-item"
+               data-ripple="true"
+               data-menu-item="true"
+               data-item="${escapeHtml(item.title)}"
+               data-price="${item.price}"
+               data-id="${escapeHtml(itemId)}"
+               role="button"
+               tabindex="0"
+               aria-label="Customize ${escapeHtml(item.title)}">
             <img src="${item.image}" alt="${escapeHtml(
         item.title
-      )}" loading="lazy" decoding="async" onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4='">
+      )}" loading="${
+        isPriority ? "eager" : "lazy"
+      }" decoding="async" fetchpriority="${
+        isPriority ? "high" : "auto"
+      }" width="800" height="600"
+      sizes="(max-width: 640px) 92vw, (max-width: 1024px) 45vw, 360px"
+      onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4='">
             <h3>${escapeHtml(item.title)}</h3>
             <p>${escapeHtml(item.description)}</p>
-            <div class="popup">
-              <button class="add-cart">Add to Cart</button>
-              <a class="order-now" href="#">Order Now</a>
+            <div class="menu-item-meta">
+              <span class="price">From NGN ${priceLabel}</span>
+              <span class="menu-item-cta">Customize</span>
             </div>
           </div>
-        `
+        `;
+      }
     )
     .join("");
 
@@ -1538,15 +1902,21 @@ function renderGalleryImages(container, items) {
   const safeItems = normalizeGalleryItems(items);
   container.innerHTML = safeItems
     .map(
-      (item) => {
-        const widthAttr = item.width ? `width=\"${item.width}\"` : "";
-        const heightAttr = item.height ? `height=\"${item.height}\"` : "";
+      (item, index) => {
+        const width = Number(item.width) > 0 ? Number(item.width) : 800;
+        const height = Number(item.height) > 0 ? Number(item.height) : 600;
+        const isPriority = index === 0;
         return `
             <figure class="gallery-card" data-ripple="true">
               <div class="gallery-card-media">
                 <img src="${item.image}" alt="${escapeHtml(
                   item.alt || ""
-                )}" loading="lazy" decoding="async" ${widthAttr} ${heightAttr}
+                )}" loading="${
+                  isPriority ? "eager" : "lazy"
+                }" decoding="async" fetchpriority="${
+                  isPriority ? "high" : "auto"
+                }" width="${width}" height="${height}"
+                sizes="(max-width: 640px) 92vw, (max-width: 1024px) 45vw, 360px"
                      onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+='">
               </div>
               <figcaption>${escapeHtml(item.alt || "Gallery image")}</figcaption>
@@ -1585,24 +1955,6 @@ const BUSINESS_PHONE_WAME = "2347063466822";
 const BUSINESS_EMAIL = "tokebakes@gmail.com";
 
 /* Utility functions */
-function readCart() {
-  try {
-    return JSON.parse(localStorage.getItem(CART_KEY)) || [];
-  } catch {
-    return [];
-  }
-}
-
-function saveCart(cart) {
-  localStorage.setItem(CART_KEY, JSON.stringify(cart));
-  refreshCartCount();
-
-  // Let any page (including SPA-swapped pages) react immediately to cart changes
-  try {
-    window.dispatchEvent(new CustomEvent("cart:updated", { detail: { cart } }));
-  } catch {}
-}
-
 function formatPrice(num) {
   return Number(num).toLocaleString("en-NG");
 }
@@ -1632,6 +1984,176 @@ function normalizeItemId(value) {
   return String(value).trim();
 }
 
+function normalizeSelectedOptionGroups(rawOptions) {
+  const normalized = toArray(rawOptions)
+    .map((rawGroup) => {
+      const groupId = normalizeItemId(rawGroup?.group_id || rawGroup?.id);
+      const groupName = toSafeString(
+        rawGroup?.group_name || rawGroup?.name,
+        "Options"
+      );
+      const groupType = normalizeOptionType(rawGroup?.type);
+      const values = toArray(rawGroup?.values)
+        .map((rawValue) => {
+          const valueId = normalizeItemId(rawValue?.id);
+          const valueName = toSafeString(rawValue?.name);
+          if (!valueName) return null;
+          return {
+            id: valueId,
+            name: valueName,
+            price_adjustment: parseNumber(rawValue?.price_adjustment, 0),
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          if (a.name !== b.name) return a.name.localeCompare(b.name);
+          return a.id.localeCompare(b.id);
+        });
+
+      if (values.length === 0) return null;
+
+      return {
+        group_id: groupId,
+        group_name: groupName,
+        type: groupType,
+        values,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      if (a.group_name !== b.group_name) {
+        return a.group_name.localeCompare(b.group_name);
+      }
+      return a.group_id.localeCompare(b.group_id);
+    });
+
+  return normalized;
+}
+
+function getSelectedOptionsAdjustment(selectedOptions) {
+  return normalizeSelectedOptionGroups(selectedOptions).reduce((sum, group) => {
+    return (
+      sum +
+      group.values.reduce(
+        (valueSum, value) => valueSum + parseNumber(value.price_adjustment, 0),
+        0
+      )
+    );
+  }, 0);
+}
+
+function buildCartConfigurationKey({
+  id,
+  name,
+  selectedOptions = [],
+  customMessage = "",
+}) {
+  const productToken = normalizeItemId(id) || normalizeItemName(name) || "item";
+  const optionsToken = normalizeSelectedOptionGroups(selectedOptions).map((group) => ({
+    group_id: group.group_id || "",
+    group_name: group.group_name,
+    values: group.values.map((value) => ({
+      id: value.id || "",
+      name: value.name,
+      price_adjustment: parseNumber(value.price_adjustment, 0).toFixed(2),
+    })),
+  }));
+  const messageToken = toSafeString(customMessage).trim().toLowerCase();
+  return `${productToken}::${JSON.stringify(optionsToken)}::${messageToken}`;
+}
+
+function getCartItemBasePrice(item) {
+  const explicitBase = Number(item?.base_price);
+  if (Number.isFinite(explicitBase)) return explicitBase;
+
+  const unitPrice = Number(item?.unit_price ?? item?.price);
+  const adjustment = Number(item?.option_adjustment);
+  if (Number.isFinite(unitPrice) && Number.isFinite(adjustment)) {
+    return unitPrice - adjustment;
+  }
+
+  return Number.isFinite(unitPrice) ? unitPrice : 0;
+}
+
+function getCartItemOptionAdjustment(item) {
+  const explicit = Number(item?.option_adjustment);
+  if (Number.isFinite(explicit)) return explicit;
+  return getSelectedOptionsAdjustment(item?.selected_options);
+}
+
+function getCartItemUnitPrice(item) {
+  const explicit = Number(item?.unit_price ?? item?.price);
+  if (Number.isFinite(explicit)) return explicit;
+  return getCartItemBasePrice(item) + getCartItemOptionAdjustment(item);
+}
+
+function normalizeCartEntry(rawItem = {}) {
+  const normalizedOptions = normalizeSelectedOptionGroups(
+    rawItem.selected_options || rawItem.selectedOptions
+  );
+  const optionAdjustment = getSelectedOptionsAdjustment(normalizedOptions);
+  const quantity = Math.max(1, Math.floor(parseNumber(rawItem.quantity, 1)));
+
+  const rawBase = Number(rawItem.base_price);
+  const basePrice = Number.isFinite(rawBase)
+    ? rawBase
+    : parseNumber(rawItem.unit_price ?? rawItem.price, 0) - optionAdjustment;
+  const unitPrice = parseNumber(
+    rawItem.unit_price ?? rawItem.price,
+    basePrice + optionAdjustment
+  );
+  const customMessage = toSafeString(
+    rawItem.custom_message ?? rawItem.customMessage
+  );
+
+  const normalized = {
+    ...rawItem,
+    id: normalizeItemId(rawItem.id),
+    name: toSafeString(rawItem.name, "Menu Item"),
+    image: toSafeString(rawItem.image),
+    quantity,
+    base_price: basePrice,
+    option_adjustment: optionAdjustment,
+    unit_price: unitPrice,
+    price: unitPrice,
+    selected_options: normalizedOptions,
+    custom_message: customMessage || null,
+  };
+
+  normalized.configuration_key =
+    toSafeString(rawItem.configuration_key) ||
+    buildCartConfigurationKey({
+      id: normalized.id,
+      name: normalized.name,
+      selectedOptions: normalized.selected_options,
+      customMessage: normalized.custom_message || "",
+    });
+
+  return normalized;
+}
+
+function readCart() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CART_KEY));
+    return toArray(parsed).map((item) => normalizeCartEntry(item));
+  } catch {
+    return [];
+  }
+}
+
+function saveCart(cart) {
+  const normalizedCart = toArray(cart).map((item) => normalizeCartEntry(item));
+  localStorage.setItem(CART_KEY, JSON.stringify(normalizedCart));
+  refreshCartCount();
+
+  // Let any page (including SPA-swapped pages) react immediately to cart changes
+  try {
+    window.dispatchEvent(
+      new CustomEvent("cart:updated", { detail: { cart: normalizedCart } })
+    );
+  } catch {}
+}
+
 // Escape HTML for security (already defined in admin.js, but defined here too)
 function escapeHtml(text) {
   const div = document.createElement("div");
@@ -1656,7 +2178,7 @@ async function validateCartItems() {
     let hasChanges = false;
     let hasRemovals = false;
 
-  cart.forEach((cartItem, index) => {
+    cart.forEach((cartItem, index) => {
       let currentItem = null;
 
       const cartName = normalizeItemName(cartItem.name);
@@ -1681,7 +2203,7 @@ async function validateCartItems() {
           name: cartItem.name,
           status: "removed",
           message: "This item is no longer available",
-          oldPrice: cartItem.price,
+          oldPrice: getCartItemUnitPrice(cartItem),
           newPrice: null,
         });
         hasRemovals = true;
@@ -1693,30 +2215,34 @@ async function validateCartItems() {
             name: cartItem.name,
             status: "unavailable",
             message: "This item is currently unavailable",
-            oldPrice: cartItem.price,
-            newPrice: cartItem.price,
+            oldPrice: getCartItemUnitPrice(cartItem),
+            newPrice: getCartItemUnitPrice(cartItem),
           });
           hasChanges = true;
           return;
         }
 
-        const currentPrice = Number(currentItem.price);
-        const cartPrice = Number(cartItem.price);
+        const currentBasePrice = Number(currentItem.price);
+        const cartBasePrice = getCartItemBasePrice(cartItem);
+        const optionAdjustment = getCartItemOptionAdjustment(cartItem);
+        const currentUnitPrice = currentBasePrice + optionAdjustment;
+        const cartUnitPrice = getCartItemUnitPrice(cartItem);
 
         if (
-          !Number.isNaN(currentPrice) &&
-          !Number.isNaN(cartPrice) &&
-          currentPrice !== cartPrice
+          !Number.isNaN(currentBasePrice) &&
+          !Number.isNaN(cartBasePrice) &&
+          currentBasePrice !== cartBasePrice
         ) {
           validationResults.push({
             index,
             name: cartItem.name,
             status: "price_changed",
             message: `Price updated from NGN ${formatPrice(
-              cartItem.price
-            )} to NGN ${formatPrice(currentItem.price)}`,
-            oldPrice: cartItem.price,
-            newPrice: currentPrice,
+              cartUnitPrice
+            )} to NGN ${formatPrice(currentUnitPrice)}`,
+            oldPrice: cartUnitPrice,
+            newPrice: currentUnitPrice,
+            newBasePrice: currentBasePrice,
           });
           hasChanges = true;
         } else {
@@ -1725,8 +2251,13 @@ async function validateCartItems() {
             name: cartItem.name,
             status: "valid",
             message: null,
-            oldPrice: cartItem.price,
-            newPrice: Number.isNaN(currentPrice) ? cartItem.price : currentPrice,
+            oldPrice: cartUnitPrice,
+            newPrice: Number.isNaN(currentBasePrice)
+              ? cartUnitPrice
+              : currentUnitPrice,
+            newBasePrice: Number.isNaN(currentBasePrice)
+              ? cartBasePrice
+              : currentBasePrice,
           });
         }
       }
@@ -1754,6 +2285,10 @@ function updateCartWithValidation(validationResults) {
     if (!item) return;
 
     if (result.status === "price_changed" && result.newPrice !== null) {
+      if (Number.isFinite(Number(result.newBasePrice))) {
+        item.base_price = Number(result.newBasePrice);
+      }
+      item.unit_price = Number(result.newPrice);
       item.price = result.newPrice;
       changesMade = true;
     }
@@ -1777,6 +2312,45 @@ function updateCartWithValidation(validationResults) {
   }
 
   return updatedCart;
+}
+
+function formatOptionPriceAdjustment(adjustment) {
+  const value = parseNumber(adjustment, 0);
+  if (value === 0) return "";
+  const prefix = value > 0 ? "+" : "-";
+  return ` (${prefix}NGN ${formatPrice(Math.abs(value))})`;
+}
+
+function getOrderItemOptionLines(item) {
+  const lines = [];
+  const selectedOptions = normalizeSelectedOptionGroups(item?.selected_options);
+
+  selectedOptions.forEach((group) => {
+    const valueLabel = group.values
+      .map(
+        (value) =>
+          `${value.name}${formatOptionPriceAdjustment(value.price_adjustment)}`
+      )
+      .join(", ");
+    lines.push(`${group.group_name}: ${valueLabel}`);
+  });
+
+  const customMessage = toSafeString(item?.custom_message).trim();
+  if (customMessage) {
+    lines.push(`Custom message: ${customMessage}`);
+  }
+
+  return lines;
+}
+
+function getOrderItemMessageLines(item) {
+  const unitPrice = parseNumber(item?.price, 0);
+  const quantity = Math.max(1, parseNumber(item?.qty, 1));
+  const baseLine = `- ${item?.name || "Item"} x ${quantity} ${
+    unitPrice ? `(NGN ${formatPrice(unitPrice)} each)` : ""
+  }`;
+  const optionLines = getOrderItemOptionLines(item).map((line) => `  - ${line}`);
+  return [baseLine, ...optionLines];
 }
 
 /* ================== NOTIFICATION FUNCTION ================== */
@@ -2129,140 +2703,814 @@ function initMobileMenu() {
   }
 }
 
-/* ================== FIXED MENU INTERACTIONS ================== */
-function initMenuInteractions() {
-  // Rebind safely to avoid duplicate handlers after SPA navigation
-  if (window.menuInteractionsClickHandler) {
-    document.removeEventListener("click", window.menuInteractionsClickHandler);
-  }
-  if (window.menuInteractionsTouchHandler) {
-    document.removeEventListener(
-      "touchstart",
-      window.menuInteractionsTouchHandler
-    );
+/* ================== PRODUCT CONFIGURATOR ================== */
+const productConfiguratorState = {
+  isOpen: false,
+  activeItem: null,
+  groups: [],
+  quantity: 1,
+  selectedSingle: new Map(),
+  selectedMultiple: new Map(),
+};
+let productConfiguratorDom = null;
+let productConfiguratorEscapeHandler = null;
+
+function ensureProductConfiguratorStyles() {
+  if (document.getElementById("product-configurator-styles")) return;
+
+  const style = document.createElement("style");
+  style.id = "product-configurator-styles";
+  style.textContent = `
+    .menu-item-meta {
+      margin-top: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.8rem;
+    }
+    .menu-item-cta {
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: var(--primary);
+    }
+    .product-configurator {
+      position: fixed;
+      inset: 0;
+      z-index: 5000;
+      pointer-events: none;
+    }
+    .product-configurator.visible {
+      pointer-events: auto;
+    }
+    .product-configurator .pc-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(18, 15, 10, 0.56);
+      opacity: 0;
+      transition: opacity 220ms ease;
+    }
+    .product-configurator .pc-panel {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--background);
+      color: var(--text);
+      transform: translateY(100%);
+      transition: transform 280ms cubic-bezier(0.2, 0.9, 0.3, 1);
+      border-radius: 22px 22px 0 0;
+      overflow: hidden;
+      box-shadow: 0 -22px 44px rgba(0, 0, 0, 0.2);
+    }
+    .product-configurator.visible .pc-backdrop {
+      opacity: 1;
+    }
+    .product-configurator.visible .pc-panel {
+      transform: translateY(0);
+    }
+    .pc-header {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      justify-content: flex-end;
+      padding: 0.8rem 1rem 0.2rem;
+      background: var(--background);
+      border-bottom: 1px solid var(--border);
+    }
+    .pc-close {
+      width: 2.2rem;
+      height: 2.2rem;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    .pc-scroll {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 0 1rem 7.25rem;
+    }
+    .pc-image-wrap img {
+      width: 100%;
+      border-radius: 16px;
+      object-fit: cover;
+      aspect-ratio: 1.2/1;
+    }
+    .pc-title {
+      margin: 0.9rem 0 0.25rem;
+      font-size: 1.45rem;
+      line-height: 1.15;
+    }
+    .pc-description {
+      margin: 0;
+      color: var(--text-light);
+    }
+    .pc-price-row {
+      margin-top: 0.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.8rem;
+      font-weight: 700;
+    }
+    .pc-options {
+      margin-top: 1rem;
+      display: grid;
+      gap: 0.95rem;
+    }
+    .pc-group {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.8rem;
+      background: var(--surface);
+    }
+    .pc-group-head {
+      margin-bottom: 0.6rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    .pc-required {
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--primary);
+      text-transform: uppercase;
+    }
+    .pc-option-list {
+      display: grid;
+      gap: 0.45rem;
+    }
+    .pc-option {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.48rem 0.5rem;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.25);
+      cursor: pointer;
+    }
+    .pc-option input {
+      accent-color: var(--primary);
+    }
+    .pc-option-label {
+      flex: 1;
+      font-size: 0.92rem;
+    }
+    .pc-option-price {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--text-light);
+      white-space: nowrap;
+    }
+    .pc-custom-msg {
+      margin-top: 1rem;
+      display: grid;
+      gap: 0.45rem;
+    }
+    .pc-custom-msg label {
+      font-weight: 600;
+      font-size: 0.92rem;
+    }
+    .pc-custom-msg textarea {
+      width: 100%;
+      min-height: 88px;
+      resize: vertical;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      padding: 0.65rem 0.75rem;
+      font: inherit;
+    }
+    .pc-footer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--background);
+      border-top: 1px solid var(--border);
+      padding: 0.7rem 1rem 1rem;
+      display: grid;
+      gap: 0.62rem;
+    }
+    .pc-total-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      font-weight: 700;
+    }
+    .pc-qty-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+    .pc-qty-btn {
+      width: 2rem;
+      height: 2rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .pc-qty-value {
+      min-width: 2.1rem;
+      text-align: center;
+      font-weight: 700;
+    }
+    .pc-action-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.55rem;
+    }
+    .pc-action-btn {
+      border: none;
+      border-radius: 10px;
+      padding: 0.72rem 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .pc-action-btn.add {
+      background: var(--secondary);
+      color: #fff;
+    }
+    .pc-action-btn.order {
+      background: var(--primary);
+      color: #fff;
+    }
+    .pc-error-note {
+      min-height: 1.05rem;
+      font-size: 0.82rem;
+      color: #d9534f;
+    }
+    body.product-configurator-open {
+      overflow: hidden;
+    }
+    .summary-option {
+      margin: 0.15rem 0 0.35rem 0.25rem;
+      padding-left: 0.6rem;
+      border-left: 2px solid var(--border);
+      color: var(--text-light);
+      font-size: 0.84rem;
+    }
+    .cart-option-lines {
+      margin: 0.4rem 0 0.5rem;
+      padding-left: 0.75rem;
+      color: var(--text-light);
+      font-size: 0.86rem;
+      list-style: disc;
+    }
+    @media (min-width: 992px) {
+      .product-configurator .pc-panel {
+        left: auto;
+        width: min(560px, 92vw);
+        border-radius: 20px 0 0 20px;
+        transform: translateX(100%);
+        box-shadow: -14px 0 32px rgba(0, 0, 0, 0.24);
+      }
+      .product-configurator.visible .pc-panel {
+        transform: translateX(0);
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function ensureProductConfiguratorDom() {
+  ensureProductConfiguratorStyles();
+
+  let root = document.getElementById("product-configurator");
+  if (!root) {
+    root = document.createElement("div");
+    root.id = "product-configurator";
+    root.className = "product-configurator";
+    root.innerHTML = `
+      <div class="pc-backdrop" data-pc-close="true"></div>
+      <aside class="pc-panel" role="dialog" aria-modal="true" aria-labelledby="pc-title">
+        <div class="pc-header">
+          <button type="button" class="pc-close" data-pc-close="true" aria-label="Close configurator">x</button>
+        </div>
+        <div class="pc-scroll">
+          <div class="pc-image-wrap">
+            <img id="pc-image" src="" alt="" loading="lazy" decoding="async" />
+          </div>
+          <h2 id="pc-title" class="pc-title"></h2>
+          <p id="pc-description" class="pc-description"></p>
+          <div class="pc-price-row">
+            <span>Base price</span>
+            <strong id="pc-base-price"></strong>
+          </div>
+          <div id="pc-options" class="pc-options"></div>
+          <div class="pc-custom-msg">
+            <label for="pc-custom-message">Custom Message (Optional)</label>
+            <textarea id="pc-custom-message" maxlength="160" placeholder="Write a custom cake message or instructions"></textarea>
+          </div>
+        </div>
+        <div class="pc-footer">
+          <div class="pc-total-row">
+            <div class="pc-qty-wrap">
+              <button type="button" class="pc-qty-btn" id="pc-qty-minus" aria-label="Decrease quantity">-</button>
+              <span class="pc-qty-value" id="pc-qty-value">1</span>
+              <button type="button" class="pc-qty-btn" id="pc-qty-plus" aria-label="Increase quantity">+</button>
+            </div>
+            <div id="pc-total-price">NGN 0</div>
+          </div>
+          <div id="pc-error-note" class="pc-error-note" aria-live="polite"></div>
+          <div class="pc-action-row">
+            <button type="button" class="pc-action-btn add" id="pc-add-cart">Add to Cart</button>
+            <button type="button" class="pc-action-btn order" id="pc-order-now">Order Now</button>
+          </div>
+        </div>
+      </aside>
+    `;
+    document.body.appendChild(root);
   }
 
-  // Handle click events for menu items
-  const clickHandler = function (e) {
-    // Close all popups when clicking outside menu items
-    if (!e.target.closest(".menu-item")) {
-      document.querySelectorAll(".menu-item.show-popup").forEach((el) => {
-        el.classList.remove("show-popup");
+  if (productConfiguratorDom && productConfiguratorDom.root === root) {
+    return productConfiguratorDom;
+  }
+
+  productConfiguratorDom = {
+    root,
+    image: root.querySelector("#pc-image"),
+    title: root.querySelector("#pc-title"),
+    description: root.querySelector("#pc-description"),
+    basePrice: root.querySelector("#pc-base-price"),
+    options: root.querySelector("#pc-options"),
+    customMessage: root.querySelector("#pc-custom-message"),
+    qtyValue: root.querySelector("#pc-qty-value"),
+    totalPrice: root.querySelector("#pc-total-price"),
+    errorNote: root.querySelector("#pc-error-note"),
+    qtyMinus: root.querySelector("#pc-qty-minus"),
+    qtyPlus: root.querySelector("#pc-qty-plus"),
+    addToCart: root.querySelector("#pc-add-cart"),
+    orderNow: root.querySelector("#pc-order-now"),
+  };
+
+  root.addEventListener("click", (event) => {
+    if (event.target.closest("[data-pc-close='true']")) {
+      closeProductConfigurator();
+    }
+  });
+
+  productConfiguratorDom.qtyMinus.addEventListener("click", () => {
+    productConfiguratorState.quantity = Math.max(
+      1,
+      productConfiguratorState.quantity - 1
+    );
+    renderConfiguratorTotals();
+  });
+
+  productConfiguratorDom.qtyPlus.addEventListener("click", () => {
+    productConfiguratorState.quantity += 1;
+    renderConfiguratorTotals();
+  });
+
+  productConfiguratorDom.options.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!target || !target.name) return;
+
+    const groupId = normalizeItemId(target.dataset.groupId);
+    if (!groupId) return;
+    const group = productConfiguratorState.groups.find((item) => item.id === groupId);
+    if (!group) return;
+
+    if (group.type === "single") {
+      productConfiguratorState.selectedSingle.set(groupId, normalizeItemId(target.value));
+      renderConfiguratorTotals();
+      return;
+    }
+
+    const currentSelection =
+      productConfiguratorState.selectedMultiple.get(groupId) || new Set();
+    const valueId = normalizeItemId(target.value);
+    if (target.checked) {
+      const maxSelections = parseNumber(group.max_selections, null);
+      if (Number.isFinite(maxSelections) && currentSelection.size >= maxSelections) {
+        target.checked = false;
+        setConfiguratorError(`Maximum ${maxSelections} selections for ${group.name}.`);
+        return;
+      }
+      currentSelection.add(valueId);
+    } else {
+      currentSelection.delete(valueId);
+    }
+    productConfiguratorState.selectedMultiple.set(groupId, currentSelection);
+    renderConfiguratorTotals();
+  });
+
+  productConfiguratorDom.addToCart.addEventListener("click", () => {
+    submitConfiguredProduct("cart");
+  });
+
+  productConfiguratorDom.orderNow.addEventListener("click", () => {
+    submitConfiguredProduct("order");
+  });
+
+  return productConfiguratorDom;
+}
+
+function setConfiguratorError(message = "") {
+  const dom = ensureProductConfiguratorDom();
+  dom.errorNote.textContent = toSafeString(message);
+}
+
+function resetProductConfiguratorState() {
+  productConfiguratorState.activeItem = null;
+  productConfiguratorState.groups = [];
+  productConfiguratorState.quantity = 1;
+  productConfiguratorState.selectedSingle = new Map();
+  productConfiguratorState.selectedMultiple = new Map();
+}
+
+function initializeConfiguratorSelections(groups) {
+  productConfiguratorState.selectedSingle = new Map();
+  productConfiguratorState.selectedMultiple = new Map();
+
+  toArray(groups).forEach((group) => {
+    if (group.type === "single") {
+      if (group.required && group.values[0]) {
+        productConfiguratorState.selectedSingle.set(group.id, group.values[0].id);
+      }
+      return;
+    }
+    productConfiguratorState.selectedMultiple.set(group.id, new Set());
+  });
+}
+
+function getConfiguratorSelectedOptions() {
+  const selectedGroups = [];
+  const missingRequiredGroups = [];
+  let adjustmentTotal = 0;
+
+  productConfiguratorState.groups.forEach((group) => {
+    if (group.type === "single") {
+      const selectedValueId = normalizeItemId(
+        productConfiguratorState.selectedSingle.get(group.id)
+      );
+      const selectedValue = group.values.find(
+        (value) => normalizeItemId(value.id) === selectedValueId
+      );
+
+      if (!selectedValue) {
+        if (group.required) {
+          missingRequiredGroups.push(group.name);
+        }
+        return;
+      }
+
+      adjustmentTotal += parseNumber(selectedValue.price_adjustment, 0);
+      selectedGroups.push({
+        group_id: group.id,
+        group_name: group.name,
+        type: group.type,
+        values: [
+          {
+            id: selectedValue.id,
+            name: selectedValue.name,
+            price_adjustment: parseNumber(selectedValue.price_adjustment, 0),
+          },
+        ],
       });
       return;
     }
 
-    const menuItem = e.target.closest(".menu-item");
-    if (!menuItem) return;
+    const selectedSet =
+      productConfiguratorState.selectedMultiple.get(group.id) || new Set();
+    const selectedValues = group.values.filter((value) =>
+      selectedSet.has(normalizeItemId(value.id))
+    );
 
-    // Handle add to cart button
-    const addBtn = e.target.closest(".add-cart");
-    if (addBtn) {
-      e.preventDefault(); // Keep this, but remove stopPropagation
-
-      const name = (
-        menuItem.dataset.item ||
-        menuItem.querySelector("h3")?.textContent?.trim()
-      )?.trim();
-      const price = Number(menuItem.dataset.price || 0);
-      const image = menuItem.querySelector("img")?.getAttribute("src") || "";
-      const id = menuItem.dataset.id || null;
-
-      if (!name) return;
-
-      const cart = readCart();
-      const normalizedName = normalizeItemName(name);
-      const existing = cart.find(
-        (it) => normalizeItemName(it.name) === normalizedName
-      );
-      if (existing) {
-        existing.quantity = (existing.quantity || 1) + 1;
-        existing.id = id;
-        existing.price = price;
-        if (existing.unavailable) {
-          delete existing.unavailable;
-        }
-      } else {
-        cart.push({ name: name.trim(), price, quantity: 1, image, id });
-      }
-      saveCart(cart);
-
-      // Visual feedback for adding to cart
-      const prevText = addBtn.textContent;
-      addBtn.textContent = "Added";
-      addBtn.classList.add("is-added");
-      addBtn.disabled = true;
-
-      setTimeout(() => {
-        addBtn.textContent = prevText;
-        addBtn.classList.remove("is-added");
-        addBtn.disabled = false;
-      }, 900);
-
-      // DON'T RETURN HERE - let the click continue to ripple function
-      return;
+    if (group.required && selectedValues.length === 0) {
+      missingRequiredGroups.push(group.name);
     }
 
-    // Handle order now button
-    const orderNow = e.target.closest(".order-now");
-    if (orderNow) {
-      e.preventDefault(); // Keep this, but remove stopPropagation
+    if (selectedValues.length === 0) return;
 
-      const name = (
-        menuItem.dataset.item ||
-        menuItem.querySelector("h3")?.textContent?.trim()
-      )?.trim();
-      const price = menuItem.dataset.price || "";
-
-      const orderData = {
-        type: "single",
-        items: [{ name, price: price ? Number(price) : 0, qty: 1 }],
-        subject: `Order Inquiry: ${name}`,
-      };
-
-      showOrderOptions(orderData);
-      // DON'T RETURN HERE - let the click continue to ripple function
-      return;
-    }
-
-    // Don't toggle popup if clicking on the popup itself
-    if (e.target.closest(".popup")) return;
-
-    // Toggle the popup for this menu item
-    const isShown = menuItem.classList.contains("show-popup");
-
-    // Close all other popups
-    document.querySelectorAll(".menu-item").forEach((item) => {
-      if (item !== menuItem) {
-        item.classList.remove("show-popup");
-      }
+    adjustmentTotal += selectedValues.reduce(
+      (sum, value) => sum + parseNumber(value.price_adjustment, 0),
+      0
+    );
+    selectedGroups.push({
+      group_id: group.id,
+      group_name: group.name,
+      type: group.type,
+      values: selectedValues.map((value) => ({
+        id: value.id,
+        name: value.name,
+        price_adjustment: parseNumber(value.price_adjustment, 0),
+      })),
     });
+  });
 
-    // Toggle current item's popup
-    if (isShown) {
-      menuItem.classList.remove("show-popup");
-    } else {
-      menuItem.classList.add("show-popup");
+  return {
+    selectedGroups,
+    missingRequiredGroups,
+    adjustmentTotal,
+  };
+}
+
+function renderConfiguratorGroupOptions() {
+  const dom = ensureProductConfiguratorDom();
+  const groups = productConfiguratorState.groups;
+
+  if (!groups.length) {
+    dom.options.innerHTML = `
+      <div class="pc-group">
+        <div class="pc-group-head"><span>Options</span></div>
+        <p class="pc-description">No configurable options for this item yet.</p>
+      </div>
+    `;
+    return;
+  }
+
+  dom.options.innerHTML = groups
+    .map((group) => {
+      const hintParts = [];
+      if (group.required) hintParts.push("Required");
+      if (group.type === "multiple" && group.max_selections) {
+        hintParts.push(`Max ${group.max_selections}`);
+      }
+
+      const inputs = group.values
+        .map((value) => {
+          const valueId = normalizeItemId(value.id);
+          const inputName = `pc-group-${group.id}`;
+          const checked =
+            group.type === "single"
+              ? normalizeItemId(productConfiguratorState.selectedSingle.get(group.id)) ===
+                valueId
+              : (
+                  productConfiguratorState.selectedMultiple.get(group.id) || new Set()
+                ).has(valueId);
+          const adjustment = parseNumber(value.price_adjustment, 0);
+          const adjustmentLabel =
+            adjustment === 0
+              ? "No extra"
+              : `${adjustment > 0 ? "+" : "-"}NGN ${formatPrice(Math.abs(adjustment))}`;
+
+          return `
+            <label class="pc-option">
+              <input
+                type="${group.type === "single" ? "radio" : "checkbox"}"
+                name="${escapeHtml(inputName)}"
+                value="${escapeHtml(valueId)}"
+                data-group-id="${escapeHtml(group.id)}"
+                ${checked ? "checked" : ""}
+              />
+              <span class="pc-option-label">${escapeHtml(value.name)}</span>
+              <span class="pc-option-price">${adjustmentLabel}</span>
+            </label>
+          `;
+        })
+        .join("");
+
+      return `
+        <section class="pc-group" data-group-id="${escapeHtml(group.id)}">
+          <div class="pc-group-head">
+            <span>${escapeHtml(group.name)}</span>
+            <span class="pc-required">${escapeHtml(hintParts.join(" | "))}</span>
+          </div>
+          <div class="pc-option-list">${inputs}</div>
+        </section>
+      `;
+    })
+    .join("");
+}
+
+function renderConfiguratorTotals() {
+  const dom = ensureProductConfiguratorDom();
+  const item = productConfiguratorState.activeItem;
+  if (!item) return;
+
+  const { adjustmentTotal } = getConfiguratorSelectedOptions();
+  const basePrice = parseNumber(item.price, 0);
+  const unitPrice = Math.max(0, basePrice + adjustmentTotal);
+  const quantity = Math.max(1, productConfiguratorState.quantity);
+  const totalPrice = unitPrice * quantity;
+
+  dom.qtyValue.textContent = String(quantity);
+  dom.totalPrice.textContent = `NGN ${formatPrice(totalPrice)}`;
+  setConfiguratorError("");
+}
+
+function closeProductConfigurator() {
+  if (!productConfiguratorDom) {
+    document.body.classList.remove("product-configurator-open");
+    resetProductConfiguratorState();
+    return;
+  }
+  productConfiguratorState.isOpen = false;
+  resetProductConfiguratorState();
+  productConfiguratorDom.root.classList.remove("visible");
+  productConfiguratorDom.root.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("product-configurator-open");
+  if (productConfiguratorEscapeHandler) {
+    document.removeEventListener("keydown", productConfiguratorEscapeHandler);
+    productConfiguratorEscapeHandler = null;
+  }
+}
+
+async function openProductConfigurator(item) {
+  if (!item) return;
+
+  const dom = ensureProductConfiguratorDom();
+  await getMenuOptionMap(false);
+
+  const groups = getOptionsForMenuItem(item.id);
+  productConfiguratorState.isOpen = true;
+  productConfiguratorState.activeItem = item;
+  productConfiguratorState.groups = groups;
+  productConfiguratorState.quantity = 1;
+  initializeConfiguratorSelections(groups);
+
+  dom.image.src = item.image;
+  dom.image.alt = item.title;
+  dom.title.textContent = item.title;
+  dom.description.textContent = item.description || "";
+  dom.basePrice.textContent = `NGN ${formatPrice(item.price || 0)}`;
+  dom.customMessage.value = "";
+
+  renderConfiguratorGroupOptions();
+  renderConfiguratorTotals();
+
+  dom.root.classList.add("visible");
+  dom.root.setAttribute("aria-hidden", "false");
+  document.body.classList.add("product-configurator-open");
+
+  if (productConfiguratorEscapeHandler) {
+    document.removeEventListener("keydown", productConfiguratorEscapeHandler);
+  }
+  productConfiguratorEscapeHandler = (event) => {
+    if (event.key === "Escape") {
+      closeProductConfigurator();
     }
   };
+  document.addEventListener("keydown", productConfiguratorEscapeHandler);
+}
 
-  // Also add touch events for better mobile support
-  const touchHandler = function (e) {
-      // Close popups when touching outside
-      if (!e.target.closest(".menu-item")) {
-        document.querySelectorAll(".menu-item.show-popup").forEach((el) => {
-          el.classList.remove("show-popup");
-        });
-      }
-    };
+function buildConfiguredCartItem() {
+  const item = productConfiguratorState.activeItem;
+  const quantity = Math.max(1, productConfiguratorState.quantity);
+  const customMessage = toSafeString(
+    productConfiguratorDom?.customMessage?.value
+  ).trim();
+  const { selectedGroups, adjustmentTotal } = getConfiguratorSelectedOptions();
+  const basePrice = parseNumber(item?.price, 0);
+  const unitPrice = Math.max(0, basePrice + adjustmentTotal);
+  const configurationKey = buildCartConfigurationKey({
+    id: item?.id,
+    name: item?.title,
+    selectedOptions: selectedGroups,
+    customMessage,
+  });
+
+  return normalizeCartEntry({
+    id: item?.id,
+    name: item?.title,
+    image: item?.image,
+    quantity,
+    base_price: basePrice,
+    option_adjustment: adjustmentTotal,
+    unit_price: unitPrice,
+    price: unitPrice,
+    selected_options: selectedGroups,
+    custom_message: customMessage || null,
+    configuration_key: configurationKey,
+  });
+}
+
+function submitConfiguredProduct(mode = "cart") {
+  const item = productConfiguratorState.activeItem;
+  if (!item) return;
+
+  const { missingRequiredGroups } = getConfiguratorSelectedOptions();
+  if (missingRequiredGroups.length > 0) {
+    setConfiguratorError(
+      `Select required option(s): ${missingRequiredGroups.join(", ")}.`
+    );
+    return;
+  }
+
+  const configuredEntry = buildConfiguredCartItem();
+
+  if (mode === "cart") {
+    const cart = readCart();
+    const existing = cart.find(
+      (entry) => entry.configuration_key === configuredEntry.configuration_key
+    );
+
+    if (existing) {
+      existing.quantity = (existing.quantity || 1) + configuredEntry.quantity;
+      existing.base_price = configuredEntry.base_price;
+      existing.option_adjustment = configuredEntry.option_adjustment;
+      existing.unit_price = configuredEntry.unit_price;
+      existing.price = configuredEntry.price;
+      existing.selected_options = configuredEntry.selected_options;
+      existing.custom_message = configuredEntry.custom_message;
+      existing.image = configuredEntry.image;
+      existing.id = configuredEntry.id;
+      if (existing.unavailable) delete existing.unavailable;
+    } else {
+      cart.push(configuredEntry);
+    }
+
+    saveCart(cart);
+    showNotification("Item added to cart", "success");
+    closeProductConfigurator();
+    return;
+  }
+
+  const orderData = {
+    type: "single",
+    items: [
+      {
+        name: configuredEntry.name,
+        price: configuredEntry.unit_price,
+        qty: configuredEntry.quantity,
+        selected_options: configuredEntry.selected_options,
+        custom_message: configuredEntry.custom_message,
+      },
+    ],
+    subject: `Order Inquiry: ${configuredEntry.name}`,
+  };
+
+  closeProductConfigurator();
+  showOrderOptions(orderData);
+}
+
+function getMenuItemFromElement(menuItem) {
+  if (!menuItem) return null;
+  const itemId = normalizeItemId(menuItem.dataset.id);
+  if (itemId && renderedMenuItemLookup.has(itemId)) {
+    return renderedMenuItemLookup.get(itemId);
+  }
+
+  const fallbackTitle = toSafeString(
+    menuItem.dataset.item || menuItem.querySelector("h3")?.textContent,
+    "Menu Item"
+  );
+  return {
+    id: itemId || null,
+    title: fallbackTitle,
+    description: toSafeString(menuItem.querySelector("p")?.textContent),
+    price: parseNumber(menuItem.dataset.price, 0),
+    image: toSafeString(menuItem.querySelector("img")?.getAttribute("src")),
+  };
+}
+
+/* ================== MENU INTERACTIONS ================== */
+function initMenuInteractions() {
+  ensureProductConfiguratorDom();
+
+  // Rebind safely to avoid duplicate handlers after SPA navigation
+  if (window.menuInteractionsClickHandler) {
+    document.removeEventListener("click", window.menuInteractionsClickHandler);
+  }
+  if (window.menuInteractionsKeyHandler) {
+    document.removeEventListener("keydown", window.menuInteractionsKeyHandler);
+  }
+
+  const clickHandler = async (event) => {
+    const menuItem = event.target.closest(".menu-item[data-menu-item='true']");
+    if (!menuItem) return;
+    event.preventDefault();
+    const item = getMenuItemFromElement(menuItem);
+    if (!item) return;
+    await openProductConfigurator(item);
+  };
+
+  const keyHandler = async (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const menuItem = event.target.closest(".menu-item[data-menu-item='true']");
+    if (!menuItem) return;
+    event.preventDefault();
+    const item = getMenuItemFromElement(menuItem);
+    if (!item) return;
+    await openProductConfigurator(item);
+  };
 
   document.addEventListener("click", clickHandler);
-  document.addEventListener("touchstart", touchHandler, { passive: true });
+  document.addEventListener("keydown", keyHandler);
 
   window.menuInteractionsClickHandler = clickHandler;
-  window.menuInteractionsTouchHandler = touchHandler;
+  window.menuInteractionsKeyHandler = keyHandler;
   window.menuInteractionsInitialized = true;
 }
+
+window.addEventListener("spa:navigated", () => {
+  closeProductConfigurator();
+});
 
 /* ================== ORDER FUNCTIONALITY ================== */
 function initOrderFunctionality() {
@@ -2300,8 +3548,10 @@ function initOrderFunctionality() {
       type: "cart",
       items: cart.map((it) => ({
         name: it.name,
-        price: Number(it.price || 0),
+        price: getCartItemUnitPrice(it),
         qty: it.quantity || 1,
+        selected_options: normalizeSelectedOptionGroups(it.selected_options),
+        custom_message: toSafeString(it.custom_message).trim() || null,
       })),
       subject: "New Order from Website",
     };
@@ -2338,6 +3588,14 @@ function showOrderOptions(orderData) {
         `;
       }
       list.appendChild(row);
+
+      const optionLines = getOrderItemOptionLines(it);
+      optionLines.forEach((line) => {
+        const optionRow = document.createElement("div");
+        optionRow.className = "summary-option";
+        optionRow.textContent = line;
+        list.appendChild(optionRow);
+      });
 
       if (it.qty > 1) {
         const subtotalRow = document.createElement("div");
@@ -2419,12 +3677,7 @@ function initBottomSheet() {
           "",
           "I would like to place the following order:",
           "",
-          ...orderData.items.map(
-            (it) =>
-              `- ${it.name} x ${it.qty} ${
-                it.price ? `(NGN ${formatPrice(it.price)} each)` : ""
-              }`
-          ),
+          ...orderData.items.flatMap((it) => getOrderItemMessageLines(it)),
           "",
           `Order total: NGN ${formatPrice(
             orderData.items.reduce(
@@ -2457,12 +3710,7 @@ function initBottomSheet() {
           "Hello Toke Bakes,",
           "",
           "I would like to place the following order:",
-          ...orderData.items.map(
-            (it) =>
-              `- ${it.name} x ${it.qty} ${
-                it.price ? `(NGN ${formatPrice(it.price)} each)` : ""
-              }`
-          ),
+          ...orderData.items.flatMap((it) => getOrderItemMessageLines(it)),
           "",
           `Order total: NGN ${formatPrice(
             orderData.items.reduce(
@@ -2546,6 +3794,14 @@ async function renderCartOnOrderPage(shouldValidate = true) {
 
       // Check if item is unavailable
       const isUnavailable = item.unavailable;
+      const unitPrice = getCartItemUnitPrice(item);
+      const optionLines = getOrderItemOptionLines(item);
+      const optionLinesHtml =
+        optionLines.length > 0
+          ? `<ul class="cart-option-lines">${optionLines
+              .map((line) => `<li>${escapeHtml(line)}</li>`)
+              .join("")}</ul>`
+          : "";
 
       row.innerHTML = `
         <img src="${
@@ -2567,6 +3823,7 @@ async function renderCartOnOrderPage(shouldValidate = true) {
           `
               : ""
           }
+          ${optionLinesHtml}
           <div class="qty-controls">
             <button class="qty-btn decrease" ${
               isUnavailable || (item.quantity || 1) <= 1 ? "disabled" : ""
@@ -2576,7 +3833,7 @@ async function renderCartOnOrderPage(shouldValidate = true) {
               isUnavailable ? "disabled" : ""
             }>+</button>
             <div style="margin-left:auto;font-weight:700;">NGN ${formatPrice(
-              (item.price || 0) * (item.quantity || 1)
+              unitPrice * (item.quantity || 1)
             )}</div>
           </div>
         </div>
@@ -3109,7 +4366,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Initialize ripple - EXACT WORKING SELECTOR
   initRipple(
-    ".btn, .add-cart, .order-now, .qty-btn, .order-option-btn, .remove-item, .theme-toggle, .menu-item, .featured-card, .gallery-card, .carousel-dot, .carousel-prev, .carousel-next, [data-ripple]"
+    ".btn, .qty-btn, .order-option-btn, .remove-item, .theme-toggle, .menu-item, .featured-card, .gallery-card, .carousel-dot, .carousel-prev, .carousel-next, .pc-action-btn, .pc-qty-btn, [data-ripple]"
   );
 
   // STEP 4: Load dynamic content (this will use cache first)

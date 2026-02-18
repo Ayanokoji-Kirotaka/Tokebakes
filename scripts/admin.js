@@ -123,6 +123,19 @@ const itemStateCache = ITEM_TYPES.reduce((acc, type) => {
   return acc;
 }, {});
 const loadedAdminTabs = new Set();
+const PRODUCT_OPTION_ENDPOINTS = {
+  groups:
+    window.API_ENDPOINTS?.MENU_OPTION_GROUPS || "/rest/v1/product_option_groups",
+  values:
+    window.API_ENDPOINTS?.MENU_OPTION_VALUES || "/rest/v1/product_option_values",
+};
+const menuOptionManagerState = {
+  menuItemId: "",
+  menuItemTitle: "",
+  groups: [],
+  open: false,
+  loading: false,
+};
 
 function cacheItemsForType(itemType, items) {
   const map = itemStateCache[itemType];
@@ -422,6 +435,47 @@ function formatPrice(num) {
   return Number(num).toLocaleString("en-NG");
 }
 
+function toArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeOptionType(value) {
+  const raw = String(value || "single").trim().toLowerCase();
+  return raw === "multiple" ? "multiple" : "single";
+}
+
+function normalizeOptionGroupRecord(record = {}) {
+  return {
+    id: String(record.id || "").trim(),
+    product_id: String(record.product_id || "").trim(),
+    name: toSafeString(record.name, "Options"),
+    type: normalizeOptionType(record.type),
+    required: Boolean(record.required),
+    max_selections:
+      record.max_selections === null || record.max_selections === undefined
+        ? null
+        : Math.max(1, parseInt(record.max_selections, 10) || 1),
+    created_at: record.created_at || null,
+    values: [],
+  };
+}
+
+function normalizeOptionValueRecord(record = {}) {
+  return {
+    id: String(record.id || "").trim(),
+    group_id: String(record.group_id || "").trim(),
+    name: toSafeString(record.name, "Option"),
+    price_adjustment: Number(record.price_adjustment || 0),
+  };
+}
+
+function formatOptionAdjustmentLabel(value) {
+  const amount = Number(value || 0);
+  if (amount === 0) return "No extra charge";
+  const prefix = amount > 0 ? "+" : "-";
+  return `${prefix}NGN ${formatPrice(Math.abs(amount))}`;
+}
+
 function removeItemFromUi(itemType, id) {
   if (!id) return;
   const selectorMap = {
@@ -440,19 +494,22 @@ function removeItemFromUi(itemType, id) {
   }, 160);
 }
 
-function refreshListAfterDelete(itemType) {
+function refreshListAfterDelete(itemType, forceRefresh = false) {
   try {
     if (itemType === "featured") {
-      return renderFeaturedItems();
+      return renderFeaturedItems(forceRefresh);
     }
     if (itemType === "menu") {
-      return Promise.all([renderMenuItems(), populateFeaturedMenuSelect()]);
+      return Promise.all([
+        renderMenuItems(forceRefresh),
+        populateFeaturedMenuSelect(null, forceRefresh),
+      ]);
     }
     if (itemType === "gallery") {
-      return renderGalleryItems();
+      return renderGalleryItems(forceRefresh);
     }
     if (itemType === "carousel") {
-      return renderCarouselItems();
+      return renderCarouselItems(forceRefresh);
     }
   } catch (error) {
     console.error(`Refresh after delete failed for ${itemType}:`, error);
@@ -495,14 +552,22 @@ async function deleteItemByType(id, itemType) {
     });
 
     const storagePath = extractStoragePath(itemDetails.image, bucket);
-    await deleteFromStorage(bucket, storagePath);
+    try {
+      await deleteFromStorage(bucket, storagePath);
+    } catch (storageError) {
+      console.error("Storage cleanup failed after DB delete:", storageError);
+    }
 
     tempImageCache.delete(id);
     removeCachedItemForType(itemType, id);
     invalidateEndpointCache(endpoint);
+    markPublicContentCacheDirty();
     removeItemFromUi(itemType, id);
+    if (itemType === "menu" && menuOptionManagerState.menuItemId === String(id)) {
+      closeMenuOptionsManager();
+    }
 
-    const refreshPromise = refreshListAfterDelete(itemType);
+    const refreshPromise = refreshListAfterDelete(itemType, true);
     refreshPromise.catch((error) =>
       console.error(`Background refresh failed (${itemType}):`, error)
     );
@@ -1234,36 +1299,74 @@ async function getNextDisplayOrder(endpoint) {
 }
 
 async function processImageUpload(itemType, imageFile, existingUrl) {
+  const bucket = STORAGE_BUCKETS[itemType];
+  if (!bucket) {
+    throw new Error("Invalid storage bucket");
+  }
+
   if (!imageFile && existingUrl) {
-    return { url: existingUrl, meta: null };
+    return {
+      url: existingUrl,
+      meta: null,
+      bucket,
+      uploadedPath: null,
+      previousPath: null,
+    };
   }
 
   if (!imageFile) {
     throw new Error("Please select an image");
   }
 
-  const bucket = STORAGE_BUCKETS[itemType];
-  if (!bucket) {
-    throw new Error("Invalid storage bucket");
-  }
-
   const prepared = await prepareImageForUpload(imageFile, itemType);
   const path = buildStoragePath(itemType, imageFile.name, prepared.format);
   const url = await uploadToStorage(bucket, path, prepared.blob);
-
-  const existingPath = extractStoragePath(existingUrl, bucket);
-  if (existingPath) {
-    await deleteFromStorage(bucket, existingPath);
-  }
+  const previousPath = extractStoragePath(existingUrl, bucket);
 
   return {
     url,
+    bucket,
+    uploadedPath: path,
+    previousPath: previousPath || null,
     meta: {
       width: prepared.width,
       height: prepared.height,
       size: prepared.size,
     },
   };
+}
+
+async function rollbackUploadedImage(uploadResult) {
+  if (!uploadResult || !uploadResult.bucket || !uploadResult.uploadedPath) {
+    return;
+  }
+
+  try {
+    await deleteFromStorage(uploadResult.bucket, uploadResult.uploadedPath);
+  } catch (error) {
+    console.error("Failed to rollback uploaded image:", error);
+  }
+}
+
+async function finalizeImageReplacement(uploadResult) {
+  if (
+    !uploadResult ||
+    !uploadResult.bucket ||
+    !uploadResult.previousPath ||
+    !uploadResult.uploadedPath
+  ) {
+    return;
+  }
+
+  if (uploadResult.previousPath === uploadResult.uploadedPath) {
+    return;
+  }
+
+  try {
+    await deleteFromStorage(uploadResult.bucket, uploadResult.previousPath);
+  } catch (error) {
+    console.error("Failed to delete previous image:", error);
+  }
 }
 
 // ================== ENHANCED NOTIFICATION SYSTEM ==================
@@ -1658,6 +1761,8 @@ async function secureRequest(
       session?.access_token || SUPABASE_CONFIG.ANON_KEY
     }`,
     Prefer: "return=representation",
+    "Cache-Control": "no-store",
+    Pragma: "no-cache",
     ...extraHeaders,
   };
 
@@ -1673,6 +1778,7 @@ async function secureRequest(
       method,
       headers: baseHeaders,
       signal: controller.signal,
+      cache: "no-store",
     };
 
     if (data && (method === "POST" || method === "PATCH" || method === "PUT")) {
@@ -1781,7 +1887,7 @@ async function secureRequest(
 
 // Load data with caching
 const dataCache = new Map();
-const CACHE_TTL = 300000; // 1 minute
+const CACHE_TTL = 60000; // 1 minute
 const ORDERING_MAP = {
   [API_ENDPOINTS.FEATURED]: "display_order.asc,created_at.desc",
   [API_ENDPOINTS.MENU]: "display_order.asc,created_at.desc",
@@ -1803,9 +1909,10 @@ async function loadDataFromSupabase(endpoint, id = null, forceRefresh = false) {
 
   try {
     const orderBy = ORDERING_MAP[endpoint] || "created_at.desc";
+    const cacheBuster = forceRefresh ? `&_=${Date.now()}` : "";
     const url = id
-      ? `${endpoint}?id=eq.${id}&select=*`
-      : `${endpoint}?select=*&order=${orderBy}`;
+      ? `${endpoint}?id=eq.${id}&select=*${cacheBuster}`
+      : `${endpoint}?select=*&order=${orderBy}${cacheBuster}`;
 
     const result = await secureRequest(url, "GET", null, {
       authRequired: true,
@@ -1847,6 +1954,22 @@ function clearDataCache() {
   dataCache.clear();
   tempImageCache.clear();
   clearAllItemStateCache();
+}
+
+function markPublicContentCacheDirty() {
+  const ts = Date.now();
+  try {
+    localStorage.setItem("toke_bakes_content_cache_version", `admin_${ts}`);
+    if (window.API_ENDPOINTS?.FEATURED) {
+      localStorage.removeItem(`${window.API_ENDPOINTS.FEATURED}_data`);
+    }
+    if (window.API_ENDPOINTS?.GALLERY) {
+      localStorage.removeItem(`${window.API_ENDPOINTS.GALLERY}_data`);
+    }
+    localStorage.removeItem("toke_bakes_menu_cache_v2");
+    localStorage.removeItem("toke_bakes_menu_options_cache_v1");
+    localStorage.removeItem("hero_carousel_data");
+  } catch {}
 }
 
 /* ================== FIXED AUTHENTICATION - KEY CHANGES ================== */
@@ -2052,6 +2175,7 @@ function logoutAdmin() {
   resetMenuForm();
   resetGalleryForm();
   resetCarouselForm(); // Added
+  closeMenuOptionsManager();
 
   debugLog("✅ Logged out successfully");
 }
@@ -2175,23 +2299,31 @@ async function saveItem(itemType, formData) {
         dataCache.delete(key);
       }
     });
-
-    return true;
+    markPublicContentCacheDirty();
+    return { success: true };
   } catch (error) {
     console.error(`Error saving ${itemType} item:`, error);
-    return false;
+    return {
+      success: false,
+      message: error?.message || `Failed to save ${itemType} item`,
+      error,
+    };
   }
 }
 
 /* ================== SPECIFIC CONTENT MANAGEMENT FUNCTIONS ================== */
 
 // Featured Items Management
-async function renderFeaturedItems() {
+async function renderFeaturedItems(forceRefresh = false) {
   const container = document.getElementById("featured-items-list");
   if (!container) return;
 
   try {
-    const items = await loadDataFromSupabase(API_ENDPOINTS.FEATURED);
+    const items = await loadDataFromSupabase(
+      API_ENDPOINTS.FEATURED,
+      null,
+      forceRefresh
+    );
 
     if (!items || items.length === 0) {
       cacheItemsForType("featured", []);
@@ -2259,6 +2391,7 @@ async function saveFeaturedItem(e) {
   const endDate = document.getElementById("featured-end-date").value;
   const imageFile = document.getElementById("featured-image").files[0];
   const itemId = document.getElementById("featured-id").value;
+  let upload = null;
 
   try {
     if (!title || title.length > 100) {
@@ -2284,7 +2417,7 @@ async function saveFeaturedItem(e) {
     }
 
     const existingUrl = isEditing && itemId ? tempImageCache.get(itemId) : "";
-    const upload = await processImageUpload(
+    upload = await processImageUpload(
       "featured",
       imageFile,
       existingUrl
@@ -2303,16 +2436,22 @@ async function saveFeaturedItem(e) {
       end_date: endDate || null,
     };
 
-    const success = await saveItem("featured", formData);
+    const result = await saveItem("featured", formData);
 
-    if (success) {
-      resetFeaturedForm();
-      await renderFeaturedItems();
-      await updateItemCounts();
-      showNotification("Featured item saved successfully!", "success");
-      dataSync.notifyDataChanged(isEditing ? "update" : "create", "featured");
+    if (!result.success) {
+      await rollbackUploadedImage(upload);
+      showNotification(result.message || "Failed to save item", "error");
+      return;
     }
+
+    await finalizeImageReplacement(upload);
+    resetFeaturedForm();
+    await renderFeaturedItems(true);
+    await updateItemCounts();
+    showNotification("Featured item saved successfully!", "success");
+    dataSync.notifyDataChanged(isEditing ? "update" : "create", "featured");
   } catch (error) {
+    await rollbackUploadedImage(upload);
     console.error("Error saving featured item:", error);
     showNotification("Failed to save item", "error");
   }
@@ -2361,12 +2500,16 @@ async function editFeaturedItem(id) {
 }
 
 // Menu Items Management - FIXED: Price removed from visible display
-async function renderMenuItems() {
+async function renderMenuItems(forceRefresh = false) {
   const container = document.getElementById("menu-items-list");
   if (!container) return;
 
   try {
-    const items = await loadDataFromSupabase(API_ENDPOINTS.MENU);
+    const items = await loadDataFromSupabase(
+      API_ENDPOINTS.MENU,
+      null,
+      forceRefresh
+    );
 
     if (!items || items.length === 0) {
       cacheItemsForType("menu", []);
@@ -2401,6 +2544,9 @@ async function renderMenuItems() {
             <button class="btn-edit" onclick="editMenuItem('${item.id}')">
               <i class="fas fa-edit"></i> Edit
             </button>
+            <button class="btn-options" onclick="openMenuOptionsManager('${item.id}')">
+              <i class="fas fa-sliders-h"></i> Options
+            </button>
             <button class="btn-delete" onclick="deleteMenuItem('${item.id}')">
               <i class="fas fa-trash"></i> Delete
             </button>
@@ -2423,12 +2569,16 @@ async function renderMenuItems() {
   }
 }
 
-async function populateFeaturedMenuSelect(selectedId = null) {
+async function populateFeaturedMenuSelect(selectedId = null, forceRefresh = false) {
   const select = document.getElementById("featured-menu-item");
   if (!select) return;
 
   try {
-    const items = await loadDataFromSupabase(API_ENDPOINTS.MENU);
+    const items = await loadDataFromSupabase(
+      API_ENDPOINTS.MENU,
+      null,
+      forceRefresh
+    );
     const currentValue = selectedId ?? select.value;
 
     select.innerHTML = `<option value="">None</option>${items
@@ -2460,6 +2610,7 @@ async function saveMenuItem(e) {
   const caloriesInput = document.getElementById("menu-calories").value;
   const imageFile = document.getElementById("menu-image").files[0];
   const itemId = document.getElementById("menu-id").value;
+  let upload = null;
 
   // Validation
   if (!title || title.length > 100) {
@@ -2502,7 +2653,7 @@ async function saveMenuItem(e) {
     }
 
     const existingUrl = isEditing && itemId ? tempImageCache.get(itemId) : "";
-    const upload = await processImageUpload("menu", imageFile, existingUrl);
+    upload = await processImageUpload("menu", imageFile, existingUrl);
 
     const formData = {
       title,
@@ -2516,17 +2667,23 @@ async function saveMenuItem(e) {
       calories,
     };
 
-    const success = await saveItem("menu", formData);
+    const result = await saveItem("menu", formData);
 
-    if (success) {
-      resetMenuForm();
-      await renderMenuItems();
-      await populateFeaturedMenuSelect();
-      await updateItemCounts();
-      showNotification("Menu item saved successfully!", "success");
-      dataSync.notifyDataChanged(isEditing ? "update" : "create", "menu");
+    if (!result.success) {
+      await rollbackUploadedImage(upload);
+      showNotification(result.message || "Failed to save menu item", "error");
+      return;
     }
+
+    await finalizeImageReplacement(upload);
+    resetMenuForm();
+    await renderMenuItems(true);
+    await populateFeaturedMenuSelect(null, true);
+    await updateItemCounts();
+    showNotification("Menu item saved successfully!", "success");
+    dataSync.notifyDataChanged(isEditing ? "update" : "create", "menu");
   } catch (error) {
+    await rollbackUploadedImage(upload);
     console.error("Error saving menu item:", error);
     showNotification("Failed to save menu item", "error");
   }
@@ -2577,13 +2734,524 @@ async function editMenuItem(id) {
   }
 }
 
+function getMenuOptionManagerElements() {
+  return {
+    modal: document.getElementById("menu-options-modal"),
+    panel: document.querySelector(".menu-options-panel"),
+    productLabel: document.getElementById("menu-options-product-label"),
+    groupForm: document.getElementById("option-group-form"),
+    groupId: document.getElementById("option-group-id"),
+    groupName: document.getElementById("option-group-name"),
+    groupType: document.getElementById("option-group-type"),
+    groupRequired: document.getElementById("option-group-required"),
+    groupMax: document.getElementById("option-group-max"),
+    valuesEditor: document.getElementById("option-values-editor"),
+    addValueRowBtn: document.getElementById("add-option-value-row"),
+    resetGroupBtn: document.getElementById("reset-option-group"),
+    saveGroupBtn: document.getElementById("save-option-group"),
+    groupsStatus: document.getElementById("option-groups-status"),
+    groupsList: document.getElementById("option-groups-list"),
+  };
+}
+
+function buildOptionValueRow(value = {}) {
+  const valueId = escapeHtml(String(value.id || ""));
+  const valueName = escapeHtml(toSafeString(value.name));
+  const priceAdjustment = Number(value.price_adjustment || 0);
+  return `
+    <div class="option-value-row" data-value-id="${valueId}">
+      <input
+        type="text"
+        class="option-value-name"
+        placeholder="e.g., Chocolate"
+        value="${valueName}"
+        required
+      />
+      <input
+        type="number"
+        class="option-value-price"
+        step="0.01"
+        placeholder="0"
+        value="${priceAdjustment}"
+      />
+      <button type="button" class="btn btn-danger remove-option-value-row" aria-label="Remove value">
+        <i class="fas fa-trash"></i>
+      </button>
+    </div>
+  `;
+}
+
+function syncOptionGroupTypeUi() {
+  const els = getMenuOptionManagerElements();
+  if (!els.groupType || !els.groupMax) return;
+  const isSingle = els.groupType.value === "single";
+  if (isSingle) {
+    els.groupMax.value = "";
+    els.groupMax.disabled = true;
+    return;
+  }
+  els.groupMax.disabled = false;
+}
+
+function resetOptionGroupForm() {
+  const els = getMenuOptionManagerElements();
+  if (!els.groupForm) return;
+
+  els.groupForm.reset();
+  if (els.groupId) els.groupId.value = "";
+  if (els.groupType) els.groupType.value = "single";
+  if (els.groupRequired) els.groupRequired.value = "false";
+  if (els.groupMax) els.groupMax.value = "";
+  syncOptionGroupTypeUi();
+
+  if (els.valuesEditor) {
+    els.valuesEditor.innerHTML = buildOptionValueRow();
+  }
+}
+
+function setMenuOptionLoading(isLoading, message = "") {
+  menuOptionManagerState.loading = Boolean(isLoading);
+  const els = getMenuOptionManagerElements();
+  if (!els.groupsStatus || !els.saveGroupBtn) return;
+  els.groupsStatus.textContent = message;
+  els.saveGroupBtn.disabled = Boolean(isLoading);
+}
+
+function renderMenuOptionGroupsList() {
+  const els = getMenuOptionManagerElements();
+  if (!els.groupsList) return;
+
+  const groups = menuOptionManagerState.groups;
+  if (!groups.length) {
+    els.groupsList.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-sliders-h"></i>
+        <p>No option groups yet. Add one above.</p>
+      </div>
+    `;
+    return;
+  }
+
+  els.groupsList.innerHTML = groups
+    .map((group) => {
+      const pills = [
+        group.type === "single" ? "Single" : "Multiple",
+        group.required ? "Required" : "Optional",
+      ];
+      if (group.type === "multiple" && group.max_selections) {
+        pills.push(`Max ${group.max_selections}`);
+      }
+
+      const valuesHtml = group.values
+        .map(
+          (value) =>
+            `<li>${escapeHtml(value.name)} <strong>${formatOptionAdjustmentLabel(
+              value.price_adjustment
+            )}</strong></li>`
+        )
+        .join("");
+
+      return `
+        <article class="option-group-card" data-group-id="${escapeHtml(group.id)}">
+          <h4>${escapeHtml(group.name)}</h4>
+          <div class="option-group-meta">
+            ${pills
+              .map((pill) => `<span class="option-meta-pill">${escapeHtml(pill)}</span>`)
+              .join("")}
+          </div>
+          <ul class="option-group-values">${valuesHtml}</ul>
+          <div class="option-group-actions">
+            <button type="button" class="btn btn-secondary edit-option-group" data-group-id="${escapeHtml(
+              group.id
+            )}">
+              <i class="fas fa-edit"></i> Edit
+            </button>
+            <button type="button" class="btn btn-danger delete-option-group" data-group-id="${escapeHtml(
+              group.id
+            )}">
+              <i class="fas fa-trash"></i> Delete
+            </button>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+async function loadMenuOptionGroups(forceRefresh = false) {
+  if (!menuOptionManagerState.menuItemId) return;
+  const els = getMenuOptionManagerElements();
+  setMenuOptionLoading(true, "Loading option groups...");
+
+  try {
+    const productId = String(menuOptionManagerState.menuItemId).trim();
+    const groups = await secureRequest(
+      `${PRODUCT_OPTION_ENDPOINTS.groups}?select=*&product_id=eq.${encodeURIComponent(
+        productId
+      )}&order=created_at.asc`,
+      "GET",
+      null,
+      { authRequired: true }
+    );
+
+    const normalizedGroups = Array.isArray(groups)
+      ? groups.map((group) => normalizeOptionGroupRecord(group))
+      : [];
+    const groupIds = normalizedGroups
+      .map((group) => group.id)
+      .filter((id) => id.length > 0);
+
+    let values = [];
+    if (groupIds.length > 0) {
+      values = await secureRequest(
+        `${PRODUCT_OPTION_ENDPOINTS.values}?select=*&group_id=in.(${groupIds
+          .map((id) => encodeURIComponent(id))
+          .join(",")})&order=created_at.asc`,
+        "GET",
+        null,
+        { authRequired: true }
+      );
+    }
+
+    const valuesByGroup = new Map();
+    toArray(values).forEach((record) => {
+      const value = normalizeOptionValueRecord(record);
+      if (!valuesByGroup.has(value.group_id)) {
+        valuesByGroup.set(value.group_id, []);
+      }
+      valuesByGroup.get(value.group_id).push(value);
+    });
+
+    menuOptionManagerState.groups = normalizedGroups.map((group) => ({
+      ...group,
+      values: (valuesByGroup.get(group.id) || []).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      ),
+    }));
+    renderMenuOptionGroupsList();
+
+    if (els.groupsStatus) {
+      els.groupsStatus.textContent = menuOptionManagerState.groups.length
+        ? ""
+        : "No option groups created yet.";
+    }
+  } catch (error) {
+    console.error("Failed to load product options:", error);
+    menuOptionManagerState.groups = [];
+    renderMenuOptionGroupsList();
+    if (els.groupsStatus) {
+      els.groupsStatus.textContent = "Failed to load option groups.";
+    }
+  } finally {
+    setMenuOptionLoading(false);
+  }
+}
+
+function fillOptionGroupForm(group) {
+  const els = getMenuOptionManagerElements();
+  if (!els.groupForm || !group) return;
+
+  els.groupId.value = group.id;
+  els.groupName.value = group.name;
+  els.groupType.value = normalizeOptionType(group.type);
+  els.groupRequired.value = group.required ? "true" : "false";
+  els.groupMax.value =
+    group.max_selections !== null && group.max_selections !== undefined
+      ? String(group.max_selections)
+      : "";
+  syncOptionGroupTypeUi();
+
+  const values = group.values && group.values.length ? group.values : [{}];
+  els.valuesEditor.innerHTML = values.map((value) => buildOptionValueRow(value)).join("");
+  if (els.groupsStatus) {
+    els.groupsStatus.textContent = `Editing "${group.name}"`;
+  }
+}
+
+function collectOptionValueRows() {
+  const els = getMenuOptionManagerElements();
+  const rows = Array.from(
+    els.valuesEditor.querySelectorAll(".option-value-row")
+  );
+  const values = [];
+
+  rows.forEach((row) => {
+    const nameInput = row.querySelector(".option-value-name");
+    const priceInput = row.querySelector(".option-value-price");
+    const id = String(row.dataset.valueId || "").trim();
+    const name = toSafeString(nameInput?.value);
+    const price = Number(priceInput?.value || 0);
+
+    if (!name) return;
+
+    if (!Number.isFinite(price)) {
+      throw new Error("Each option value must have a valid price adjustment.");
+    }
+
+    values.push({
+      id: id || null,
+      name,
+      price_adjustment: price,
+    });
+  });
+
+  if (values.length === 0) {
+    throw new Error("Add at least one option value.");
+  }
+
+  return values;
+}
+
+async function saveOptionGroup(e) {
+  e.preventDefault();
+
+  if (!menuOptionManagerState.menuItemId) {
+    showNotification("Choose a menu item first.", "error");
+    return;
+  }
+
+  const els = getMenuOptionManagerElements();
+  const groupId = String(els.groupId.value || "").trim();
+  const name = toSafeString(els.groupName.value);
+  const type = normalizeOptionType(els.groupType.value);
+  const required = els.groupRequired.value === "true";
+  const maxInput = String(els.groupMax.value || "").trim();
+  const maxSelections =
+    type === "multiple" && maxInput
+      ? Math.max(1, parseInt(maxInput, 10) || 1)
+      : null;
+
+  if (!name) {
+    showNotification("Option group name is required.", "error");
+    return;
+  }
+
+  let values = [];
+  try {
+    values = collectOptionValueRows();
+  } catch (error) {
+    showNotification(error.message || "Invalid option values.", "error");
+    return;
+  }
+
+  setMenuOptionLoading(true, "Saving option group...");
+
+  try {
+    const groupPayload = {
+      product_id: menuOptionManagerState.menuItemId,
+      name,
+      type,
+      required,
+      max_selections: maxSelections,
+    };
+
+    let savedGroupId = groupId;
+    if (savedGroupId) {
+      await secureRequest(
+        `${PRODUCT_OPTION_ENDPOINTS.groups}?id=eq.${encodeURIComponent(savedGroupId)}`,
+        "PATCH",
+        groupPayload,
+        { authRequired: true }
+      );
+    } else {
+      const created = await secureRequest(
+        PRODUCT_OPTION_ENDPOINTS.groups,
+        "POST",
+        groupPayload,
+        {
+          authRequired: true,
+          headers: {
+            Prefer: "return=representation",
+          },
+        }
+      );
+      savedGroupId = Array.isArray(created) ? created[0]?.id : created?.id;
+      savedGroupId = String(savedGroupId || "").trim();
+      if (!savedGroupId) {
+        throw new Error("Failed to create option group.");
+      }
+    }
+
+    const existingValues = await secureRequest(
+      `${PRODUCT_OPTION_ENDPOINTS.values}?select=id&group_id=eq.${encodeURIComponent(
+        savedGroupId
+      )}`,
+      "GET",
+      null,
+      { authRequired: true }
+    );
+    const existingIds = new Set(
+      toArray(existingValues).map((record) => String(record.id || "").trim())
+    );
+    const incomingIds = new Set();
+
+    for (const value of values) {
+      const payload = {
+        group_id: savedGroupId,
+        name: value.name,
+        price_adjustment: Number(value.price_adjustment || 0),
+      };
+      if (value.id) {
+        incomingIds.add(String(value.id));
+        await secureRequest(
+          `${PRODUCT_OPTION_ENDPOINTS.values}?id=eq.${encodeURIComponent(value.id)}`,
+          "PATCH",
+          payload,
+          { authRequired: true }
+        );
+      } else {
+        const createdValue = await secureRequest(
+          PRODUCT_OPTION_ENDPOINTS.values,
+          "POST",
+          payload,
+          {
+            authRequired: true,
+            headers: {
+              Prefer: "return=representation",
+            },
+          }
+        );
+        const createdId = Array.isArray(createdValue)
+          ? createdValue[0]?.id
+          : createdValue?.id;
+        if (createdId) incomingIds.add(String(createdId));
+      }
+    }
+
+    const deleteIds = Array.from(existingIds).filter((id) => !incomingIds.has(id));
+    for (const id of deleteIds) {
+      await secureRequest(
+        `${PRODUCT_OPTION_ENDPOINTS.values}?id=eq.${encodeURIComponent(id)}`,
+        "DELETE",
+        null,
+        { authRequired: true }
+      );
+    }
+
+    invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.groups);
+    invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.values);
+    markPublicContentCacheDirty();
+    dataSync.notifyDataChanged(groupId ? "update" : "create", "menu");
+    showNotification("Option group saved successfully!", "success");
+
+    resetOptionGroupForm();
+    await loadMenuOptionGroups(true);
+  } catch (error) {
+    console.error("Failed to save option group:", error);
+    showNotification("Failed to save option group. Data reloaded.", "error");
+    await loadMenuOptionGroups(true);
+  } finally {
+    setMenuOptionLoading(false);
+  }
+}
+
+async function deleteOptionGroup(groupId) {
+  const id = String(groupId || "").trim();
+  if (!id) return;
+
+  const group = menuOptionManagerState.groups.find((item) => item.id === id);
+  const confirmed = await showPopup({
+    title: "Delete Option Group",
+    message: `Delete "${group?.name || "this group"}" and all its option values?`,
+    type: "warning",
+    showCancel: true,
+    cancelText: "Cancel",
+    confirmText: "Delete",
+  });
+
+  if (!confirmed) return;
+
+  try {
+    await secureRequest(
+      `${PRODUCT_OPTION_ENDPOINTS.groups}?id=eq.${encodeURIComponent(id)}`,
+      "DELETE",
+      null,
+      { authRequired: true }
+    );
+
+    invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.groups);
+    invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.values);
+    markPublicContentCacheDirty();
+    dataSync.notifyDataChanged("delete", "menu");
+    showNotification("Option group deleted.", "success");
+
+    if (getMenuOptionManagerElements().groupId.value === id) {
+      resetOptionGroupForm();
+    }
+    await loadMenuOptionGroups(true);
+  } catch (error) {
+    console.error("Failed to delete option group:", error);
+    showNotification("Failed to delete option group.", "error");
+  }
+}
+
+function editOptionGroup(groupId) {
+  const id = String(groupId || "").trim();
+  const group = menuOptionManagerState.groups.find((item) => item.id === id);
+  if (!group) {
+    showNotification("Option group not found.", "error");
+    return;
+  }
+  fillOptionGroupForm(group);
+}
+
+function closeMenuOptionsManager() {
+  const els = getMenuOptionManagerElements();
+  if (!els.modal) return;
+  menuOptionManagerState.open = false;
+  menuOptionManagerState.menuItemId = "";
+  menuOptionManagerState.menuItemTitle = "";
+  menuOptionManagerState.groups = [];
+  els.modal.classList.remove("active");
+  els.modal.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("menu-options-open");
+  resetOptionGroupForm();
+  if (els.groupsStatus) els.groupsStatus.textContent = "";
+  if (els.groupsList) els.groupsList.innerHTML = "";
+}
+
+async function openMenuOptionsManager(menuItemId) {
+  const id = String(menuItemId || "").trim();
+  if (!id) {
+    showNotification("Invalid menu item.", "error");
+    return;
+  }
+
+  const els = getMenuOptionManagerElements();
+  if (!els.modal) return;
+
+  const menuItem =
+    getCachedItemForType("menu", id) || (await getEditableItem("menu", id));
+  if (!menuItem) {
+    showNotification("Menu item not found.", "error");
+    return;
+  }
+
+  menuOptionManagerState.menuItemId = id;
+  menuOptionManagerState.menuItemTitle = toSafeString(menuItem.title, "Menu Item");
+  menuOptionManagerState.open = true;
+  menuOptionManagerState.groups = [];
+
+  els.modal.classList.add("active");
+  els.modal.setAttribute("aria-hidden", "false");
+  document.body.classList.add("menu-options-open");
+  els.productLabel.textContent = `Editing options for: ${menuOptionManagerState.menuItemTitle}`;
+  resetOptionGroupForm();
+
+  await loadMenuOptionGroups(true);
+}
+
 // Gallery Management
-async function renderGalleryItems() {
+async function renderGalleryItems(forceRefresh = false) {
   const container = document.getElementById("gallery-admin-grid");
   if (!container) return;
 
   try {
-    const items = await loadDataFromSupabase(API_ENDPOINTS.GALLERY);
+    const items = await loadDataFromSupabase(
+      API_ENDPOINTS.GALLERY,
+      null,
+      forceRefresh
+    );
 
     if (!items || items.length === 0) {
       cacheItemsForType("gallery", []);
@@ -2644,6 +3312,7 @@ async function saveGalleryItem(e) {
   ).value;
   const imageFile = document.getElementById("gallery-image").files[0];
   const itemId = document.getElementById("gallery-id").value;
+  let upload = null;
 
   try {
     if (!alt || alt.length > 255) {
@@ -2664,7 +3333,7 @@ async function saveGalleryItem(e) {
     }
 
     const existingUrl = isEditing && itemId ? tempImageCache.get(itemId) : "";
-    const upload = await processImageUpload("gallery", imageFile, existingUrl);
+    upload = await processImageUpload("gallery", imageFile, existingUrl);
 
     const formData = {
       alt,
@@ -2678,16 +3347,22 @@ async function saveGalleryItem(e) {
       formData.file_size = upload.meta.size || null;
     }
 
-    const success = await saveItem("gallery", formData);
+    const result = await saveItem("gallery", formData);
 
-    if (success) {
-      resetGalleryForm();
-      await renderGalleryItems();
-      await updateItemCounts();
-      showNotification("Gallery image saved successfully!", "success");
-      dataSync.notifyDataChanged(isEditing ? "update" : "create", "gallery");
+    if (!result.success) {
+      await rollbackUploadedImage(upload);
+      showNotification(result.message || "Failed to save gallery image", "error");
+      return;
     }
+
+    await finalizeImageReplacement(upload);
+    resetGalleryForm();
+    await renderGalleryItems(true);
+    await updateItemCounts();
+    showNotification("Gallery image saved successfully!", "success");
+    dataSync.notifyDataChanged(isEditing ? "update" : "create", "gallery");
   } catch (error) {
+    await rollbackUploadedImage(upload);
     console.error("Error saving gallery item:", error);
     showNotification("Failed to save gallery item", "error");
   }
@@ -2726,12 +3401,16 @@ async function editGalleryItem(id) {
 
 /* ================== CAROUSEL MANAGEMENT FUNCTIONS ================== */
 
-async function renderCarouselItems() {
+async function renderCarouselItems(forceRefresh = false) {
   const container = document.getElementById("carousel-admin-grid");
   if (!container) return;
 
   try {
-    const items = await loadDataFromSupabase(API_ENDPOINTS.CAROUSEL);
+    const items = await loadDataFromSupabase(
+      API_ENDPOINTS.CAROUSEL,
+      null,
+      forceRefresh
+    );
 
     if (!items || items.length === 0) {
       cacheItemsForType("carousel", []);
@@ -2808,6 +3487,7 @@ async function saveCarouselItem(e) {
   const isActive = document.getElementById("carousel-active").value === "true";
   const imageFile = document.getElementById("carousel-image").files[0];
   const itemId = document.getElementById("carousel-id").value;
+  let upload = null;
 
   try {
     if (!alt || alt.length > 255) {
@@ -2852,7 +3532,7 @@ async function saveCarouselItem(e) {
     }
 
     const existingUrl = isEditing && itemId ? tempImageCache.get(itemId) : "";
-    const upload = await processImageUpload(
+    upload = await processImageUpload(
       "carousel",
       imageFile,
       existingUrl
@@ -2869,16 +3549,22 @@ async function saveCarouselItem(e) {
       image: upload.url,
     };
 
-    const success = await saveItem("carousel", formData);
+    const result = await saveItem("carousel", formData);
 
-    if (success) {
-      resetCarouselForm();
-      await renderCarouselItems();
-      await updateItemCounts();
-      showNotification("Carousel image saved successfully!", "success");
-      dataSync.notifyDataChanged(isEditing ? "update" : "create", "carousel");
+    if (!result.success) {
+      await rollbackUploadedImage(upload);
+      showNotification(result.message || "Failed to save carousel image", "error");
+      return;
     }
+
+    await finalizeImageReplacement(upload);
+    resetCarouselForm();
+    await renderCarouselItems(true);
+    await updateItemCounts();
+    showNotification("Carousel image saved successfully!", "success");
+    dataSync.notifyDataChanged(isEditing ? "update" : "create", "carousel");
   } catch (error) {
+    await rollbackUploadedImage(upload);
     console.error("Error saving carousel item:", error);
     showNotification("Failed to save carousel item", "error");
   }
@@ -3123,17 +3809,18 @@ async function importData(file) {
 
     // Cleanup
     clearDataCache();
+    markPublicContentCacheDirty();
 
     showNotification(`Successfully imported ${imported} items!`, "success");
 
     // Refresh displays - UPDATED WITH CAROUSEL
     await Promise.all([
-      renderFeaturedItems(),
-      renderMenuItems(),
-      renderGalleryItems(),
-      renderCarouselItems(), // Added carousel
+      renderFeaturedItems(true),
+      renderMenuItems(true),
+      renderGalleryItems(true),
+      renderCarouselItems(true), // Added carousel
     ]);
-    await populateFeaturedMenuSelect();
+    await populateFeaturedMenuSelect(null, true);
     await updateItemCounts();
 
     dataSync.notifyDataChanged("import", "all");
@@ -3286,6 +3973,7 @@ function setupEventListeners() {
       resetMenuForm();
       resetGalleryForm();
       resetCarouselForm();
+      closeMenuOptionsManager();
     });
   });
 
@@ -3334,6 +4022,13 @@ function setupEventListeners() {
   const menuForm = document.getElementById("menu-form");
   const galleryForm = document.getElementById("gallery-form");
   const carouselForm = document.getElementById("carousel-form"); // Added
+  const optionGroupForm = document.getElementById("option-group-form");
+  const optionTypeSelect = document.getElementById("option-group-type");
+  const addOptionValueRowBtn = document.getElementById("add-option-value-row");
+  const resetOptionGroupBtn = document.getElementById("reset-option-group");
+  const optionValuesEditor = document.getElementById("option-values-editor");
+  const optionGroupsList = document.getElementById("option-groups-list");
+  const optionModal = document.getElementById("menu-options-modal");
 
   if (featuredForm) {
     featuredForm.addEventListener("submit", saveFeaturedItem);
@@ -3348,6 +4043,60 @@ function setupEventListeners() {
     // Added
     carouselForm.addEventListener("submit", saveCarouselItem);
   }
+  if (optionGroupForm) {
+    optionGroupForm.addEventListener("submit", saveOptionGroup);
+  }
+  if (optionTypeSelect) {
+    optionTypeSelect.addEventListener("change", syncOptionGroupTypeUi);
+  }
+  if (addOptionValueRowBtn && optionValuesEditor) {
+    addOptionValueRowBtn.addEventListener("click", () => {
+      optionValuesEditor.insertAdjacentHTML("beforeend", buildOptionValueRow());
+    });
+  }
+  if (resetOptionGroupBtn) {
+    resetOptionGroupBtn.addEventListener("click", resetOptionGroupForm);
+  }
+  if (optionValuesEditor) {
+    optionValuesEditor.addEventListener("click", (event) => {
+      const removeBtn = event.target.closest(".remove-option-value-row");
+      if (!removeBtn) return;
+      const row = removeBtn.closest(".option-value-row");
+      if (row && row.parentElement.children.length > 1) {
+        row.remove();
+      } else if (row) {
+        const nameInput = row.querySelector(".option-value-name");
+        const priceInput = row.querySelector(".option-value-price");
+        if (nameInput) nameInput.value = "";
+        if (priceInput) priceInput.value = "0";
+        row.dataset.valueId = "";
+      }
+    });
+  }
+  if (optionGroupsList) {
+    optionGroupsList.addEventListener("click", (event) => {
+      const editBtn = event.target.closest(".edit-option-group");
+      const deleteBtn = event.target.closest(".delete-option-group");
+      if (editBtn) {
+        editOptionGroup(editBtn.dataset.groupId);
+      }
+      if (deleteBtn) {
+        deleteOptionGroup(deleteBtn.dataset.groupId);
+      }
+    });
+  }
+  if (optionModal) {
+    optionModal.addEventListener("click", (event) => {
+      if (event.target.closest("[data-options-close='true']")) {
+        closeMenuOptionsManager();
+      }
+    });
+  }
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && menuOptionManagerState.open) {
+      closeMenuOptionsManager();
+    }
+  });
 
   // Change password form
   const passwordForm = document.getElementById("change-password-form");
@@ -3543,16 +4292,17 @@ function setupEventListeners() {
         ]);
 
         clearDataCache();
+        markPublicContentCacheDirty();
         showNotification("All data has been reset!", "success");
 
         // UPDATED WITH CAROUSEL
         await Promise.all([
-          renderFeaturedItems(),
-          renderMenuItems(),
-          renderGalleryItems(),
-          renderCarouselItems(), // Added carousel
+          renderFeaturedItems(true),
+          renderMenuItems(true),
+          renderGalleryItems(true),
+          renderCarouselItems(true), // Added carousel
         ]);
-        await populateFeaturedMenuSelect();
+        await populateFeaturedMenuSelect(null, true);
         await updateItemCounts();
 
         dataSync.notifyDataChanged("reset", "all");
@@ -3561,6 +4311,10 @@ function setupEventListeners() {
         showNotification("Failed to reset data", "error");
       }
     });
+  }
+
+  if (optionGroupForm) {
+    resetOptionGroupForm();
   }
 }
 
@@ -3608,6 +4362,9 @@ window.editFeaturedItem = editFeaturedItem;
 window.deleteFeaturedItem = deleteFeaturedItem;
 window.editMenuItem = editMenuItem;
 window.deleteMenuItem = deleteMenuItem;
+window.openMenuOptionsManager = openMenuOptionsManager;
+window.editOptionGroup = editOptionGroup;
+window.deleteOptionGroup = deleteOptionGroup;
 window.editGalleryItem = editGalleryItem;
 window.deleteGalleryItem = deleteGalleryItem;
 window.editCarouselItem = editCarouselItem; // Added

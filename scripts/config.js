@@ -9,6 +9,8 @@ const API_ENDPOINTS = {
   GALLERY: "/rest/v1/gallery",
   FEATURED: "/rest/v1/featured_items",
   MENU: "/rest/v1/menu_items",
+  MENU_OPTION_GROUPS: "/rest/v1/product_option_groups",
+  MENU_OPTION_VALUES: "/rest/v1/product_option_values",
   THEMES: "/rest/v1/website_themes",
   CAROUSEL: "/rest/v1/hero_carousel",
 };

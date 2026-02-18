@@ -17,7 +17,9 @@ class SPAManager {
     this.pageTransitionMs = 260;
     this.progressEl = null;
     this.pageCache = new Map();
+    this.pageCacheMaxAgeMs = 2 * 60 * 1000;
     this.scriptLoadPromises = new Map();
+    this.prefetchInFlight = new Map();
     this.mobileMenuOutsideClickHandler = null;
     this.init();
   }
@@ -199,6 +201,8 @@ class SPAManager {
   }
 
   preloadNavLinks() {
+    if (!this.shouldPrefetch()) return;
+
     const run = () => {
       const links = document.querySelectorAll(".navbar a[href]");
       links.forEach((link) => {
@@ -215,26 +219,68 @@ class SPAManager {
     }
   }
 
-  async prefetchPage(url) {
-    const normalized = this.normalizeUrl(url);
-    if (this.pageCache.has(normalized.key)) return;
-    try {
-      const response = await fetch(normalized.fetchUrl, {
-        cache: "force-cache",
-        credentials: "same-origin",
-      });
-      if (!response.ok) return;
-      const html = await response.text();
-      const content = this.parseHtmlToContent(html);
-      if (!content.main) return;
+  shouldPrefetch() {
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (!conn) return true;
+    if (conn.saveData) return false;
+    const effectiveType = String(conn.effectiveType || "").toLowerCase();
+    if (effectiveType === "slow-2g" || effectiveType === "2g") return false;
+    return true;
+  }
 
-      this.pageCache.set(normalized.key, { content, ts: Date.now() });
-      if (this.pageCache.size > 6) {
-        const firstKey = this.pageCache.keys().next().value;
-        this.pageCache.delete(firstKey);
+  getCachedPage(key) {
+    const cached = this.pageCache.get(key);
+    if (!cached) return null;
+    if (Date.now() - Number(cached.ts || 0) > this.pageCacheMaxAgeMs) {
+      this.pageCache.delete(key);
+      return null;
+    }
+    return cached.content || null;
+  }
+
+  setCachedPage(key, content) {
+    if (!key || !content) return;
+    this.pageCache.set(key, { content, ts: Date.now() });
+    if (this.pageCache.size > 6) {
+      const firstKey = this.pageCache.keys().next().value;
+      this.pageCache.delete(firstKey);
+    }
+  }
+
+  async prefetchPage(url) {
+    if (!this.shouldPrefetch()) return;
+
+    const normalized = this.normalizeUrl(url);
+    if (this.getCachedPage(normalized.key)) return;
+    if (this.prefetchInFlight.has(normalized.key)) {
+      return this.prefetchInFlight.get(normalized.key);
+    }
+
+    const prefetchPromise = (async () => {
+      try {
+        const response = await fetch(normalized.fetchUrl, {
+          cache: "no-cache",
+          credentials: "same-origin",
+        });
+        if (!response.ok) return;
+        const html = await response.text();
+        const content = this.parseHtmlToContent(html);
+        if (!content.main) return;
+
+        this.setCachedPage(normalized.key, content);
+      } catch {
+        // Ignore prefetch errors silently
+      } finally {
+        this.prefetchInFlight.delete(normalized.key);
       }
-    } catch (e) {
-      // Ignore prefetch errors silently
+    })();
+
+    this.prefetchInFlight.set(normalized.key, prefetchPromise);
+
+    try {
+      await prefetchPromise;
+    } catch {
+      // Intentional no-op for prefetch
     }
   }
 
@@ -262,21 +308,26 @@ class SPAManager {
 
     try {
       const contentPromise = (async () => {
-        let cached = this.pageCache.get(normalized.key);
-        let newContent = cached?.content || null;
+        let newContent = this.getCachedPage(normalized.key);
 
         if (!newContent) {
-          const response = await fetch(normalized.fetchUrl, {
-            cache: "force-cache",
-            credentials: "same-origin",
-          });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const html = await response.text();
-          newContent = this.parseHtmlToContent(html);
-          this.pageCache.set(normalized.key, {
-            content: newContent,
-            ts: Date.now(),
-          });
+          const staleFallback = this.pageCache.get(normalized.key)?.content || null;
+          try {
+            const response = await fetch(normalized.fetchUrl, {
+              cache: "no-cache",
+              credentials: "same-origin",
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const html = await response.text();
+            newContent = this.parseHtmlToContent(html);
+            this.setCachedPage(normalized.key, newContent);
+          } catch (error) {
+            if (staleFallback && staleFallback.main) {
+              newContent = staleFallback;
+            } else {
+              throw error;
+            }
+          }
         }
 
         if (!newContent.main) throw new Error("No main content found");
