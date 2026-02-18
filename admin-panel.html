@@ -388,6 +388,9 @@
           <button class="admin-tab" data-tab="themes">
             <i class="fas fa-palette"></i> Themes
           </button>
+          <button class="admin-tab" data-tab="stats">
+            <i class="fas fa-chart-line"></i> Stats
+          </button>
           <button class="admin-tab" data-tab="settings">
             <i class="fas fa-cog"></i> Settings
           </button>
@@ -1172,6 +1175,131 @@
             </div>
           </div>
           <!-- End themes-tab -->
+
+          <!-- Stats Tab -->
+          <div id="stats-tab" class="tab-pane">
+            <div class="admin-section-header">
+              <h2><i class="fas fa-chart-line"></i> Website Stats</h2>
+              <p>
+                Live analytics from your website activity and core content
+                counts.
+              </p>
+            </div>
+
+            <div class="stats-toolbar">
+              <div class="stats-range-control">
+                <label for="stats-days"
+                  ><i class="fas fa-calendar-alt"></i> Time Window</label
+                >
+                <select id="stats-days">
+                  <option value="7">Last 7 days</option>
+                  <option value="30" selected>Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="365">Last 365 days</option>
+                </select>
+              </div>
+              <div class="stats-toolbar-actions">
+                <button class="btn btn-secondary" id="refresh-stats-btn">
+                  <i class="fas fa-sync"></i> Refresh Stats
+                </button>
+                <span class="stats-last-updated" id="stats-last-updated"
+                  >Not refreshed yet</span
+                >
+              </div>
+            </div>
+
+            <p class="stats-status" id="stats-status"></p>
+
+            <div class="stats-cards-grid">
+              <div class="stats-card">
+                <h3>Menu Items</h3>
+                <div class="value" id="stat-menu-items-total">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Active Menu</h3>
+                <div class="value" id="stat-menu-items-active">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Featured Items</h3>
+                <div class="value" id="stat-featured-items-total">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Gallery Items</h3>
+                <div class="value" id="stat-gallery-items-total">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Carousel Items</h3>
+                <div class="value" id="stat-carousel-items-total">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Option Groups</h3>
+                <div class="value" id="stat-option-groups-total">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Option Values</h3>
+                <div class="value" id="stat-option-values-total">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Unread Messages</h3>
+                <div class="value" id="stat-unread-messages">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Total Events</h3>
+                <div class="value" id="stat-total-events">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Page Views</h3>
+                <div class="value" id="stat-page-views">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Menu Views</h3>
+                <div class="value" id="stat-menu-views">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Add To Cart</h3>
+                <div class="value" id="stat-add-to-cart">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Order Now Clicks</h3>
+                <div class="value" id="stat-order-now-clicks">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Orders Submitted</h3>
+                <div class="value" id="stat-orders-submitted">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Unique Sessions</h3>
+                <div class="value" id="stat-unique-sessions">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Submitted Revenue</h3>
+                <div class="value" id="stat-submitted-revenue">NGN 0</div>
+              </div>
+            </div>
+
+            <div class="stats-table-card">
+              <h3><i class="fas fa-table"></i> Daily Activity</h3>
+              <div class="stats-table-wrap">
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Events</th>
+                      <th>Page Views</th>
+                      <th>Add To Cart</th>
+                      <th>Orders</th>
+                      <th>Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stats-daily-body">
+                    <tr>
+                      <td colspan="6">No data yet.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
 
           <!-- Settings Tab -->
           <div id="settings-tab" class="tab-pane">

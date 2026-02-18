@@ -36,6 +36,10 @@ class DataSyncManager {
   }
 
   notifyDataChanged(operationType, itemType) {
+    if (typeof queueStatsPanelRefresh === "function") {
+      queueStatsPanelRefresh(700);
+    }
+
     if (this.syncBus && typeof this.syncBus.publishDataUpdate === "function") {
       this.syncBus.publishDataUpdate(operationType, itemType, {
         source: "admin",
@@ -134,6 +138,16 @@ const PRODUCT_OPTION_ENDPOINTS = {
     window.API_ENDPOINTS?.MENU_OPTION_GROUPS || "/rest/v1/product_option_groups",
   values:
     window.API_ENDPOINTS?.MENU_OPTION_VALUES || "/rest/v1/product_option_values",
+};
+const STATS_ENDPOINTS = {
+  counts: "/rest/v1/rpc/get_site_stats_counts",
+  daily: "/rest/v1/rpc/get_site_stats_daily",
+};
+const statsPanelState = {
+  refreshing: false,
+  lastLoadedDays: 30,
+  lastRefreshAt: 0,
+  refreshTimer: null,
 };
 const menuOptionManagerState = {
   menuItemId: "",
@@ -254,6 +268,11 @@ async function loadAdminTabData(tabId, force = false) {
     return;
   }
 
+  if (tabId === "stats") {
+    await loadStatsPanel(force);
+    return;
+  }
+
   if (tabId === "settings") {
     await updateItemCounts();
     return;
@@ -273,6 +292,198 @@ function preloadAdminTabsInBackground() {
     requestIdleCallback(run, { timeout: 1200 });
   } else {
     setTimeout(run, 350);
+  }
+}
+
+function getSelectedStatsDays() {
+  const daysInput = document.getElementById("stats-days");
+  const parsed = Number(daysInput?.value || 30);
+  if (!Number.isFinite(parsed)) return 30;
+  return Math.max(1, Math.min(Math.floor(parsed), 3650));
+}
+
+function formatStatsCount(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "0";
+  return Math.max(0, Math.floor(num)).toLocaleString("en-US");
+}
+
+function formatStatsMoney(value) {
+  const amount = toMoney(value, 0);
+  return `NGN ${amount.toLocaleString("en-NG", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function setStatsStatus(message, isError = false) {
+  const statusEl = document.getElementById("stats-status");
+  if (!statusEl) return;
+  statusEl.textContent = message || "";
+  statusEl.style.color = isError ? "#c62828" : "var(--text-light)";
+}
+
+function setStatsLastUpdated(dateLike = Date.now()) {
+  const label = document.getElementById("stats-last-updated");
+  if (!label) return;
+  const value = new Date(dateLike);
+  if (Number.isNaN(value.getTime())) {
+    label.textContent = "Not refreshed yet";
+    return;
+  }
+  label.textContent = `Last updated: ${value.toLocaleString()}`;
+}
+
+function renderStatsCountsRow(row = {}) {
+  const mapping = {
+    "stat-menu-items-total": "menu_items_total",
+    "stat-menu-items-active": "menu_items_active",
+    "stat-featured-items-total": "featured_items_total",
+    "stat-gallery-items-total": "gallery_items_total",
+    "stat-carousel-items-total": "carousel_items_total",
+    "stat-option-groups-total": "option_groups_total",
+    "stat-option-values-total": "option_values_total",
+    "stat-unread-messages": "unread_messages",
+    "stat-total-events": "total_events",
+    "stat-page-views": "page_views",
+    "stat-menu-views": "menu_views",
+    "stat-add-to-cart": "add_to_cart",
+    "stat-order-now-clicks": "order_now_clicks",
+    "stat-orders-submitted": "orders_submitted",
+    "stat-unique-sessions": "unique_sessions",
+  };
+
+  Object.entries(mapping).forEach(([elementId, key]) => {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.textContent = formatStatsCount(row[key] || 0);
+  });
+
+  const revenueEl = document.getElementById("stat-submitted-revenue");
+  if (revenueEl) {
+    revenueEl.textContent = formatStatsMoney(row.submitted_revenue || 0);
+  }
+}
+
+function renderStatsDailyRows(rows) {
+  const body = document.getElementById("stats-daily-body");
+  if (!body) return;
+
+  const safeRows = Array.isArray(rows) ? rows : [];
+  if (safeRows.length === 0) {
+    body.innerHTML = '<tr><td colspan="6">No activity recorded yet.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = safeRows
+    .slice(0, 45)
+    .map((row) => {
+      const dayValue = row?.day ? new Date(`${row.day}T00:00:00`) : null;
+      const dayLabel =
+        dayValue && !Number.isNaN(dayValue.getTime())
+          ? dayValue.toLocaleDateString()
+          : "-";
+
+      return `
+        <tr>
+          <td>${escapeHtml(dayLabel)}</td>
+          <td>${escapeHtml(formatStatsCount(row?.total_events || 0))}</td>
+          <td>${escapeHtml(formatStatsCount(row?.page_views || 0))}</td>
+          <td>${escapeHtml(formatStatsCount(row?.add_to_cart || 0))}</td>
+          <td>${escapeHtml(formatStatsCount(row?.orders_submitted || 0))}</td>
+          <td>${escapeHtml(formatStatsMoney(row?.submitted_revenue || 0))}</td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+function queueStatsPanelRefresh(delayMs = 900) {
+  if (statsPanelState.refreshTimer) {
+    clearTimeout(statsPanelState.refreshTimer);
+  }
+
+  statsPanelState.refreshTimer = setTimeout(() => {
+    statsPanelState.refreshTimer = null;
+    const statsTab = document.getElementById("stats-tab");
+    if (statsTab?.classList.contains("active")) {
+      Promise.resolve(loadStatsPanel(true)).catch((error) => {
+        console.error("Stats auto-refresh failed:", error);
+      });
+    } else {
+      loadedAdminTabs.delete("stats");
+    }
+  }, delayMs);
+}
+
+async function loadStatsPanel(force = false) {
+  const statsTab = document.getElementById("stats-tab");
+  if (!statsTab) return;
+
+  const days = getSelectedStatsDays();
+  if (
+    !force &&
+    loadedAdminTabs.has("stats") &&
+    statsPanelState.lastLoadedDays === days
+  ) {
+    return;
+  }
+
+  if (statsPanelState.refreshing) return;
+  statsPanelState.refreshing = true;
+
+  const refreshBtn = document.getElementById("refresh-stats-btn");
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.setAttribute("aria-busy", "true");
+  }
+
+  setStatsStatus("Loading analytics...");
+
+  try {
+    const [countsResult, dailyResult] = await Promise.all([
+      secureRequest(
+        STATS_ENDPOINTS.counts,
+        "POST",
+        { p_days: days },
+        { authRequired: true }
+      ),
+      secureRequest(
+        STATS_ENDPOINTS.daily,
+        "POST",
+        { p_days: days },
+        { authRequired: true }
+      ),
+    ]);
+
+    const countsRows = Array.isArray(countsResult)
+      ? countsResult
+      : countsResult
+        ? [countsResult]
+        : [];
+    const countsRow = countsRows[0] || {};
+
+    renderStatsCountsRow(countsRow);
+    renderStatsDailyRows(Array.isArray(dailyResult) ? dailyResult : []);
+
+    statsPanelState.lastLoadedDays = days;
+    statsPanelState.lastRefreshAt = Date.now();
+    loadedAdminTabs.add("stats");
+
+    setStatsLastUpdated(statsPanelState.lastRefreshAt);
+    setStatsStatus(`Showing stats for last ${days} day(s).`);
+  } catch (error) {
+    console.error("Failed to load stats panel:", error);
+    setStatsStatus(
+      "Unable to load stats. Confirm supabase-stats.sql has been applied.",
+      true
+    );
+  } finally {
+    statsPanelState.refreshing = false;
+    if (refreshBtn) {
+      refreshBtn.disabled = false;
+      refreshBtn.removeAttribute("aria-busy");
+    }
   }
 }
 
@@ -3991,6 +4202,25 @@ function setupEventListeners() {
       closeMenuOptionsManager();
     });
   });
+
+  const statsDaysSelect = document.getElementById("stats-days");
+  if (statsDaysSelect) {
+    statsDaysSelect.addEventListener("change", () => {
+      loadedAdminTabs.delete("stats");
+      Promise.resolve(loadStatsPanel(true)).catch((error) => {
+        console.error("Failed to reload stats on range change:", error);
+      });
+    });
+  }
+
+  const refreshStatsBtn = document.getElementById("refresh-stats-btn");
+  if (refreshStatsBtn) {
+    refreshStatsBtn.addEventListener("click", () => {
+      Promise.resolve(loadStatsPanel(true)).catch((error) => {
+        console.error("Failed to refresh stats manually:", error);
+      });
+    });
+  }
 
   // Login form
   const loginForm = document.getElementById("login-form");

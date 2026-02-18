@@ -860,6 +860,94 @@ function multiplyMoney(amount, quantity = 1) {
   return centsToMoney(totalCents);
 }
 
+const SITE_EVENT_LOG_ENDPOINT = "/rest/v1/rpc/log_site_event";
+const SITE_EVENT_NAME_PATTERN = /^[a-z0-9_:-]{2,64}$/;
+const SITE_EVENT_SESSION_KEY = "toke_bakes_stats_session_id";
+let siteEventSessionId = null;
+let lastTrackedPagePath = "";
+
+function createSiteEventSessionId() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getSiteEventSessionId() {
+  if (siteEventSessionId) return siteEventSessionId;
+
+  try {
+    const existing = localStorage.getItem(SITE_EVENT_SESSION_KEY);
+    if (existing && existing.length <= 128) {
+      siteEventSessionId = existing;
+      return siteEventSessionId;
+    }
+
+    siteEventSessionId = createSiteEventSessionId();
+    localStorage.setItem(SITE_EVENT_SESSION_KEY, siteEventSessionId);
+    return siteEventSessionId;
+  } catch {
+    siteEventSessionId = createSiteEventSessionId();
+    return siteEventSessionId;
+  }
+}
+
+function trackSiteEvent(eventName, options = {}) {
+  if (!window.SUPABASE_CONFIG?.URL || !window.SUPABASE_CONFIG?.ANON_KEY) return;
+
+  const normalizedName = toSafeString(eventName).trim().toLowerCase();
+  if (!SITE_EVENT_NAME_PATTERN.test(normalizedName)) return;
+
+  const pagePath = toSafeString(options.pagePath || window.location.pathname).slice(
+    0,
+    512
+  );
+  const source = toSafeString(options.source || "web").toLowerCase();
+  const amount = Math.max(0, toMoney(options.amount, 0));
+  const metadata =
+    options.metadata && typeof options.metadata === "object"
+      ? options.metadata
+      : {};
+
+  const payload = {
+    p_event_name: normalizedName,
+    p_page_path: pagePath || null,
+    p_session_id: getSiteEventSessionId(),
+    p_source: source || "web",
+    p_amount: amount,
+    p_metadata: metadata,
+  };
+
+  fetch(`${SUPABASE_CONFIG.URL}${SITE_EVENT_LOG_ENDPOINT}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_CONFIG.ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+    },
+    body: JSON.stringify(payload),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+function trackCurrentPageView(force = false) {
+  const path = toSafeString(window.location.pathname, "/") || "/";
+  if (!force && lastTrackedPagePath === path) return;
+  lastTrackedPagePath = path;
+
+  trackSiteEvent("page_view", {
+    pagePath: path,
+    metadata: { page: path },
+  });
+
+  if (/menu(\.html)?$/i.test(path)) {
+    trackSiteEvent("menu_view", {
+      pagePath: path,
+      metadata: { page: path },
+    });
+  }
+}
+
 function parseBoolean(value, fallback = true) {
   if (value === null || value === undefined || value === "") {
     return fallback;
@@ -3663,6 +3751,17 @@ function submitConfiguredProduct(mode = "cart") {
     }
 
     saveCart(cart);
+    trackSiteEvent("add_to_cart", {
+      amount: multiplyMoney(
+        configuredEntry.unit_price,
+        Math.max(1, Math.floor(parseNumber(configuredEntry.quantity, 1)))
+      ),
+      metadata: {
+        item_id: configuredEntry.id ?? null,
+        item_name: configuredEntry.name || null,
+        quantity: Math.max(1, Math.floor(parseNumber(configuredEntry.quantity, 1))),
+      },
+    });
     showNotification("Item added to cart", "success");
     closeProductConfigurator();
     return;
@@ -3681,6 +3780,18 @@ function submitConfiguredProduct(mode = "cart") {
     ],
     subject: `Order Inquiry: ${configuredEntry.name}`,
   };
+
+  trackSiteEvent("order_now", {
+    amount: multiplyMoney(
+      configuredEntry.unit_price,
+      Math.max(1, Math.floor(parseNumber(configuredEntry.quantity, 1)))
+    ),
+    metadata: {
+      item_id: configuredEntry.id ?? null,
+      item_name: configuredEntry.name || null,
+      quantity: Math.max(1, Math.floor(parseNumber(configuredEntry.quantity, 1))),
+    },
+  });
 
   closeProductConfigurator();
   showOrderOptions(orderData);
@@ -3746,6 +3857,7 @@ function initMenuInteractions() {
 }
 
 window.addEventListener("spa:navigated", () => {
+  trackCurrentPageView(true);
   closeProductConfigurator();
 });
 
@@ -3943,6 +4055,14 @@ function initBottomSheet() {
         const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
           BUSINESS_EMAIL
         )}&su=${subject}&body=${body}`;
+        trackSiteEvent("order_submitted", {
+          amount: orderTotal,
+          metadata: {
+            channel: "gmail",
+            order_type: orderData.type || "unknown",
+            item_count: toArray(orderData.items).length,
+          },
+        });
         window.open(gmailUrl, "_blank");
       }
 
@@ -3964,6 +4084,14 @@ function initBottomSheet() {
 
         const waText = encodeURIComponent(lines.join("\n"));
         const waUrl = `https://wa.me/${BUSINESS_PHONE_WAME}?text=${waText}`;
+        trackSiteEvent("order_submitted", {
+          amount: orderTotal,
+          metadata: {
+            channel: "whatsapp",
+            order_type: orderData.type || "unknown",
+            item_count: toArray(orderData.items).length,
+          },
+        });
         window.open(waUrl, "_blank");
       }
 
@@ -4644,6 +4772,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   debugLog("Initializing Toke Bakes with Enhanced Sync...");
 
   ensureContentCacheVersion();
+  trackCurrentPageView(true);
 
   // Initialize cart count immediately to prevent flash
   refreshCartCount();
