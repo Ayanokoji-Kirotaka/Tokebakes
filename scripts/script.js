@@ -26,6 +26,7 @@ class WebsiteAutoUpdater {
     this.lastUpdateKey = "toke_bakes_last_update";
     this.lastPayloadKey = "toke_bakes_last_update_payload";
     this.dbLastUpdateKey = "toke_bakes_db_last_updated";
+    this.contentVersionKey = "toke_bakes_content_version";
     this.myLastCheckKey = "toke_bakes_last_check";
     this.dbCheckInterval = 30000;
     this.lastDbCheck = 0;
@@ -49,6 +50,8 @@ class WebsiteAutoUpdater {
       Number(localStorage.getItem(this.dbLastUpdateKey)) ||
       Number(localStorage.getItem(this.lastUpdateKey)) ||
       0;
+    this.lastRenderedContentVersion =
+      Number(localStorage.getItem(this.contentVersionKey) || "0") || 0;
     this.lastCheckMemory =
       Number(localStorage.getItem(this.myLastCheckKey)) || 0;
     this.init();
@@ -310,9 +313,27 @@ class WebsiteAutoUpdater {
 
   handleExternalUpdate(payload = {}) {
     const tsNumber = Number(payload.timestamp) || Date.now();
+    const contentVersion = Number(payload.contentVersion || payload.version) || 0;
+    const hasVersion = Number.isFinite(contentVersion) && contentVersion > 0;
     const myLastCheck = this.getMyLastCheck();
-    if (tsNumber <= myLastCheck) {
+    const isOldTimestamp = tsNumber <= myLastCheck;
+    const isOldVersion =
+      hasVersion && contentVersion <= (this.lastRenderedContentVersion || 0);
+    if (isOldTimestamp && (!hasVersion || isOldVersion)) {
       return;
+    }
+
+    if (hasVersion) {
+      this.lastRenderedContentVersion = Math.max(
+        this.lastRenderedContentVersion || 0,
+        contentVersion
+      );
+      try {
+        localStorage.setItem(
+          this.contentVersionKey,
+          String(this.lastRenderedContentVersion)
+        );
+      } catch {}
     }
 
     this.setMyLastCheck(tsNumber);
@@ -575,6 +596,14 @@ class WebsiteAutoUpdater {
         this.lastRenderedUpdateTs,
         updateTs || now
       );
+      const latestContentVersion =
+        Number(localStorage.getItem(this.contentVersionKey) || "0") || 0;
+      if (latestContentVersion > 0) {
+        this.lastRenderedContentVersion = Math.max(
+          this.lastRenderedContentVersion || 0,
+          latestContentVersion
+        );
+      }
       this.setMyLastCheck(this.lastRenderedUpdateTs);
       try {
         localStorage.setItem(
@@ -657,14 +686,8 @@ class WebsiteAutoUpdater {
   }
 
   showUpdateNotification() {
-    // Optional: You can enable this for visual toast
-    // For now, just log to console
     debugLog("Website content updated successfully!");
-
-    // If you want a toast notification later, uncomment:
-    /*
-    showNotification('Content updated! New items are available.', 'success');
-    */
+    showNotification("New updates are now live.", "info");
   }
 }
 
@@ -706,6 +729,7 @@ const CONTENT_CACHE_VERSION = "4";
 const CONTENT_LAST_UPDATE_KEY = "toke_bakes_last_update";
 const CONTENT_LAST_PAYLOAD_KEY = "toke_bakes_last_update_payload";
 const CONTENT_DB_LAST_UPDATED_KEY = "toke_bakes_db_last_updated";
+const CONTENT_VERSION_STORAGE_KEY = "toke_bakes_content_version";
 const CONTENT_ASSET_VERSION_PARAM = "cv";
 let cachedMenuOptionMap = new Map();
 let menuOptionsCacheTimestamp = 0;
@@ -768,9 +792,10 @@ function looksLikeImageSrc(value) {
 }
 
 function getLatestContentUpdateToken() {
-  let latest = 0;
+  let latestTimestamp = 0;
+  let latestVersion = 0;
   try {
-    latest = Math.max(
+    latestTimestamp = Math.max(
       Number(localStorage.getItem(CONTENT_DB_LAST_UPDATED_KEY) || "0"),
       Number(localStorage.getItem(CONTENT_LAST_UPDATE_KEY) || "0")
     );
@@ -778,11 +803,22 @@ function getLatestContentUpdateToken() {
     const payloadRaw = localStorage.getItem(CONTENT_LAST_PAYLOAD_KEY);
     if (payloadRaw) {
       const payload = JSON.parse(payloadRaw);
-      latest = Math.max(latest, Number(payload?.timestamp) || 0);
+      latestTimestamp = Math.max(latestTimestamp, Number(payload?.timestamp) || 0);
+      latestVersion = Math.max(
+        latestVersion,
+        Number(payload?.contentVersion) || 0,
+        Number(payload?.version) || 0
+      );
     }
+
+    latestVersion = Math.max(
+      latestVersion,
+      Number(localStorage.getItem(CONTENT_VERSION_STORAGE_KEY) || "0")
+    );
   } catch {}
 
-  return latest > 0 ? String(latest) : "";
+  if (latestTimestamp <= 0 && latestVersion <= 0) return "";
+  return `${latestTimestamp > 0 ? latestTimestamp : 0}-${latestVersion > 0 ? latestVersion : 0}`;
 }
 
 function appendContentAssetVersion(src) {
@@ -1354,11 +1390,7 @@ async function loadFromSupabase(endpoint, query = "", options = {}) {
     return inFlightSupabaseRequests.get(cacheKey);
   }
 
-  const requestUrl = forceRefresh
-    ? `${SUPABASE_CONFIG.URL}${endpoint}${normalizedQuery}${
-        normalizedQuery.includes("?") ? "&" : "?"
-      }_=${now}`
-    : `${SUPABASE_CONFIG.URL}${endpoint}${normalizedQuery}`;
+  const requestUrl = `${SUPABASE_CONFIG.URL}${endpoint}${normalizedQuery}`;
 
   const requestPromise = (async () => {
     const response = await fetchWithTimeout(
@@ -2132,7 +2164,7 @@ function renderMenuItems(container, items) {
                data-id="${escapeHtml(itemId)}"
                role="button"
                tabindex="0"
-               aria-label="Customize ${escapeHtml(item.title)}">
+               aria-label="Preferences for ${escapeHtml(item.title)}">
             <img src="${item.image}" alt="${escapeHtml(
         item.title
       )}" loading="${
@@ -2146,7 +2178,7 @@ function renderMenuItems(container, items) {
             <p>${escapeHtml(item.description)}</p>
             <div class="menu-item-meta">
               <span class="price">From NGN ${priceLabel}</span>
-              <span class="menu-item-cta">Customize</span>
+              <span class="menu-item-cta">Preferences</span>
             </div>
           </div>
         `;
@@ -2211,6 +2243,39 @@ const THEME_KEY = "toke_bakes_theme";
 const BUSINESS_PHONE_E164 = "+234 706 346 6822";
 const BUSINESS_PHONE_WAME = "2347063466822";
 const BUSINESS_EMAIL = "tokebakes@gmail.com";
+const ORDER_PREFILL_CACHE_LIMIT = 24;
+const orderPrefillCache = new Map();
+let latestOrderSheetPayload = null;
+
+function ensureChatWidgetScriptLoaded() {
+  if (window.TBChatWidget && typeof window.TBChatWidget.init === "function") {
+    window.TBChatWidget.init();
+    return;
+  }
+
+  if (window.__TB_CHAT_WIDGET_SCRIPT_REQUESTED__) return;
+  window.__TB_CHAT_WIDGET_SCRIPT_REQUESTED__ = true;
+
+  if (document.querySelector("script[data-tb-chat-widget-script='true']")) {
+    return;
+  }
+
+  const script = document.createElement("script");
+  script.src = "scripts/chat-widget.js";
+  script.defer = true;
+  script.dataset.tbChatWidgetScript = "true";
+  script.addEventListener("load", () => {
+    try {
+      if (window.TBChatWidget && typeof window.TBChatWidget.init === "function") {
+        window.TBChatWidget.init();
+      }
+    } catch {}
+  });
+  script.addEventListener("error", () => {
+    window.__TB_CHAT_WIDGET_SCRIPT_REQUESTED__ = false;
+  });
+  document.head.appendChild(script);
+}
 
 /* Utility functions */
 function formatPrice(num) {
@@ -2616,63 +2681,152 @@ function getOrderItemMessageLines(item) {
 }
 
 /* ================== NOTIFICATION FUNCTION ================== */
-function showNotification(message, type = "success") {
-  // Create a simple notification element
-  const notification = document.createElement("div");
-  notification.textContent = message;
-  notification.style.cssText = `
-    position: fixed;
-    top: 25px;
-    right: 25px;
-    background: ${type === "success" ? "#4CAF50" : "#F44336"};
-    color: white;
-    padding: 1rem 1.5rem;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    z-index: 9999;
-    animation: slideInRight 0.3s ease-out;
-    font-family: 'Poppins', sans-serif;
-    font-weight: 500;
-    max-width: 300px;
-  `;
+function ensureToastUi() {
+  if (!document.getElementById("tb-toast-style")) {
+    const style = document.createElement("style");
+    style.id = "tb-toast-style";
+    style.textContent = `
+      .tb-toast-wrap {
+        position: fixed;
+        top: 1rem;
+        right: 1rem;
+        z-index: 12000;
+        display: grid;
+        gap: 0.55rem;
+        width: min(360px, calc(100vw - 1.5rem));
+        pointer-events: none;
+      }
+      .tb-toast {
+        --tb-toast-accent: #2fa66a;
+        pointer-events: auto;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 0.65rem;
+        padding: 0.72rem 0.78rem;
+        border-radius: 12px;
+        border: 1px solid color-mix(in srgb, var(--tb-toast-accent) 28%, transparent);
+        background: color-mix(in srgb, var(--surface, #faf7f5) 92%, white);
+        color: var(--text, #222);
+        box-shadow: 0 14px 30px rgba(0, 0, 0, 0.14);
+        transform: translate3d(0, -6px, 0);
+        opacity: 0;
+        transition: transform 180ms ease, opacity 180ms ease;
+      }
+      [data-theme="dark"] .tb-toast {
+        background: color-mix(in srgb, var(--surface, #2a2a2a) 90%, #111);
+      }
+      .tb-toast.is-visible {
+        transform: translate3d(0, 0, 0);
+        opacity: 1;
+      }
+      .tb-toast-icon {
+        width: 1.35rem;
+        height: 1.35rem;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: var(--tb-toast-accent);
+        background: color-mix(in srgb, var(--tb-toast-accent) 14%, transparent);
+      }
+      .tb-toast-body {
+        font-size: 0.88rem;
+        line-height: 1.35;
+      }
+      .tb-toast-close {
+        border: none;
+        width: 1.55rem;
+        height: 1.55rem;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--text-light, #666);
+        cursor: pointer;
+        font-size: 1rem;
+      }
+      .tb-toast-close:hover {
+        background: color-mix(in srgb, var(--tb-toast-accent) 10%, transparent);
+        color: var(--text, #222);
+      }
+      .tb-toast-success { --tb-toast-accent: #2fa66a; }
+      .tb-toast-error { --tb-toast-accent: #d84343; }
+      .tb-toast-info { --tb-toast-accent: #2f7ae0; }
+      .tb-toast-warning { --tb-toast-accent: #e58a13; }
+      @media (max-width: 640px) {
+        .tb-toast-wrap {
+          top: 0.8rem;
+          left: 0.75rem;
+          right: 0.75rem;
+          width: auto;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .tb-toast {
+          transition: none;
+          transform: none;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
 
-  document.body.appendChild(notification);
-
-  // Remove after 3 seconds
-  setTimeout(() => {
-    notification.style.animation = "slideOutRight 0.3s ease-out forwards";
-    setTimeout(() => notification.remove(), 300);
-  }, 3000);
+  let wrap = document.getElementById("tb-toast-wrap");
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.id = "tb-toast-wrap";
+    wrap.className = "tb-toast-wrap";
+    wrap.setAttribute("aria-live", "polite");
+    wrap.setAttribute("aria-atomic", "false");
+    document.body.appendChild(wrap);
+  }
+  return wrap;
 }
 
-// Add animation keyframes for notifications
-if (!document.querySelector("#notification-styles")) {
-  const style = document.createElement("style");
-  style.id = "notification-styles";
-  style.textContent = `
-    @keyframes slideInRight {
-      from {
-        opacity: 0;
-        transform: translateX(100%);
-      }
-      to {
-        opacity: 1;
-        transform: translateX(0);
-      }
-    }
-
-    @keyframes slideOutRight {
-      from {
-        opacity: 1;
-        transform: translateX(0);
-      }
-      to {
-        opacity: 0;
-        transform: translateX(100%);
-      }
-    }
+function showNotification(message, type = "success") {
+  const wrap = ensureToastUi();
+  const normalizedType = ["success", "error", "info", "warning"].includes(type)
+    ? type
+    : "info";
+  const iconMap = {
+    success: "ok",
+    error: "!",
+    info: "i",
+    warning: "!",
+  };
+  const toast = document.createElement("article");
+  toast.className = `tb-toast tb-toast-${normalizedType}`;
+  toast.setAttribute("role", normalizedType === "error" ? "alert" : "status");
+  toast.innerHTML = `
+    <span class="tb-toast-icon" aria-hidden="true">${iconMap[normalizedType]}</span>
+    <div class="tb-toast-body">${escapeHtml(toSafeString(message, "Action completed."))}</div>
+    <button type="button" class="tb-toast-close" aria-label="Dismiss notification">x</button>
   `;
-  document.head.appendChild(style);
+  wrap.appendChild(toast);
+
+  const dismiss = () => {
+    toast.classList.remove("is-visible");
+    setTimeout(() => {
+      toast.remove();
+    }, 190);
+  };
+
+  toast.querySelector(".tb-toast-close")?.addEventListener("click", dismiss, {
+    once: true,
+  });
+
+  requestAnimationFrame(() => {
+    toast.classList.add("is-visible");
+  });
+
+  const timeoutByType = {
+    success: 2600,
+    info: 3200,
+    warning: 3600,
+    error: 4600,
+  };
+  setTimeout(dismiss, timeoutByType[normalizedType] || 3000);
 }
 
 /* ================== HOME LOADER (CAROUSEL-READY) ================== */
@@ -3862,6 +4016,33 @@ window.addEventListener("spa:navigated", () => {
 });
 
 /* ================== ORDER FUNCTIONALITY ================== */
+function buildOrderDataFromCart(cartItems = []) {
+  const items = toArray(cartItems).map((it) => ({
+    name: toSafeString(it?.name, "Item"),
+    price: getCartItemUnitPrice(it),
+    qty: Math.max(1, Math.floor(parseNumber(it?.quantity, 1))),
+    selected_options: normalizeSelectedOptionGroups(it?.selected_options),
+    custom_message: toSafeString(it?.custom_message).trim() || null,
+  }));
+
+  return {
+    type: "cart",
+    items,
+    subject: "New Order from Website",
+  };
+}
+
+function primeOrderPayloadFromCart(cartItems = []) {
+  if (!toArray(cartItems).length) {
+    latestOrderSheetPayload = null;
+    return null;
+  }
+
+  const orderData = buildOrderDataFromCart(cartItems);
+  latestOrderSheetPayload = getPreparedOrderPayload(orderData);
+  return orderData;
+}
+
 function initOrderFunctionality() {
   // Rebind safely to avoid duplicate handlers after SPA navigation
   if (window.orderFunctionalityHandler) {
@@ -3893,17 +4074,7 @@ function initOrderFunctionality() {
       return;
     }
 
-    const orderData = {
-      type: "cart",
-      items: cart.map((it) => ({
-        name: it.name,
-        price: getCartItemUnitPrice(it),
-        qty: Math.max(1, Math.floor(parseNumber(it.quantity, 1))),
-        selected_options: normalizeSelectedOptionGroups(it.selected_options),
-        custom_message: toSafeString(it.custom_message).trim() || null,
-      })),
-      subject: "New Order from Website",
-    };
+    const orderData = primeOrderPayloadFromCart(cart);
     showOrderOptions(orderData);
   };
 
@@ -3912,72 +4083,218 @@ function initOrderFunctionality() {
   window.orderFunctionalityInitialized = true;
 }
 
+function createOrderPrefillCacheKey(orderData) {
+  const normalizedItems = toArray(orderData?.items).map((it) => ({
+    name: toSafeString(it?.name, "Item"),
+    qty: Math.max(1, Math.floor(parseNumber(it?.qty, 1))),
+    price: toMoney(it?.price, 0),
+    options: normalizeSelectedOptionGroups(it?.selected_options).map((group) => ({
+      group_id: normalizeItemId(group.group_id),
+      values: toArray(group.values).map((value) => normalizeItemId(value.id)),
+    })),
+    custom_message: toSafeString(it?.custom_message).trim(),
+  }));
+
+  return JSON.stringify({
+    type: toSafeString(orderData?.type, "cart"),
+    subject: toSafeString(orderData?.subject, "Order from website"),
+    items: normalizedItems,
+  });
+}
+
+function buildDefaultOrderPrefillTemplate() {
+  return encodeURIComponent(
+    [
+      "Hello Toke Bakes,",
+      "",
+      "I would like to place an order.",
+      "",
+      "Name:",
+      "Phone:",
+      "Delivery address:",
+      "",
+      "Please confirm availability and payment method.",
+    ].join("\n")
+  );
+}
+
+function buildPreparedOrderPayload(orderData) {
+  const safeItems = toArray(orderData?.items)
+    .map((it) => ({
+      name: toSafeString(it?.name, "Item"),
+      qty: Math.max(1, Math.floor(parseNumber(it?.qty, 1))),
+      price: toMoney(it?.price, 0),
+      selected_options: normalizeSelectedOptionGroups(it?.selected_options),
+      custom_message: toSafeString(it?.custom_message).trim() || null,
+    }))
+    .filter((item) => item.name);
+
+  if (!safeItems.length) return null;
+
+  const summaryRows = [];
+  const orderTotal = safeItems.reduce((sum, item) => {
+    const itemTotal = multiplyMoney(item.price, item.qty);
+    summaryRows.push({
+      type: "item",
+      left: item.name,
+      right:
+        item.qty > 1
+          ? `${item.qty}x NGN ${formatPrice(item.price)}`
+          : `NGN ${formatPrice(item.price)}`,
+    });
+
+    getOrderItemOptionLines(item).forEach((line) => {
+      summaryRows.push({
+        type: "option",
+        text: line,
+      });
+    });
+
+    if (item.qty > 1) {
+      summaryRows.push({
+        type: "subtotal",
+        left: "Subtotal",
+        right: `NGN ${formatPrice(itemTotal)}`,
+      });
+    }
+
+    return addMoney(sum, itemTotal);
+  }, 0);
+
+  const orderLines = safeItems.flatMap((item) => getOrderItemMessageLines(item));
+  const commonContactLines = [
+    "Name:",
+    "Phone:",
+    "Delivery address:",
+    "",
+    "Please confirm availability and payment method.",
+  ];
+  const subjectRaw = toSafeString(orderData?.subject, "Order from website");
+  const gmailLines = [
+    "Hello Toke Bakes,",
+    "",
+    "I would like to place the following order:",
+    "",
+    ...orderLines,
+    "",
+    `Order total: NGN ${formatPrice(orderTotal)}`,
+    "",
+    ...commonContactLines,
+    "",
+    "Thank you!",
+  ];
+  const waLines = [
+    "Hello Toke Bakes,",
+    "",
+    "I would like to place the following order:",
+    ...orderLines,
+    "",
+    `Order total: NGN ${formatPrice(orderTotal)}`,
+    "",
+    ...commonContactLines,
+  ];
+
+  const defaultTemplate = buildDefaultOrderPrefillTemplate();
+  const gmailBody = encodeURIComponent(gmailLines.join("\n")) || defaultTemplate;
+  const waBody = encodeURIComponent(waLines.join("\n")) || defaultTemplate;
+  const subject = encodeURIComponent(subjectRaw || "Order from website");
+
+  return {
+    type: toSafeString(orderData?.type, "cart"),
+    items: safeItems,
+    itemCount: safeItems.length,
+    orderTotal,
+    summaryRows,
+    subjectRaw,
+    gmailUrl: `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
+      BUSINESS_EMAIL
+    )}&su=${subject}&body=${gmailBody}`,
+    waUrl: `https://wa.me/${BUSINESS_PHONE_WAME}?text=${waBody}`,
+  };
+}
+
+function getPreparedOrderPayload(orderData) {
+  const key = createOrderPrefillCacheKey(orderData);
+  if (orderPrefillCache.has(key)) {
+    return orderPrefillCache.get(key);
+  }
+
+  const prepared = buildPreparedOrderPayload(orderData);
+  if (!prepared) return null;
+
+  orderPrefillCache.set(key, prepared);
+  if (orderPrefillCache.size > ORDER_PREFILL_CACHE_LIMIT) {
+    const oldestKey = orderPrefillCache.keys().next().value;
+    if (oldestKey) orderPrefillCache.delete(oldestKey);
+  }
+  return prepared;
+}
+
+function renderOrderSummary(summaryEl, prepared) {
+  if (!summaryEl) return;
+  summaryEl.innerHTML = "";
+  if (!prepared) return;
+
+  const fragment = document.createDocumentFragment();
+  prepared.summaryRows.forEach((entry) => {
+    if (entry.type === "item") {
+      const row = document.createElement("div");
+      row.className = "summary-row";
+      row.innerHTML = `
+        <div class="s-left">${escapeHtml(entry.left)}</div>
+        <div class="s-right">${escapeHtml(entry.right)}</div>
+      `;
+      fragment.appendChild(row);
+      return;
+    }
+
+    if (entry.type === "option") {
+      const optionRow = document.createElement("div");
+      optionRow.className = "summary-option";
+      optionRow.textContent = entry.text;
+      fragment.appendChild(optionRow);
+      return;
+    }
+
+    if (entry.type === "subtotal") {
+      const subtotal = document.createElement("div");
+      subtotal.className = "summary-subtotal";
+      subtotal.innerHTML = `
+        <div class="s-left"><em>${escapeHtml(entry.left)}</em></div>
+        <div class="s-right"><em>${escapeHtml(entry.right)}</em></div>
+      `;
+      fragment.appendChild(subtotal);
+    }
+  });
+
+  const totalRow = document.createElement("div");
+  totalRow.className = "summary-total";
+  totalRow.innerHTML = `
+    <div class="s-left"><strong>Order total:</strong></div>
+    <div class="s-right"><strong>NGN ${formatPrice(prepared.orderTotal)}</strong></div>
+  `;
+  fragment.appendChild(totalRow);
+  summaryEl.appendChild(fragment);
+}
+
 function showOrderOptions(orderData) {
   const sheet = document.getElementById("order-bottom-sheet");
   if (!sheet) return;
-
-  const summaryEl = sheet.querySelector(".order-summary");
-  if (summaryEl) {
-    summaryEl.innerHTML = "";
-    const list = document.createElement("div");
-
-    orderData.items.forEach((it) => {
-      const itemQty = Math.max(1, Math.floor(parseNumber(it.qty, 1)));
-      const itemUnitPrice = toMoney(it.price, 0);
-      const row = document.createElement("div");
-      row.className = "summary-row";
-
-      if (itemQty > 1) {
-        row.innerHTML = `
-          <div class="s-left">${escapeHtml(it.name)}</div>
-          <div class="s-right">${itemQty}x NGN ${formatPrice(itemUnitPrice)}</div>
-        `;
-      } else {
-        row.innerHTML = `
-          <div class="s-left">${escapeHtml(it.name)}</div>
-          <div class="s-right">NGN ${formatPrice(itemUnitPrice)}</div>
-        `;
-      }
-      list.appendChild(row);
-
-      const optionLines = getOrderItemOptionLines(it);
-      optionLines.forEach((line) => {
-        const optionRow = document.createElement("div");
-        optionRow.className = "summary-option";
-        optionRow.textContent = line;
-        list.appendChild(optionRow);
-      });
-
-      if (itemQty > 1) {
-        const subtotalRow = document.createElement("div");
-        subtotalRow.className = "summary-subtotal";
-        subtotalRow.innerHTML = `
-          <div class="s-left"><em>Subtotal</em></div>
-          <div class="s-right"><em>NGN ${formatPrice(
-            multiplyMoney(itemUnitPrice, itemQty)
-          )}</em></div>
-        `;
-        list.appendChild(subtotalRow);
-      }
-    });
-
-    summaryEl.appendChild(list);
-
-    const total = orderData.items.reduce((sum, it) => {
-      const itemQty = Math.max(1, Math.floor(parseNumber(it.qty, 1)));
-      const itemUnitPrice = toMoney(it.price, 0);
-      return addMoney(sum, multiplyMoney(itemUnitPrice, itemQty));
-    }, 0);
-    const totalRow = document.createElement("div");
-    totalRow.className = "summary-total";
-    totalRow.innerHTML = `
-      <div class="s-left"><strong>Order total:</strong></div>
-      <div class="s-right"><strong>NGN ${formatPrice(total)}</strong></div>
-    `;
-    summaryEl.appendChild(totalRow);
+  if (!orderData) {
+    showNotification("No order details available yet.", "warning");
+    return;
   }
 
-  sheet.dataset.order = JSON.stringify(orderData);
+  const prepared = getPreparedOrderPayload(orderData);
+  if (!prepared) {
+    showNotification("Unable to prepare order details right now.", "error");
+    return;
+  }
+
+  latestOrderSheetPayload = prepared;
+  sheet.__tbOrderPayload = prepared;
+  sheet.dataset.order = createOrderPrefillCacheKey(orderData);
+  renderOrderSummary(sheet.querySelector(".order-summary"), prepared);
   sheet.classList.add("visible");
 }
 
@@ -4002,6 +4319,27 @@ function initBottomSheet() {
   `;
   document.body.insertAdjacentHTML("beforeend", html);
 
+  if (!document.getElementById("tb-order-sheet-interaction-style")) {
+    const style = document.createElement("style");
+    style.id = "tb-order-sheet-interaction-style";
+    style.textContent = `
+      .order-option-btn.is-opening {
+        transform: translateY(0) scale(0.98) !important;
+        filter: brightness(0.97);
+      }
+      .order-option-btn[aria-busy="true"] {
+        cursor: wait;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .order-option-btn.is-opening {
+          transform: none !important;
+          filter: none;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   // Sheet event listeners
   document.addEventListener("click", (e) => {
     const sheet = document.getElementById("order-bottom-sheet");
@@ -4018,82 +4356,53 @@ function initBottomSheet() {
     const waBtn = e.target.closest("#order-via-whatsapp");
 
     if (gmailBtn || waBtn) {
-      const orderData = sheet.dataset.order
-        ? JSON.parse(sheet.dataset.order)
-        : null;
-      if (!orderData) return;
-
-      const orderTotal = toArray(orderData.items).reduce((sum, it) => {
-        const itemQty = Math.max(1, Math.floor(parseNumber(it?.qty, 1)));
-        const itemUnitPrice = toMoney(it?.price, 0);
-        return addMoney(sum, multiplyMoney(itemUnitPrice, itemQty));
-      }, 0);
-
-      if (gmailBtn) {
-        const lines = [
-          "Hello Toke Bakes,",
-          "",
-          "I would like to place the following order:",
-          "",
-          ...orderData.items.flatMap((it) => getOrderItemMessageLines(it)),
-          "",
-          `Order total: NGN ${formatPrice(orderTotal)}`,
-          "",
-          "Name: ",
-          "Phone: ",
-          "Delivery address: ",
-          "",
-          "Please confirm availability and payment method.",
-          "",
-          "Thank you!",
-        ];
-
-        const subject = encodeURIComponent(
-          orderData.subject || "Order from website"
+      const prepared =
+        sheet.__tbOrderPayload || latestOrderSheetPayload || null;
+      if (!prepared) {
+        showNotification(
+          "Unable to build the order message. Please try again.",
+          "error"
         );
-        const body = encodeURIComponent(lines.join("\n"));
-        const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
-          BUSINESS_EMAIL
-        )}&su=${subject}&body=${body}`;
-        trackSiteEvent("order_submitted", {
-          amount: orderTotal,
-          metadata: {
-            channel: "gmail",
-            order_type: orderData.type || "unknown",
-            item_count: toArray(orderData.items).length,
-          },
-        });
-        window.open(gmailUrl, "_blank");
+        return;
       }
 
-      if (waBtn) {
-        const lines = [
-          "Hello Toke Bakes,",
-          "",
-          "I would like to place the following order:",
-          ...orderData.items.flatMap((it) => getOrderItemMessageLines(it)),
-          "",
-          `Order total: NGN ${formatPrice(orderTotal)}`,
-          "",
-          "Name:",
-          "Phone:",
-          "Delivery address:",
-          "",
-          "Please confirm availability and payment method.",
-        ];
+      const activeBtn = gmailBtn || waBtn;
+      const isGmail = Boolean(gmailBtn);
+      const channel = isGmail ? "gmail" : "whatsapp";
+      const targetUrl = isGmail ? prepared.gmailUrl : prepared.waUrl;
 
-        const waText = encodeURIComponent(lines.join("\n"));
-        const waUrl = `https://wa.me/${BUSINESS_PHONE_WAME}?text=${waText}`;
+      activeBtn.disabled = true;
+      activeBtn.classList.add("is-opening");
+      activeBtn.setAttribute("aria-busy", "true");
+
+      const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
+      if (popup) {
+        try {
+          popup.opener = null;
+          popup.location.replace(targetUrl);
+        } catch {
+          window.open(targetUrl, "_blank", "noopener,noreferrer");
+        }
+      } else {
+        window.open(targetUrl, "_blank", "noopener,noreferrer");
+      }
+
+      queueMicrotask(() => {
         trackSiteEvent("order_submitted", {
-          amount: orderTotal,
+          amount: prepared.orderTotal,
           metadata: {
-            channel: "whatsapp",
-            order_type: orderData.type || "unknown",
-            item_count: toArray(orderData.items).length,
+            channel,
+            order_type: prepared.type || "unknown",
+            item_count: prepared.itemCount || 0,
           },
         });
-        window.open(waUrl, "_blank");
-      }
+      });
+
+      setTimeout(() => {
+        activeBtn.disabled = false;
+        activeBtn.classList.remove("is-opening");
+        activeBtn.removeAttribute("aria-busy");
+      }, 500);
 
       sheet.classList.remove("visible");
     }
@@ -4121,6 +4430,7 @@ async function renderCartOnOrderPage(shouldValidate = true) {
     cartContainer.innerHTML = "";
 
     if (currentCart.length === 0) {
+      latestOrderSheetPayload = null;
       cartContainer.innerHTML =
         '<p class="empty-cart">Your cart is empty. Visit the <a href="menu.html">menu</a> to add items.</p>';
 
@@ -4132,6 +4442,8 @@ async function renderCartOnOrderPage(shouldValidate = true) {
       }
       return;
     }
+
+    primeOrderPayloadFromCart(currentCart);
 
     // Show clear cart button only if there are items
     if (clearCartBtn) {
@@ -4401,9 +4713,11 @@ function initModern3DInteractions() {
 
 /* ================== HOME UX ENHANCEMENTS (HOME ONLY) ================== */
 let homeRevealObserver = null;
-let homeScrollListenerAttached = false;
 let homeScrollTicking = false;
 let homeScrollToTopRaf = null;
+let homeScrollListenerTarget = null;
+let homeScrollListenerHandler = null;
+let homeScrollResizeHandler = null;
 
 function ensureHomeEnhancementStyles() {
   if (document.getElementById("home-enhancement-styles")) return;
@@ -4497,13 +4811,55 @@ function ensureScrollTopButton() {
     window.matchMedia &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  const getScrollTop = () => {
-    const scrollingElement =
-      document.scrollingElement || document.documentElement;
-    if (scrollingElement && typeof scrollingElement.scrollTop === "number") {
-      return scrollingElement.scrollTop;
+  const resolveScrollContext = () => {
+    const candidateSelectors = [
+      "[data-scroll-container='main']",
+      "[data-scroll-container='true']",
+      ".spa-scroll-container",
+      ".page-scroll",
+      ".main-scroll",
+      "#main-content",
+    ];
+    const candidate = candidateSelectors
+      .map((selector) => document.querySelector(selector))
+      .find((node) => {
+        if (!node || node === document.body || node === document.documentElement) {
+          return false;
+        }
+        try {
+          const computed = window.getComputedStyle(node);
+          const overflowY = computed ? computed.overflowY : "";
+          const canScroll = /(auto|scroll|overlay)/i.test(overflowY);
+          return canScroll && node.scrollHeight > node.clientHeight + 20;
+        } catch {
+          return false;
+        }
+      });
+
+    if (candidate) {
+      return {
+        isWindow: false,
+        target: candidate,
+      };
     }
+
+    return {
+      isWindow: true,
+      target: window,
+    };
+  };
+
+  const context = resolveScrollContext();
+
+  const getScrollTop = () => {
+    if (!context.isWindow) {
+      return context.target.scrollTop || 0;
+    }
+
+    const scrollingElement =
+      document.scrollingElement || document.documentElement || document.body;
     return (
+      (scrollingElement && scrollingElement.scrollTop) ||
       window.scrollY ||
       (document.documentElement && document.documentElement.scrollTop) ||
       (document.body && document.body.scrollTop) ||
@@ -4511,23 +4867,34 @@ function ensureScrollTopButton() {
     );
   };
 
-  const setScrollTop = (value) => {
-    const top = Math.max(0, Number(value) || 0);
-    try {
-      window.scrollTo(0, top);
-    } catch {}
-    try {
-      if (document.scrollingElement) {
-        document.scrollingElement.scrollTop = top;
-      }
-    } catch {}
-    try {
-      document.documentElement.scrollTop = top;
-      document.body.scrollTop = top;
-    } catch {}
+  const getMaxScroll = () => {
+    if (!context.isWindow) {
+      return Math.max(0, context.target.scrollHeight - context.target.clientHeight);
+    }
+
+    const doc = document.scrollingElement || document.documentElement || document.body;
+    return Math.max(0, (doc?.scrollHeight || 0) - (doc?.clientHeight || 0));
   };
 
-  const slowSmoothScrollToTop = () => {
+  const setScrollTop = (value) => {
+    const top = Math.max(0, Number(value) || 0);
+    if (!context.isWindow) {
+      context.target.scrollTop = top;
+      return;
+    }
+    try {
+      window.scrollTo({ top, left: 0, behavior: "auto" });
+    } catch {
+      window.scrollTo(0, top);
+    }
+    if (document.scrollingElement) {
+      document.scrollingElement.scrollTop = top;
+    }
+    document.documentElement.scrollTop = top;
+    document.body.scrollTop = top;
+  };
+
+  const smoothScrollToTop = () => {
     const start = getScrollTop();
     if (start <= 0) return;
 
@@ -4536,12 +4903,23 @@ function ensureScrollTopButton() {
       return;
     }
 
+    try {
+      if (context.isWindow) {
+        window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+      } else if (typeof context.target.scrollTo === "function") {
+        context.target.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+      } else {
+        context.target.scrollTop = 0;
+      }
+      return;
+    } catch {}
+
     if (homeScrollToTopRaf) {
       cancelAnimationFrame(homeScrollToTopRaf);
       homeScrollToTopRaf = null;
     }
 
-    const duration = Math.max(750, Math.min(1800, Math.round(start * 0.55)));
+    const duration = Math.max(350, Math.min(900, Math.round(start * 0.38)));
     const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
     let animationStart = null;
 
@@ -4550,8 +4928,7 @@ function ensureScrollTopButton() {
       const elapsed = timestamp - animationStart;
       const progress = Math.min(elapsed / duration, 1);
       const eased = easeOutCubic(progress);
-      const nextTop = Math.round(start * (1 - eased));
-      setScrollTop(nextTop);
+      setScrollTop(Math.round(start * (1 - eased)));
 
       if (progress < 1) {
         homeScrollToTopRaf = requestAnimationFrame(tick);
@@ -4564,29 +4941,19 @@ function ensureScrollTopButton() {
     homeScrollToTopRaf = requestAnimationFrame(tick);
   };
 
-  const shouldShowNearBottom = () => {
-    const scrollTop = getScrollTop();
-    const doc =
-      document.scrollingElement || document.documentElement || document.body;
-    const maxScroll = (doc && doc.scrollHeight - doc.clientHeight) || 0;
-    const distanceToBottom = maxScroll - scrollTop;
-    const nearBottomThreshold = Math.max(
-      160,
-      Math.min(520, Math.round(maxScroll * 0.15))
-    );
-    return maxScroll > 0 && distanceToBottom <= nearBottomThreshold;
-  };
-
   if (!btn.dataset.bound) {
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
-      slowSmoothScrollToTop();
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      smoothScrollToTop();
     });
     btn.dataset.bound = "true";
   }
 
   const update = () => {
-    const shouldShow = shouldShowNearBottom();
+    const scrollTop = getScrollTop();
+    const maxScroll = getMaxScroll();
+    const showThreshold = Math.max(140, Math.round(window.innerHeight * 0.25));
+    const shouldShow = maxScroll > showThreshold && scrollTop >= showThreshold;
     btn.classList.toggle("show", shouldShow);
     btn.style.opacity = shouldShow ? "1" : "";
     btn.style.pointerEvents = shouldShow ? "auto" : "";
@@ -4594,26 +4961,34 @@ function ensureScrollTopButton() {
 
   update();
 
-  if (!homeScrollListenerAttached) {
-    homeScrollListenerAttached = true;
-    window.addEventListener(
-      "scroll",
-      () => {
-        if (homeScrollTicking) return;
-        homeScrollTicking = true;
-        requestAnimationFrame(() => {
-          homeScrollTicking = false;
-          const el = document.getElementById("scroll-top-btn");
-          if (!el) return;
-          const shouldShow = shouldShowNearBottom();
-          el.classList.toggle("show", shouldShow);
-          el.style.opacity = shouldShow ? "1" : "";
-          el.style.pointerEvents = shouldShow ? "auto" : "";
-        });
-      },
-      { passive: true }
-    );
-    window.addEventListener("resize", update, { passive: true });
+  if (
+    homeScrollListenerTarget !== context.target &&
+    homeScrollListenerTarget &&
+    homeScrollListenerHandler
+  ) {
+    homeScrollListenerTarget.removeEventListener("scroll", homeScrollListenerHandler);
+    homeScrollListenerTarget = null;
+    homeScrollListenerHandler = null;
+  }
+
+  if (!homeScrollListenerHandler || homeScrollListenerTarget !== context.target) {
+    homeScrollListenerHandler = () => {
+      if (homeScrollTicking) return;
+      homeScrollTicking = true;
+      requestAnimationFrame(() => {
+        homeScrollTicking = false;
+        update();
+      });
+    };
+    homeScrollListenerTarget = context.target;
+    context.target.addEventListener("scroll", homeScrollListenerHandler, {
+      passive: true,
+    });
+  }
+
+  if (!homeScrollResizeHandler) {
+    homeScrollResizeHandler = () => update();
+    window.addEventListener("resize", homeScrollResizeHandler, { passive: true });
   }
 }
 
@@ -4772,6 +5147,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   debugLog("Initializing Toke Bakes with Enhanced Sync...");
 
   ensureContentCacheVersion();
+  ensureChatWidgetScriptLoaded();
   trackCurrentPageView(true);
 
   // Initialize cart count immediately to prevent flash

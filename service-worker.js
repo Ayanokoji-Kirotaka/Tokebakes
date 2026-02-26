@@ -1,4 +1,4 @@
-const SW_VERSION = "v7";
+const SW_VERSION = "v9";
 const CACHE_PREFIX = "toke-bakes";
 const CACHE_NAMES = {
   precache: `${CACHE_PREFIX}-precache-${SW_VERSION}`,
@@ -42,6 +42,7 @@ const PRECACHE_URLS = [
   "scripts/carousel.js",
   "scripts/spa-manager.js",
   "scripts/script.js",
+  "scripts/chat-widget.js",
   "scripts/admin.js",
   "scripts/sw-register.js",
   "images/logo.webp",
@@ -164,12 +165,27 @@ function isCacheableResponse(response, allowOpaque = false) {
   return allowOpaque && response.type === "opaque";
 }
 
-function canStoreRequest(request) {
+function canStoreRequest(request, cacheName = "") {
   try {
     const url = new URL(request.url);
-    return !url.searchParams.has("_");
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+    if (cacheName !== CACHE_NAMES.api && url.searchParams.has("_")) {
+      return false;
+    }
+    return true;
   } catch {
     return true;
+  }
+}
+
+function stripCacheBustParam(requestUrl) {
+  try {
+    const url = new URL(requestUrl);
+    if (!url.searchParams.has("_")) return requestUrl;
+    url.searchParams.delete("_");
+    return url.toString();
+  } catch {
+    return requestUrl;
   }
 }
 
@@ -238,10 +254,61 @@ function dedupedFetch(request, options = {}, timeoutMs = 10000) {
 }
 
 async function cachePut(cacheName, request, response) {
-  if (!canStoreRequest(request)) return;
+  if (!canStoreRequest(request, cacheName)) return;
+  const cacheKey =
+    cacheName === CACHE_NAMES.api
+      ? stripCacheBustParam(request.url)
+      : request.url;
   const cache = await caches.open(cacheName);
-  await cache.put(request, response);
-  await setCacheTimestamp(cacheName, request.url, Date.now());
+  await cache.put(cacheKey, response);
+  await setCacheTimestamp(cacheName, cacheKey, Date.now());
+}
+
+async function getCachedResponse(cacheName, request, allowCacheBustFallback = false) {
+  const cache = await caches.open(cacheName);
+  const direct = await cache.match(request);
+  if (direct) return direct;
+
+  if (allowCacheBustFallback) {
+    const fallbackKey = stripCacheBustParam(request.url);
+    if (fallbackKey !== request.url) {
+      const fallback = await cache.match(fallbackKey);
+      if (fallback) return fallback;
+    }
+  }
+
+  return null;
+}
+
+function buildSupabaseFallbackResponse(requestUrl) {
+  try {
+    const url = new URL(requestUrl);
+    if (url.pathname.includes("/rest/v1/website_themes")) {
+      return new Response("[]", {
+        status: 200,
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "no-store",
+          "x-sw-fallback": "offline-empty-themes",
+        },
+      });
+    }
+  } catch {}
+
+  return new Response(
+    JSON.stringify({
+      error: "offline",
+      message: "Network unavailable and no cached response.",
+    }),
+    {
+      status: 503,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "x-sw-fallback": "offline-unavailable",
+      },
+    }
+  );
 }
 
 function maybeSchedulePrune(cacheName, event) {
@@ -299,6 +366,7 @@ async function pruneAllCaches() {
 async function clearDynamicCaches() {
   await Promise.all([
     caches.delete(CACHE_NAMES.pages),
+    caches.delete(CACHE_NAMES.assets),
     caches.delete(CACHE_NAMES.images),
     caches.delete(CACHE_NAMES.api),
     caches.delete(CACHE_NAMES.meta),
@@ -312,6 +380,8 @@ async function networkFirst(request, options = {}, event) {
     fetchOptions = {},
     fallbackUrl = null,
     allowOpaque = false,
+    allowCacheBustFallback = false,
+    errorResponseFactory = null,
   } = options;
 
   try {
@@ -328,13 +398,20 @@ async function networkFirst(request, options = {}, event) {
 
     return networkResponse;
   } catch {
-    const cache = await caches.open(cacheName);
-    const cached = await cache.match(request);
+    const cached = await getCachedResponse(
+      cacheName,
+      request,
+      allowCacheBustFallback
+    );
     if (cached) return cached;
 
     if (fallbackUrl) {
       const fallback = await caches.match(fallbackUrl);
       if (fallback) return fallback;
+    }
+
+    if (typeof errorResponseFactory === "function") {
+      return errorResponseFactory(request);
     }
 
     return Response.error();
@@ -438,6 +515,9 @@ async function routeRequest(request, event) {
         timeoutMs: 10000,
         fetchOptions: { cache: "no-store" },
         allowOpaque: false,
+        allowCacheBustFallback: true,
+        errorResponseFactory: (failedRequest) =>
+          buildSupabaseFallbackResponse(failedRequest.url),
       },
       event
     );

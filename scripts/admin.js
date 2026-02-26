@@ -35,7 +35,7 @@ class DataSyncManager {
     }
   }
 
-  notifyDataChanged(operationType, itemType) {
+  notifyDataChanged(operationType, itemType, extra = {}) {
     if (typeof queueStatsPanelRefresh === "function") {
       queueStatsPanelRefresh(700);
     }
@@ -43,6 +43,7 @@ class DataSyncManager {
     if (this.syncBus && typeof this.syncBus.publishDataUpdate === "function") {
       this.syncBus.publishDataUpdate(operationType, itemType, {
         source: "admin",
+        ...(extra || {}),
       });
 
       if (typeof this.syncBus.requestServerCheck === "function") {
@@ -62,6 +63,7 @@ class DataSyncManager {
         timestamp: timestamp,
         operation: operationType,
         itemType: itemType,
+        ...(extra || {}),
       });
     }
 
@@ -74,6 +76,7 @@ class DataSyncManager {
             timestamp,
             operation: operationType,
             itemType,
+            ...(extra || {}),
           },
         })
       );
@@ -156,6 +159,449 @@ const menuOptionManagerState = {
   open: false,
   loading: false,
 };
+const CONTENT_VERSION_STORAGE_KEY = "toke_bakes_content_version";
+const adminActionLocks = new Set();
+const adminControlState = new WeakMap();
+const adminCrudProgressState = {
+  root: null,
+  fill: null,
+  value: null,
+  title: null,
+  status: null,
+  timer: null,
+  progress: 0,
+};
+
+function parseContentVersion(raw) {
+  if (typeof raw === "number") {
+    return Number.isFinite(raw) ? Math.max(0, Math.trunc(raw)) : null;
+  }
+  if (typeof raw === "string") {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : null;
+  }
+  if (Array.isArray(raw)) {
+    if (!raw.length) return null;
+    return parseContentVersion(raw[0]);
+  }
+  if (raw && typeof raw === "object") {
+    return parseContentVersion(
+      raw.get_content_version ?? raw.content_version ?? raw.value ?? raw.version ?? null
+    );
+  }
+  return null;
+}
+
+function getStoredContentVersion() {
+  try {
+    return parseContentVersion(localStorage.getItem(CONTENT_VERSION_STORAGE_KEY)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function setStoredContentVersion(version) {
+  const normalized = parseContentVersion(version);
+  if (!Number.isFinite(normalized)) return;
+  try {
+    localStorage.setItem(CONTENT_VERSION_STORAGE_KEY, String(normalized));
+  } catch {}
+}
+
+function setControlsBusy(controls = [], isBusy = false) {
+  controls
+    .filter(Boolean)
+    .forEach((control) => {
+      if (!control || typeof control !== "object") return;
+      if (isBusy) {
+        if (!adminControlState.has(control)) {
+          adminControlState.set(control, {
+            disabled: Boolean(control.disabled),
+            ariaBusy: control.getAttribute("aria-busy"),
+          });
+        }
+        control.disabled = true;
+        control.setAttribute("aria-busy", "true");
+        control.classList.add("is-busy");
+        return;
+      }
+
+      const previous = adminControlState.get(control);
+      control.disabled = previous ? previous.disabled : false;
+      if (!previous || previous.ariaBusy === null) {
+        control.removeAttribute("aria-busy");
+      } else {
+        control.setAttribute("aria-busy", previous.ariaBusy);
+      }
+      control.classList.remove("is-busy");
+      adminControlState.delete(control);
+    });
+}
+
+function beginAdminAction(actionKey, controls = []) {
+  if (!actionKey) return false;
+  if (adminActionLocks.has(actionKey)) return false;
+  adminActionLocks.add(actionKey);
+  setControlsBusy(controls, true);
+  return true;
+}
+
+function endAdminAction(actionKey, controls = []) {
+  if (actionKey) {
+    adminActionLocks.delete(actionKey);
+  }
+  setControlsBusy(controls, false);
+}
+
+function ensureAdminCrudProgressUi() {
+  if (!document.getElementById("tb-admin-progress-style")) {
+    const style = document.createElement("style");
+    style.id = "tb-admin-progress-style";
+    style.textContent = `
+      .tb-admin-progress {
+        position: fixed;
+        top: 1rem;
+        left: 50%;
+        transform: translate3d(-50%, -18px, 0);
+        opacity: 0;
+        width: min(420px, calc(100vw - 1.5rem));
+        z-index: 14000;
+        pointer-events: none;
+        transition: transform 200ms ease, opacity 180ms ease;
+      }
+      .tb-admin-progress.is-visible {
+        opacity: 1;
+        transform: translate3d(-50%, 0, 0);
+      }
+      .tb-admin-progress-card {
+        background: color-mix(in srgb, var(--surface, #faf7f5) 94%, #fff);
+        border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+        border-radius: 12px;
+        box-shadow: 0 18px 38px rgba(0, 0, 0, 0.18);
+        padding: 0.68rem 0.78rem;
+      }
+      [data-theme="dark"] .tb-admin-progress-card {
+        background: color-mix(in srgb, var(--surface, #2d2d2d) 90%, #111);
+      }
+      .tb-admin-progress-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.75rem;
+      }
+      .tb-admin-progress-title {
+        font-size: 0.86rem;
+        font-weight: 700;
+        color: var(--text, #222);
+      }
+      .tb-admin-progress-value {
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: var(--text-light, #666);
+      }
+      .tb-admin-progress-track {
+        position: relative;
+        height: 8px;
+        margin-top: 0.45rem;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--text-light, #777) 18%, transparent);
+        overflow: hidden;
+      }
+      .tb-admin-progress-fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 0%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--primary, #e67a00), #32b26a);
+        transition: width 180ms ease;
+      }
+      .tb-admin-progress-status {
+        margin-top: 0.35rem;
+        font-size: 0.78rem;
+        color: var(--text-light, #666);
+      }
+      .tb-admin-progress.is-success .tb-admin-progress-fill {
+        background: linear-gradient(90deg, #2fa66a, #1d9458);
+      }
+      .tb-admin-progress.is-error .tb-admin-progress-fill {
+        background: linear-gradient(90deg, #da4a4a, #bf3030);
+      }
+      .tb-field-invalid {
+        border-color: #d64545 !important;
+        box-shadow: 0 0 0 2px rgba(214, 69, 69, 0.16) !important;
+      }
+      .tb-field-error {
+        margin-top: 0.3rem;
+        font-size: 0.76rem;
+        color: #c83535;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .tb-admin-progress {
+          transition: none;
+          transform: translate3d(-50%, 0, 0);
+        }
+        .tb-admin-progress-fill {
+          transition: none;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  if (adminCrudProgressState.root) return adminCrudProgressState;
+
+  const root = document.createElement("section");
+  root.className = "tb-admin-progress";
+  root.setAttribute("aria-live", "polite");
+  root.innerHTML = `
+    <div class="tb-admin-progress-card">
+      <div class="tb-admin-progress-head">
+        <div class="tb-admin-progress-title">Saving changes</div>
+        <div class="tb-admin-progress-value">0%</div>
+      </div>
+      <div class="tb-admin-progress-track">
+        <div class="tb-admin-progress-fill"></div>
+      </div>
+      <p class="tb-admin-progress-status">Preparing request...</p>
+    </div>
+  `;
+  document.body.appendChild(root);
+
+  adminCrudProgressState.root = root;
+  adminCrudProgressState.fill = root.querySelector(".tb-admin-progress-fill");
+  adminCrudProgressState.value = root.querySelector(".tb-admin-progress-value");
+  adminCrudProgressState.title = root.querySelector(".tb-admin-progress-title");
+  adminCrudProgressState.status = root.querySelector(".tb-admin-progress-status");
+  adminCrudProgressState.progress = 0;
+  return adminCrudProgressState;
+}
+
+function setAdminCrudProgress(nextValue, statusText = "") {
+  const ui = ensureAdminCrudProgressUi();
+  const safe = Math.max(0, Math.min(100, Math.round(Number(nextValue) || 0)));
+  ui.progress = safe;
+  if (ui.fill) ui.fill.style.width = `${safe}%`;
+  if (ui.value) ui.value.textContent = `${safe}%`;
+  if (statusText && ui.status) ui.status.textContent = statusText;
+}
+
+function startAdminCrudProgress(titleText, statusText = "Preparing request...") {
+  const ui = ensureAdminCrudProgressUi();
+  if (ui.timer) {
+    clearInterval(ui.timer);
+    ui.timer = null;
+  }
+  ui.root.classList.remove("is-success", "is-error");
+  ui.root.classList.add("is-visible");
+  if (ui.title) ui.title.textContent = titleText || "Saving changes";
+  if (ui.status) ui.status.textContent = statusText;
+  setAdminCrudProgress(0, statusText);
+
+  ui.timer = setInterval(() => {
+    if (ui.progress >= 90) return;
+    const step = ui.progress < 45 ? 7 : ui.progress < 70 ? 4 : 2;
+    setAdminCrudProgress(ui.progress + step, "Syncing changes...");
+  }, 140);
+
+  return {
+    complete(doneText = "Done") {
+      if (ui.timer) {
+        clearInterval(ui.timer);
+        ui.timer = null;
+      }
+      ui.root.classList.remove("is-error");
+      ui.root.classList.add("is-success");
+      setAdminCrudProgress(100, doneText);
+      setTimeout(() => {
+        ui.root.classList.remove("is-visible", "is-success");
+        setAdminCrudProgress(0, "Preparing request...");
+      }, 900);
+    },
+    fail(errorText = "Request failed") {
+      if (ui.timer) {
+        clearInterval(ui.timer);
+        ui.timer = null;
+      }
+      ui.root.classList.remove("is-success");
+      ui.root.classList.add("is-error", "is-visible");
+      setAdminCrudProgress(Math.max(ui.progress, 25), errorText);
+    },
+  };
+}
+
+function clearFieldError(field) {
+  if (!field) return;
+  field.classList.remove("tb-field-invalid");
+  const messageEl = field.parentElement?.querySelector(
+    `[data-field-error-for="${field.id}"]`
+  );
+  if (messageEl) {
+    messageEl.remove();
+  }
+}
+
+function setFieldError(field, message) {
+  if (!field || !field.id) return;
+  clearFieldError(field);
+  field.classList.add("tb-field-invalid");
+  const messageEl = document.createElement("p");
+  messageEl.className = "tb-field-error";
+  messageEl.setAttribute("data-field-error-for", field.id);
+  messageEl.textContent = toSafeString(message);
+  field.parentElement?.appendChild(messageEl);
+}
+
+function clearFormFieldErrors(form) {
+  if (!form) return;
+  form.querySelectorAll(".tb-field-invalid").forEach((field) => {
+    field.classList.remove("tb-field-invalid");
+  });
+  form.querySelectorAll(".tb-field-error").forEach((msg) => msg.remove());
+}
+
+async function runAdminAction({
+  actionKey,
+  controls = [],
+  progressTitle = "Saving changes",
+  progressText = "Preparing request...",
+  task,
+}) {
+  if (typeof task !== "function") {
+    throw new Error("runAdminAction requires a task function");
+  }
+
+  if (!beginAdminAction(actionKey, controls)) {
+    showNotification("Please wait for the current action to finish.", "info");
+    return { ok: false, skipped: true, error: null, value: null };
+  }
+
+  const progress = startAdminCrudProgress(progressTitle, progressText);
+  try {
+    const value = await task(progress);
+    return { ok: true, skipped: false, error: null, value, progress };
+  } catch (error) {
+    progress.fail(error?.message || "Request failed");
+    return { ok: false, skipped: false, error, value: null, progress };
+  } finally {
+    endAdminAction(actionKey, controls);
+  }
+}
+
+function requestAdminDynamicCacheClear() {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return;
+  }
+
+  const notify = (worker) => {
+    if (!worker) return;
+    try {
+      worker.postMessage({ type: "CLEAR_DYNAMIC_CACHES" });
+    } catch {}
+  };
+
+  if (navigator.serviceWorker.controller) {
+    notify(navigator.serviceWorker.controller);
+    return;
+  }
+
+  navigator.serviceWorker
+    .getRegistration()
+    .then((registration) => {
+      notify(
+        registration?.active || registration?.waiting || registration?.installing
+      );
+    })
+    .catch(() => {});
+}
+
+async function fetchServerContentVersion() {
+  try {
+    const result = await secureRequest(
+      "/rest/v1/rpc/get_content_version",
+      "POST",
+      {},
+      {
+        authRequired: true,
+        retries: 2,
+        timeout: 9000,
+        suppressNotifications: true,
+      }
+    );
+    const parsed = parseContentVersion(result);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      setStoredContentVersion(parsed);
+      return parsed;
+    }
+  } catch {}
+
+  return getStoredContentVersion();
+}
+
+async function bumpServerContentVersion() {
+  try {
+    const result = await secureRequest(
+      "/rest/v1/rpc/bump_content_version",
+      "POST",
+      {},
+      {
+        authRequired: true,
+        retries: 2,
+        timeout: 10000,
+        suppressNotifications: true,
+      }
+    );
+
+    const parsed = parseContentVersion(result);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      setStoredContentVersion(parsed);
+      return parsed;
+    }
+  } catch {}
+
+  const current = getStoredContentVersion();
+  const fallback = current + 1;
+
+  try {
+    await secureRequest(
+      "/rest/v1/site_metadata?on_conflict=key",
+      "POST",
+      {
+        key: "content_version",
+        value: String(fallback),
+        updated_at: new Date().toISOString(),
+      },
+      {
+        authRequired: true,
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        suppressNotifications: true,
+      }
+    );
+  } catch {}
+
+  setStoredContentVersion(fallback);
+  return fallback;
+}
+
+async function ensureContentVersionAfterWrite(previousVersion = null) {
+  const before =
+    Number.isFinite(previousVersion) && previousVersion >= 0
+      ? previousVersion
+      : await fetchServerContentVersion();
+
+  const current = await fetchServerContentVersion();
+  if (Number.isFinite(current) && current > before) {
+    return current;
+  }
+
+  const bumped = await bumpServerContentVersion();
+  if (Number.isFinite(bumped) && bumped >= 0) {
+    return bumped;
+  }
+
+  const fallback = Math.max(before || 0, getStoredContentVersion() || 0) + 1;
+  setStoredContentVersion(fallback);
+  return fallback;
+}
 
 function cacheItemsForType(itemType, items) {
   const map = itemStateCache[itemType];
@@ -775,36 +1221,59 @@ async function deleteItemByType(id, itemType) {
       showNotification("Deletion cancelled", "info");
       return;
     }
+    const actionResult = await runAdminAction({
+      actionKey: `delete-${itemType}-${id}`,
+      progressTitle: `Deleting ${label.toLowerCase()}`,
+      progressText: "Removing item...",
+      task: async (progress) => {
+        const baselineVersion = await fetchServerContentVersion();
+        await secureRequest(`${endpoint}?id=eq.${id}`, "DELETE", null, {
+          authRequired: true,
+        });
 
-    await secureRequest(`${endpoint}?id=eq.${id}`, "DELETE", null, {
-      authRequired: true,
+        const storagePath = extractStoragePath(itemDetails.image, bucket);
+        try {
+          await deleteFromStorage(bucket, storagePath);
+        } catch (storageError) {
+          console.error("Storage cleanup failed after DB delete:", storageError);
+        }
+
+        tempImageCache.delete(id);
+        removeCachedItemForType(itemType, id);
+        invalidateEndpointCache(endpoint);
+        markPublicContentCacheDirty();
+        removeItemFromUi(itemType, id);
+        if (
+          itemType === "menu" &&
+          menuOptionManagerState.menuItemId === String(id)
+        ) {
+          closeMenuOptionsManager();
+        }
+
+        const contentVersion = await ensureContentVersionAfterWrite(
+          baselineVersion
+        );
+
+        const refreshPromise = refreshListAfterDelete(itemType, true);
+        refreshPromise.catch((error) =>
+          console.error(`Background refresh failed (${itemType}):`, error)
+        );
+        Promise.resolve(updateItemCounts()).catch((error) =>
+          console.error("Update counts failed:", error)
+        );
+
+        dataSync.notifyDataChanged("delete", itemType, { contentVersion });
+        progress.complete(`${label} deleted`);
+      },
     });
 
-    const storagePath = extractStoragePath(itemDetails.image, bucket);
-    try {
-      await deleteFromStorage(bucket, storagePath);
-    } catch (storageError) {
-      console.error("Storage cleanup failed after DB delete:", storageError);
+    if (!actionResult.ok) {
+      if (!actionResult.skipped) {
+        throw actionResult.error || new Error(`Failed to delete ${label}`);
+      }
+      return;
     }
 
-    tempImageCache.delete(id);
-    removeCachedItemForType(itemType, id);
-    invalidateEndpointCache(endpoint);
-    markPublicContentCacheDirty();
-    removeItemFromUi(itemType, id);
-    if (itemType === "menu" && menuOptionManagerState.menuItemId === String(id)) {
-      closeMenuOptionsManager();
-    }
-
-    const refreshPromise = refreshListAfterDelete(itemType, true);
-    refreshPromise.catch((error) =>
-      console.error(`Background refresh failed (${itemType}):`, error)
-    );
-    Promise.resolve(updateItemCounts()).catch((error) =>
-      console.error("Update counts failed:", error)
-    );
-
-    dataSync.notifyDataChanged("delete", itemType);
     showNotification(`${label} deleted!`, "success");
   } catch (error) {
     console.error(`Error deleting ${itemType} item:`, error);
@@ -967,6 +1436,9 @@ function showPopup(options) {
       message,
       type = "info",
       showCancel = false,
+      showInput = false,
+      inputPlaceholder = "",
+      inputValue = "",
       cancelText = "Cancel",
       confirmText = "OK",
       onConfirm = () => {},
@@ -1042,7 +1514,29 @@ function showPopup(options) {
       text-align: center;
       font-size: 1rem;
     `;
-    messageEl.textContent = message;
+    const messageText = document.createElement("p");
+    messageText.style.margin = "0";
+    messageText.textContent = message;
+    messageEl.appendChild(messageText);
+
+    let inputEl = null;
+    if (showInput) {
+      inputEl = document.createElement("input");
+      inputEl.type = "text";
+      inputEl.value = toSafeString(inputValue);
+      inputEl.placeholder = toSafeString(inputPlaceholder);
+      inputEl.autocomplete = "off";
+      inputEl.style.cssText = `
+        width: 100%;
+        margin-top: 1rem;
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        padding: 0.72rem 0.8rem;
+        font-size: 0.95rem;
+        font-family: 'Poppins', sans-serif;
+      `;
+      messageEl.appendChild(inputEl);
+    }
     popup.appendChild(messageEl);
 
     // Buttons container
@@ -1053,6 +1547,17 @@ function showPopup(options) {
       padding: 0 2rem 2rem;
       justify-content: ${showCancel ? "space-between" : "center"};
     `;
+
+    let settled = false;
+    const closeWithValue = (value, onAction) => {
+      if (settled) return;
+      settled = true;
+      overlay.remove();
+      try {
+        onAction();
+      } catch {}
+      resolve(value);
+    };
 
     // Cancel button
     if (showCancel) {
@@ -1081,9 +1586,7 @@ function showPopup(options) {
       });
 
       cancelBtn.addEventListener("click", () => {
-        overlay.remove();
-        onCancel();
-        resolve(false);
+        closeWithValue(false, onCancel);
       });
 
       buttonsContainer.appendChild(cancelBtn);
@@ -1117,9 +1620,8 @@ function showPopup(options) {
     });
 
     confirmBtn.addEventListener("click", () => {
-      overlay.remove();
-      onConfirm();
-      resolve(true);
+      const value = showInput ? toSafeString(inputEl?.value).trim() : true;
+      closeWithValue(value, onConfirm);
     });
 
     buttonsContainer.appendChild(confirmBtn);
@@ -1167,12 +1669,37 @@ function showPopup(options) {
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) {
         if (showCancel) {
-          overlay.remove();
-          onCancel();
-          resolve(false);
+          closeWithValue(false, onCancel);
         }
       }
     });
+
+    overlay.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && showCancel) {
+        event.preventDefault();
+        closeWithValue(false, onCancel);
+      }
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        const value = showInput ? toSafeString(inputEl?.value).trim() : true;
+        closeWithValue(value, onConfirm);
+      }
+    });
+
+    if (showInput && inputEl) {
+      setTimeout(() => {
+        try {
+          inputEl.focus({ preventScroll: true });
+          inputEl.select();
+        } catch {}
+      }, 40);
+    } else {
+      setTimeout(() => {
+        try {
+          confirmBtn.focus({ preventScroll: true });
+        } catch {}
+      }, 40);
+    }
   });
 }
 
@@ -1893,6 +2420,151 @@ if (!document.querySelector("#notification-animations")) {
   document.head.appendChild(style);
 }
 
+function ensureToastUi() {
+  if (!document.getElementById("tb-toast-style")) {
+    const style = document.createElement("style");
+    style.id = "tb-toast-style";
+    style.textContent = `
+      .tb-toast-wrap {
+        position: fixed;
+        top: 1rem;
+        right: 1rem;
+        z-index: 14500;
+        display: grid;
+        gap: 0.55rem;
+        width: min(360px, calc(100vw - 1.5rem));
+        pointer-events: none;
+      }
+      .tb-toast {
+        --tb-toast-accent: #2fa66a;
+        pointer-events: auto;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 0.62rem;
+        padding: 0.72rem 0.8rem;
+        border-radius: 12px;
+        border: 1px solid color-mix(in srgb, var(--tb-toast-accent) 28%, transparent);
+        background: color-mix(in srgb, var(--surface, #faf7f5) 94%, #fff);
+        color: var(--text, #222);
+        box-shadow: 0 16px 32px rgba(0, 0, 0, 0.16);
+        transform: translate3d(0, -8px, 0);
+        opacity: 0;
+        transition: transform 180ms ease, opacity 180ms ease;
+      }
+      [data-theme="dark"] .tb-toast {
+        background: color-mix(in srgb, var(--surface, #2d2d2d) 90%, #121212);
+      }
+      .tb-toast.is-visible {
+        transform: translate3d(0, 0, 0);
+        opacity: 1;
+      }
+      .tb-toast-icon {
+        width: 1.35rem;
+        height: 1.35rem;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.74rem;
+        font-weight: 700;
+        color: var(--tb-toast-accent);
+        background: color-mix(in srgb, var(--tb-toast-accent) 14%, transparent);
+      }
+      .tb-toast-body {
+        font-size: 0.88rem;
+        line-height: 1.35;
+      }
+      .tb-toast-close {
+        border: none;
+        width: 1.55rem;
+        height: 1.55rem;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--text-light, #666);
+        cursor: pointer;
+        font-size: 1rem;
+      }
+      .tb-toast-close:hover {
+        background: color-mix(in srgb, var(--tb-toast-accent) 10%, transparent);
+        color: var(--text, #222);
+      }
+      .tb-toast-success { --tb-toast-accent: #2fa66a; }
+      .tb-toast-error { --tb-toast-accent: #d84343; }
+      .tb-toast-info { --tb-toast-accent: #2f7ae0; }
+      .tb-toast-warning { --tb-toast-accent: #e58a13; }
+      @media (max-width: 640px) {
+        .tb-toast-wrap {
+          top: 0.82rem;
+          left: 0.75rem;
+          right: 0.75rem;
+          width: auto;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .tb-toast {
+          transition: none;
+          transform: none;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  let wrap = document.getElementById("tb-toast-wrap");
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.id = "tb-toast-wrap";
+    wrap.className = "tb-toast-wrap";
+    wrap.setAttribute("aria-live", "polite");
+    wrap.setAttribute("aria-atomic", "false");
+    document.body.appendChild(wrap);
+  }
+  return wrap;
+}
+
+function showNotification(message, type = "success") {
+  const wrap = ensureToastUi();
+  const normalizedType = ["success", "error", "info", "warning"].includes(type)
+    ? type
+    : "info";
+  const iconMap = {
+    success: "ok",
+    error: "!",
+    info: "i",
+    warning: "!",
+  };
+  const toast = document.createElement("article");
+  toast.className = `tb-toast tb-toast-${normalizedType}`;
+  toast.setAttribute("role", normalizedType === "error" ? "alert" : "status");
+  toast.innerHTML = `
+    <span class="tb-toast-icon" aria-hidden="true">${iconMap[normalizedType]}</span>
+    <div class="tb-toast-body">${escapeHtml(toSafeString(message, "Action completed."))}</div>
+    <button type="button" class="tb-toast-close" aria-label="Dismiss notification">x</button>
+  `;
+  wrap.appendChild(toast);
+
+  const dismiss = () => {
+    toast.classList.remove("is-visible");
+    setTimeout(() => toast.remove(), 200);
+  };
+
+  toast.querySelector(".tb-toast-close")?.addEventListener("click", dismiss, {
+    once: true,
+  });
+  requestAnimationFrame(() => {
+    toast.classList.add("is-visible");
+  });
+
+  const timeoutByType = {
+    success: 2600,
+    info: 3200,
+    warning: 3600,
+    error: 5000,
+  };
+  setTimeout(dismiss, timeoutByType[normalizedType] || 3200);
+}
+
 /* ================== SECURE API FUNCTIONS ================== */
 
 const SESSION_SKEW_SECONDS = 60;
@@ -1973,6 +2645,7 @@ async function secureRequest(
     timeout = 10000,
     authRequired = false,
     headers: extraHeaders = {},
+    suppressNotifications = false,
   } = options;
 
   if (!SUPABASE_CONFIG || !SUPABASE_CONFIG.URL || !SUPABASE_CONFIG.ANON_KEY) {
@@ -2028,27 +2701,33 @@ async function secureRequest(
         const errorData = await response.text();
 
         if (response.status === 401) {
-          showNotification(
-            "Authentication failed. Please login again.",
-            "error"
-          );
+          if (!suppressNotifications) {
+            showNotification(
+              "Authentication failed. Please login again.",
+              "error"
+            );
+          }
           logoutAdmin();
           throw new Error("Authentication failed");
         }
 
         if (response.status === 403) {
-          showNotification(
-            "Permission denied. Please contact administrator.",
-            "error"
-          );
+          if (!suppressNotifications) {
+            showNotification(
+              "Permission denied. Please contact administrator.",
+              "error"
+            );
+          }
           throw new Error("Permission denied");
         }
 
         if (response.status === 413) {
-          showNotification(
-            "Image file is too large. Please use a smaller image.",
-            "error"
-          );
+          if (!suppressNotifications) {
+            showNotification(
+              "Image file is too large. Please use a smaller image.",
+              "error"
+            );
+          }
           throw new Error("File too large");
         }
 
@@ -2088,20 +2767,22 @@ async function secureRequest(
       if (attempt === retries) {
         console.error("API request failed after retries:", error);
 
-        if (error.name === "AbortError") {
-          showNotification("Request timeout. Please try again.", "error");
-        } else if (error.message.includes("Failed to fetch")) {
-          showNotification(
-            "Network error. Please check your connection.",
-            "error"
-          );
-        } else if (error.message.includes("CORS")) {
-          showNotification(
-            "Cross-origin request blocked. Please check configuration.",
-            "error"
-          );
-        } else {
-          showNotification(`Operation failed: ${error.message}`, "error");
+        if (!suppressNotifications) {
+          if (error.name === "AbortError") {
+            showNotification("Request timeout. Please try again.", "error");
+          } else if (error.message.includes("Failed to fetch")) {
+            showNotification(
+              "Network error. Please check your connection.",
+              "error"
+            );
+          } else if (error.message.includes("CORS")) {
+            showNotification(
+              "Cross-origin request blocked. Please check configuration.",
+              "error"
+            );
+          } else {
+            showNotification(`Operation failed: ${error.message}`, "error");
+          }
         }
 
         throw error;
@@ -2138,10 +2819,9 @@ async function loadDataFromSupabase(endpoint, id = null, forceRefresh = false) {
 
   try {
     const orderBy = ORDERING_MAP[endpoint] || "created_at.desc";
-    const cacheBuster = forceRefresh ? `&_=${Date.now()}` : "";
     const url = id
-      ? `${endpoint}?id=eq.${id}&select=*${cacheBuster}`
-      : `${endpoint}?select=*&order=${orderBy}${cacheBuster}`;
+      ? `${endpoint}?id=eq.${id}&select=*`
+      : `${endpoint}?select=*&order=${orderBy}`;
 
     const result = await secureRequest(url, "GET", null, {
       authRequired: true,
@@ -2199,6 +2879,38 @@ function markPublicContentCacheDirty() {
     localStorage.removeItem("toke_bakes_menu_options_cache_v1");
     localStorage.removeItem("hero_carousel_data");
   } catch {}
+
+  requestAdminDynamicCacheClear();
+}
+
+function ensureChatWidgetScriptLoaded() {
+  if (window.TBChatWidget && typeof window.TBChatWidget.init === "function") {
+    window.TBChatWidget.init();
+    return;
+  }
+
+  if (window.__TB_CHAT_WIDGET_SCRIPT_REQUESTED__) return;
+  window.__TB_CHAT_WIDGET_SCRIPT_REQUESTED__ = true;
+
+  if (document.querySelector("script[data-tb-chat-widget-script='true']")) {
+    return;
+  }
+
+  const script = document.createElement("script");
+  script.src = "scripts/chat-widget.js";
+  script.defer = true;
+  script.dataset.tbChatWidgetScript = "true";
+  script.addEventListener("load", () => {
+    try {
+      if (window.TBChatWidget && typeof window.TBChatWidget.init === "function") {
+        window.TBChatWidget.init();
+      }
+    } catch {}
+  });
+  script.addEventListener("error", () => {
+    window.__TB_CHAT_WIDGET_SCRIPT_REQUESTED__ = false;
+  });
+  document.head.appendChild(script);
 }
 
 /* ================== FIXED AUTHENTICATION - KEY CHANGES ================== */
@@ -2471,7 +3183,7 @@ async function changePassword(currentPass, newPass, confirmPass) {
 /* ================== ENHANCED CONTENT MANAGEMENT ================== */
 
 // Common save function with validation - UPDATED WITH CAROUSEL
-async function saveItem(itemType, formData) {
+async function saveItem(itemType, formData, options = {}) {
   try {
     const endpoints = {
       featured: API_ENDPOINTS.FEATURED,
@@ -2501,26 +3213,33 @@ async function saveItem(itemType, formData) {
       throw new Error(`Missing required fields: ${missingFields.join(", ")}`);
     }
 
+    const payload = { ...formData };
+
     // Sanitize text fields
-    Object.keys(formData).forEach((key) => {
-      if (typeof formData[key] === "string") {
-        formData[key] = sanitizeInput(formData[key]);
+    Object.keys(payload).forEach((key) => {
+      if (typeof payload[key] === "string") {
+        payload[key] = sanitizeInput(payload[key]);
       }
     });
 
-    // Send to API
-    if (isEditing && currentEditId) {
+    const editingId = toSafeString(options.itemId || currentEditId).trim();
+    const isUpdate = Boolean(editingId);
+    const baselineVersion = await fetchServerContentVersion();
+
+    if (isUpdate) {
       await secureRequest(
-        `${endpoint}?id=eq.${currentEditId}`,
+        `${endpoint}?id=eq.${editingId}`,
         "PATCH",
-        formData,
+        payload,
         { authRequired: true }
       );
       debugLog(`${itemType} item updated successfully!`);
     } else {
-      await secureRequest(endpoint, "POST", formData, { authRequired: true });
+      await secureRequest(endpoint, "POST", payload, { authRequired: true });
       debugLog(`${itemType} item added successfully!`);
     }
+
+    const contentVersion = await ensureContentVersionAfterWrite(baselineVersion);
 
     // Clear cache for this endpoint
     dataCache.forEach((value, key) => {
@@ -2529,7 +3248,11 @@ async function saveItem(itemType, formData) {
       }
     });
     markPublicContentCacheDirty();
-    return { success: true };
+    return {
+      success: true,
+      operation: isUpdate ? "update" : "create",
+      contentVersion,
+    };
   } catch (error) {
     console.error(`Error saving ${itemType} item:`, error);
     return {
@@ -2606,83 +3329,102 @@ async function renderFeaturedItems(forceRefresh = false) {
 
 async function saveFeaturedItem(e) {
   e.preventDefault();
+  const form = e.currentTarget || document.getElementById("featured-form");
+  const submitBtn =
+    e.submitter || form?.querySelector('button[type="submit"], .btn-admin');
 
-  const title = document.getElementById("featured-title").value.trim();
-  const description = document
-    .getElementById("featured-description")
-    .value.trim();
-  const menuItemIdRaw = document.getElementById("featured-menu-item").value;
-  const displayOrderInput = document.getElementById(
-    "featured-display-order"
-  ).value;
-  const isActive = document.getElementById("featured-active").value === "true";
-  const startDate = document.getElementById("featured-start-date").value;
-  const endDate = document.getElementById("featured-end-date").value;
-  const imageFile = document.getElementById("featured-image").files[0];
-  const itemId = document.getElementById("featured-id").value;
-  let upload = null;
+  const titleField = document.getElementById("featured-title");
+  const descriptionField = document.getElementById("featured-description");
+  const menuItemField = document.getElementById("featured-menu-item");
+  const displayOrderField = document.getElementById("featured-display-order");
+  const activeField = document.getElementById("featured-active");
+  const startDateField = document.getElementById("featured-start-date");
+  const endDateField = document.getElementById("featured-end-date");
+  const imageField = document.getElementById("featured-image");
+  const idField = document.getElementById("featured-id");
 
-  try {
-    if (!title || title.length > 100) {
-      showNotification("Title must be 1-100 characters", "error");
-      return;
-    }
+  clearFormFieldErrors(form);
 
-    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
-      showNotification("End date must be after start date", "error");
-      return;
-    }
+  const title = toSafeString(titleField?.value).trim();
+  const description = toSafeString(descriptionField?.value).trim();
+  const menuItemIdRaw = toSafeString(menuItemField?.value).trim();
+  const displayOrderInput = toSafeString(displayOrderField?.value).trim();
+  const isActive = activeField?.value === "true";
+  const startDate = toSafeString(startDateField?.value).trim();
+  const endDate = toSafeString(endDateField?.value).trim();
+  const imageFile = imageField?.files?.[0] || null;
+  const itemId = toSafeString(idField?.value).trim();
+  const isUpdate = Boolean(itemId);
 
-    let displayOrder;
-    if (displayOrderInput === "" && !isEditing) {
-      displayOrder = await getNextDisplayOrder(API_ENDPOINTS.FEATURED);
-    } else {
-      displayOrder = parseInt(displayOrderInput || "0", 10);
-    }
+  if (!title || title.length > 100) {
+    setFieldError(titleField, "Title must be 1-100 characters.");
+    showNotification("Title must be 1-100 characters", "error");
+    return;
+  }
 
-    if (!Number.isFinite(displayOrder) || displayOrder < 0) {
-      showNotification("Display order must be 0 or higher", "error");
-      return;
-    }
+  if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+    setFieldError(endDateField, "End date must be after start date.");
+    showNotification("End date must be after start date", "error");
+    return;
+  }
 
-    const existingUrl = isEditing && itemId ? tempImageCache.get(itemId) : "";
-    upload = await processImageUpload(
-      "featured",
-      imageFile,
-      existingUrl
+  const actionResult = await runAdminAction({
+    actionKey: isUpdate ? `featured-update-${itemId}` : "featured-create",
+    controls: [submitBtn],
+    progressTitle: isUpdate ? "Updating featured item" : "Creating featured item",
+    progressText: "Preparing featured data...",
+    task: async (progress) => {
+      let displayOrder;
+      if (displayOrderInput === "" && !isUpdate) {
+        displayOrder = await getNextDisplayOrder(API_ENDPOINTS.FEATURED);
+      } else {
+        displayOrder = parseInt(displayOrderInput || "0", 10);
+      }
+
+      if (!Number.isFinite(displayOrder) || displayOrder < 0) {
+        setFieldError(displayOrderField, "Display order must be 0 or higher.");
+        throw new Error("Display order must be 0 or higher");
+      }
+
+      const existingUrl = isUpdate && itemId ? tempImageCache.get(itemId) : "";
+      const upload = await processImageUpload("featured", imageFile, existingUrl);
+
+      const formData = {
+        title,
+        description,
+        image: upload.url,
+        menu_item_id: menuItemIdRaw || null,
+        display_order: displayOrder,
+        is_active: isActive,
+        start_date: startDate || null,
+        end_date: endDate || null,
+      };
+
+      const result = await saveItem("featured", formData, { itemId });
+
+      if (!result.success) {
+        await rollbackUploadedImage(upload);
+        throw new Error(result.message || "Failed to save featured item");
+      }
+
+      await finalizeImageReplacement(upload);
+      resetFeaturedForm();
+      await Promise.all([renderFeaturedItems(true), updateItemCounts()]);
+      progress.complete("Featured item saved");
+      showNotification("Featured item saved successfully!", "success");
+      dataSync.notifyDataChanged(result.operation, "featured", {
+        contentVersion: result.contentVersion,
+      });
+      return result;
+    },
+  });
+
+  if (!actionResult.ok && !actionResult.skipped) {
+    console.error("Error saving featured item:", actionResult.error);
+    showNotification(
+      actionResult.error?.message || "Failed to save featured item",
+      "error"
     );
-
-    const menuItemId = menuItemIdRaw ? String(menuItemIdRaw).trim() : "";
-
-    const formData = {
-      title,
-      description,
-      image: upload.url,
-      menu_item_id: menuItemId || null,
-      display_order: displayOrder,
-      is_active: isActive,
-      start_date: startDate || null,
-      end_date: endDate || null,
-    };
-
-    const result = await saveItem("featured", formData);
-
-    if (!result.success) {
-      await rollbackUploadedImage(upload);
-      showNotification(result.message || "Failed to save item", "error");
-      return;
-    }
-
-    await finalizeImageReplacement(upload);
-    resetFeaturedForm();
-    await renderFeaturedItems(true);
-    await updateItemCounts();
-    showNotification("Featured item saved successfully!", "success");
-    dataSync.notifyDataChanged(isEditing ? "update" : "create", "featured");
-  } catch (error) {
-    await rollbackUploadedImage(upload);
-    console.error("Error saving featured item:", error);
-    showNotification("Failed to save item", "error");
   }
 }
 
@@ -2827,91 +3569,122 @@ async function populateFeaturedMenuSelect(selectedId = null, forceRefresh = fals
 
 async function saveMenuItem(e) {
   e.preventDefault();
+  const form = e.currentTarget || document.getElementById("menu-form");
+  const submitBtn =
+    e.submitter || form?.querySelector('button[type="submit"], .btn-admin');
 
-  const title = document.getElementById("menu-title").value.trim();
-  const description = document.getElementById("menu-description").value.trim();
-  const rawPriceValue = Number(document.getElementById("menu-price").value);
+  const titleField = document.getElementById("menu-title");
+  const descriptionField = document.getElementById("menu-description");
+  const priceField = document.getElementById("menu-price");
+  const categoryField = document.getElementById("menu-category");
+  const tagsField = document.getElementById("menu-tags");
+  const availableField = document.getElementById("menu-available");
+  const displayOrderField = document.getElementById("menu-display-order");
+  const caloriesField = document.getElementById("menu-calories");
+  const imageField = document.getElementById("menu-image");
+  const idField = document.getElementById("menu-id");
+
+  clearFormFieldErrors(form);
+
+  const title = toSafeString(titleField?.value).trim();
+  const description = toSafeString(descriptionField?.value).trim();
+  const rawPriceValue = Number(priceField?.value);
   const priceValue = toMoney(rawPriceValue, 0);
-  const category =
-    document.getElementById("menu-category").value.trim() || "pastries";
-  const tagsRaw = document.getElementById("menu-tags").value;
-  const isAvailable = document.getElementById("menu-available").value === "true";
-  const displayOrderInput = document.getElementById("menu-display-order").value;
-  const caloriesInput = document.getElementById("menu-calories").value;
-  const imageFile = document.getElementById("menu-image").files[0];
-  const itemId = document.getElementById("menu-id").value;
-  let upload = null;
+  const category = toSafeString(categoryField?.value, "pastries").trim() || "pastries";
+  const tagsRaw = toSafeString(tagsField?.value);
+  const isAvailable = availableField?.value === "true";
+  const displayOrderInput = toSafeString(displayOrderField?.value).trim();
+  const caloriesInput = toSafeString(caloriesField?.value).trim();
+  const imageFile = imageField?.files?.[0] || null;
+  const itemId = toSafeString(idField?.value).trim();
+  const isUpdate = Boolean(itemId);
 
-  // Validation
   if (!title || title.length > 100) {
+    setFieldError(titleField, "Title must be 1-100 characters.");
     showNotification("Title must be 1-100 characters", "error");
     return;
   }
 
   if (category.length > 50) {
+    setFieldError(categoryField, "Category must be 50 characters or fewer.");
     showNotification("Category must be 50 characters or fewer", "error");
     return;
   }
 
   if (!Number.isFinite(rawPriceValue) || rawPriceValue < 0) {
+    setFieldError(priceField, "Price must be 0 or higher.");
     showNotification("Price must be 0 or higher", "error");
     return;
   }
 
-  try {
-    let displayOrder;
-    if (displayOrderInput === "" && !isEditing) {
-      displayOrder = await getNextDisplayOrder(API_ENDPOINTS.MENU);
-    } else {
-      displayOrder = parseInt(displayOrderInput || "0", 10);
-    }
+  const actionResult = await runAdminAction({
+    actionKey: isUpdate ? `menu-update-${itemId}` : "menu-create",
+    controls: [submitBtn],
+    progressTitle: isUpdate ? "Updating menu item" : "Creating menu item",
+    progressText: "Preparing menu data...",
+    task: async (progress) => {
+      let displayOrder;
+      if (displayOrderInput === "" && !isUpdate) {
+        displayOrder = await getNextDisplayOrder(API_ENDPOINTS.MENU);
+      } else {
+        displayOrder = parseInt(displayOrderInput || "0", 10);
+      }
 
-    if (!Number.isFinite(displayOrder) || displayOrder < 0) {
-      showNotification("Display order must be 0 or higher", "error");
-      return;
-    }
+      if (!Number.isFinite(displayOrder) || displayOrder < 0) {
+        setFieldError(displayOrderField, "Display order must be 0 or higher.");
+        throw new Error("Display order must be 0 or higher");
+      }
 
-    const calories =
-      caloriesInput === "" ? null : parseInt(caloriesInput, 10);
-    if (calories !== null && (!Number.isFinite(calories) || calories < 0)) {
-      showNotification("Calories must be a positive number", "error");
-      return;
-    }
+      const calories = caloriesInput === "" ? null : parseInt(caloriesInput, 10);
+      if (calories !== null && (!Number.isFinite(calories) || calories < 0)) {
+        setFieldError(caloriesField, "Calories must be a positive number.");
+        throw new Error("Calories must be a positive number");
+      }
 
-    const existingUrl = isEditing && itemId ? tempImageCache.get(itemId) : "";
-    upload = await processImageUpload("menu", imageFile, existingUrl);
+      const existingUrl = isUpdate && itemId ? tempImageCache.get(itemId) : "";
+      const upload = await processImageUpload("menu", imageFile, existingUrl);
 
-    const formData = {
-      title,
-      description,
-      price: toMoney(priceValue, 0),
-      image: upload.url,
-      category,
-      tags: parseTags(tagsRaw),
-      is_available: isAvailable,
-      display_order: displayOrder,
-      calories,
-    };
+      const formData = {
+        title,
+        description,
+        price: toMoney(priceValue, 0),
+        image: upload.url,
+        category,
+        tags: parseTags(tagsRaw),
+        is_available: isAvailable,
+        display_order: displayOrder,
+        calories,
+      };
 
-    const result = await saveItem("menu", formData);
+      const result = await saveItem("menu", formData, { itemId });
 
-    if (!result.success) {
-      await rollbackUploadedImage(upload);
-      showNotification(result.message || "Failed to save menu item", "error");
-      return;
-    }
+      if (!result.success) {
+        await rollbackUploadedImage(upload);
+        throw new Error(result.message || "Failed to save menu item");
+      }
 
-    await finalizeImageReplacement(upload);
-    resetMenuForm();
-    await renderMenuItems(true);
-    await populateFeaturedMenuSelect(null, true);
-    await updateItemCounts();
-    showNotification("Menu item saved successfully!", "success");
-    dataSync.notifyDataChanged(isEditing ? "update" : "create", "menu");
-  } catch (error) {
-    await rollbackUploadedImage(upload);
-    console.error("Error saving menu item:", error);
-    showNotification("Failed to save menu item", "error");
+      await finalizeImageReplacement(upload);
+      resetMenuForm();
+      await Promise.all([
+        renderMenuItems(true),
+        populateFeaturedMenuSelect(null, true),
+        updateItemCounts(),
+      ]);
+      progress.complete("Menu item saved");
+      showNotification("Menu item saved successfully!", "success");
+      dataSync.notifyDataChanged(result.operation, "menu", {
+        contentVersion: result.contentVersion,
+      });
+      return result;
+    },
+  });
+
+  if (!actionResult.ok && !actionResult.skipped) {
+    console.error("Error saving menu item:", actionResult.error);
+    showNotification(
+      actionResult.error?.message || "Failed to save menu item",
+      "error"
+    );
   }
 }
 
@@ -3260,114 +4033,138 @@ async function saveOptionGroup(e) {
     return;
   }
 
-  setMenuOptionLoading(true, "Saving option group...");
+  const actionResult = await runAdminAction({
+    actionKey: groupId
+      ? `option-group-update-${groupId}`
+      : `option-group-create-${menuOptionManagerState.menuItemId}`,
+    controls: [els.saveGroupBtn],
+    progressTitle: groupId ? "Updating option group" : "Creating option group",
+    progressText: "Saving options...",
+    task: async (progress) => {
+      setMenuOptionLoading(true, "Saving option group...");
+      try {
+        const baselineVersion = await fetchServerContentVersion();
+        const groupPayload = {
+          product_id: menuOptionManagerState.menuItemId,
+          name,
+          type,
+          required,
+          max_selections: maxSelections,
+        };
 
-  try {
-    const groupPayload = {
-      product_id: menuOptionManagerState.menuItemId,
-      name,
-      type,
-      required,
-      max_selections: maxSelections,
-    };
-
-    let savedGroupId = groupId;
-    if (savedGroupId) {
-      await secureRequest(
-        `${PRODUCT_OPTION_ENDPOINTS.groups}?id=eq.${encodeURIComponent(savedGroupId)}`,
-        "PATCH",
-        groupPayload,
-        { authRequired: true }
-      );
-    } else {
-      const created = await secureRequest(
-        PRODUCT_OPTION_ENDPOINTS.groups,
-        "POST",
-        groupPayload,
-        {
-          authRequired: true,
-          headers: {
-            Prefer: "return=representation",
-          },
+        let savedGroupId = groupId;
+        if (savedGroupId) {
+          await secureRequest(
+            `${PRODUCT_OPTION_ENDPOINTS.groups}?id=eq.${encodeURIComponent(
+              savedGroupId
+            )}`,
+            "PATCH",
+            groupPayload,
+            { authRequired: true }
+          );
+        } else {
+          const created = await secureRequest(
+            PRODUCT_OPTION_ENDPOINTS.groups,
+            "POST",
+            groupPayload,
+            {
+              authRequired: true,
+              headers: {
+                Prefer: "return=representation",
+              },
+            }
+          );
+          savedGroupId = Array.isArray(created) ? created[0]?.id : created?.id;
+          savedGroupId = String(savedGroupId || "").trim();
+          if (!savedGroupId) {
+            throw new Error("Failed to create option group.");
+          }
         }
-      );
-      savedGroupId = Array.isArray(created) ? created[0]?.id : created?.id;
-      savedGroupId = String(savedGroupId || "").trim();
-      if (!savedGroupId) {
-        throw new Error("Failed to create option group.");
-      }
-    }
 
-    const existingValues = await secureRequest(
-      `${PRODUCT_OPTION_ENDPOINTS.values}?select=id&group_id=eq.${encodeURIComponent(
-        savedGroupId
-      )}`,
-      "GET",
-      null,
-      { authRequired: true }
-    );
-    const existingIds = new Set(
-      toArray(existingValues).map((record) => String(record.id || "").trim())
-    );
-    const incomingIds = new Set();
-
-    for (const value of values) {
-      const payload = {
-        group_id: savedGroupId,
-        name: value.name,
-        price_adjustment: toMoney(value.price_adjustment || 0, 0),
-      };
-      if (value.id) {
-        incomingIds.add(String(value.id));
-        await secureRequest(
-          `${PRODUCT_OPTION_ENDPOINTS.values}?id=eq.${encodeURIComponent(value.id)}`,
-          "PATCH",
-          payload,
+        const existingValues = await secureRequest(
+          `${PRODUCT_OPTION_ENDPOINTS.values}?select=id&group_id=eq.${encodeURIComponent(
+            savedGroupId
+          )}`,
+          "GET",
+          null,
           { authRequired: true }
         );
-      } else {
-        const createdValue = await secureRequest(
-          PRODUCT_OPTION_ENDPOINTS.values,
-          "POST",
-          payload,
-          {
-            authRequired: true,
-            headers: {
-              Prefer: "return=representation",
-            },
-          }
+        const existingIds = new Set(
+          toArray(existingValues).map((record) => String(record.id || "").trim())
         );
-        const createdId = Array.isArray(createdValue)
-          ? createdValue[0]?.id
-          : createdValue?.id;
-        if (createdId) incomingIds.add(String(createdId));
+        const incomingIds = new Set();
+
+        for (const value of values) {
+          const payload = {
+            group_id: savedGroupId,
+            name: value.name,
+            price_adjustment: toMoney(value.price_adjustment || 0, 0),
+          };
+          if (value.id) {
+            incomingIds.add(String(value.id));
+            await secureRequest(
+              `${PRODUCT_OPTION_ENDPOINTS.values}?id=eq.${encodeURIComponent(
+                value.id
+              )}`,
+              "PATCH",
+              payload,
+              { authRequired: true }
+            );
+          } else {
+            const createdValue = await secureRequest(
+              PRODUCT_OPTION_ENDPOINTS.values,
+              "POST",
+              payload,
+              {
+                authRequired: true,
+                headers: {
+                  Prefer: "return=representation",
+                },
+              }
+            );
+            const createdId = Array.isArray(createdValue)
+              ? createdValue[0]?.id
+              : createdValue?.id;
+            if (createdId) incomingIds.add(String(createdId));
+          }
+        }
+
+        const deleteIds = Array.from(existingIds).filter(
+          (id) => !incomingIds.has(id)
+        );
+        for (const id of deleteIds) {
+          await secureRequest(
+            `${PRODUCT_OPTION_ENDPOINTS.values}?id=eq.${encodeURIComponent(id)}`,
+            "DELETE",
+            null,
+            { authRequired: true }
+          );
+        }
+
+        invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.groups);
+        invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.values);
+        markPublicContentCacheDirty();
+        const contentVersion = await ensureContentVersionAfterWrite(
+          baselineVersion
+        );
+        dataSync.notifyDataChanged(groupId ? "update" : "create", "menu", {
+          contentVersion,
+        });
+        showNotification("Option group saved successfully!", "success");
+
+        resetOptionGroupForm();
+        await loadMenuOptionGroups(true);
+        progress.complete("Option group saved");
+      } finally {
+        setMenuOptionLoading(false);
       }
-    }
+    },
+  });
 
-    const deleteIds = Array.from(existingIds).filter((id) => !incomingIds.has(id));
-    for (const id of deleteIds) {
-      await secureRequest(
-        `${PRODUCT_OPTION_ENDPOINTS.values}?id=eq.${encodeURIComponent(id)}`,
-        "DELETE",
-        null,
-        { authRequired: true }
-      );
-    }
-
-    invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.groups);
-    invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.values);
-    markPublicContentCacheDirty();
-    dataSync.notifyDataChanged(groupId ? "update" : "create", "menu");
-    showNotification("Option group saved successfully!", "success");
-
-    resetOptionGroupForm();
-    await loadMenuOptionGroups(true);
-  } catch (error) {
-    console.error("Failed to save option group:", error);
+  if (!actionResult.ok && !actionResult.skipped) {
+    console.error("Failed to save option group:", actionResult.error);
     showNotification("Failed to save option group. Data reloaded.", "error");
     await loadMenuOptionGroups(true);
-  } finally {
-    setMenuOptionLoading(false);
   }
 }
 
@@ -3387,26 +4184,45 @@ async function deleteOptionGroup(groupId) {
 
   if (!confirmed) return;
 
-  try {
-    await secureRequest(
-      `${PRODUCT_OPTION_ENDPOINTS.groups}?id=eq.${encodeURIComponent(id)}`,
-      "DELETE",
-      null,
-      { authRequired: true }
-    );
+  const els = getMenuOptionManagerElements();
+  const actionResult = await runAdminAction({
+    actionKey: `option-group-delete-${id}`,
+    controls: [els.saveGroupBtn],
+    progressTitle: "Deleting option group",
+    progressText: "Removing option group...",
+    task: async (progress) => {
+      setMenuOptionLoading(true, "Deleting option group...");
+      try {
+        const baselineVersion = await fetchServerContentVersion();
+        await secureRequest(
+          `${PRODUCT_OPTION_ENDPOINTS.groups}?id=eq.${encodeURIComponent(id)}`,
+          "DELETE",
+          null,
+          { authRequired: true }
+        );
 
-    invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.groups);
-    invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.values);
-    markPublicContentCacheDirty();
-    dataSync.notifyDataChanged("delete", "menu");
-    showNotification("Option group deleted.", "success");
+        invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.groups);
+        invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.values);
+        markPublicContentCacheDirty();
+        const contentVersion = await ensureContentVersionAfterWrite(
+          baselineVersion
+        );
+        dataSync.notifyDataChanged("delete", "menu", { contentVersion });
+        showNotification("Option group deleted.", "success");
 
-    if (getMenuOptionManagerElements().groupId.value === id) {
-      resetOptionGroupForm();
-    }
-    await loadMenuOptionGroups(true);
-  } catch (error) {
-    console.error("Failed to delete option group:", error);
+        if (getMenuOptionManagerElements().groupId.value === id) {
+          resetOptionGroupForm();
+        }
+        await loadMenuOptionGroups(true);
+        progress.complete("Option group deleted");
+      } finally {
+        setMenuOptionLoading(false);
+      }
+    },
+  });
+
+  if (!actionResult.ok && !actionResult.skipped) {
+    console.error("Failed to delete option group:", actionResult.error);
     showNotification("Failed to delete option group.", "error");
   }
 }
@@ -3531,66 +4347,87 @@ async function renderGalleryItems(forceRefresh = false) {
 
 async function saveGalleryItem(e) {
   e.preventDefault();
+  const form = e.currentTarget || document.getElementById("gallery-form");
+  const submitBtn =
+    e.submitter || form?.querySelector('button[type="submit"], .btn-admin');
 
-  const alt = document.getElementById("gallery-alt").value.trim();
-  const displayOrderInput = document.getElementById(
-    "gallery-display-order"
-  ).value;
-  const imageFile = document.getElementById("gallery-image").files[0];
-  const itemId = document.getElementById("gallery-id").value;
-  let upload = null;
+  const altField = document.getElementById("gallery-alt");
+  const displayOrderField = document.getElementById("gallery-display-order");
+  const imageField = document.getElementById("gallery-image");
+  const idField = document.getElementById("gallery-id");
 
-  try {
-    if (!alt || alt.length > 255) {
-      showNotification("Alt text must be 1-255 characters", "error");
-      return;
-    }
+  clearFormFieldErrors(form);
 
-    let displayOrder;
-    if (displayOrderInput === "" && !isEditing) {
-      displayOrder = await getNextDisplayOrder(API_ENDPOINTS.GALLERY);
-    } else {
-      displayOrder = parseInt(displayOrderInput || "0", 10);
-    }
+  const alt = toSafeString(altField?.value).trim();
+  const displayOrderInput = toSafeString(displayOrderField?.value).trim();
+  const imageFile = imageField?.files?.[0] || null;
+  const itemId = toSafeString(idField?.value).trim();
+  const isUpdate = Boolean(itemId);
 
-    if (!Number.isFinite(displayOrder) || displayOrder < 0) {
-      showNotification("Display order must be 0 or higher", "error");
-      return;
-    }
+  if (!alt || alt.length > 255) {
+    setFieldError(altField, "Alt text must be 1-255 characters.");
+    showNotification("Alt text must be 1-255 characters", "error");
+    return;
+  }
 
-    const existingUrl = isEditing && itemId ? tempImageCache.get(itemId) : "";
-    upload = await processImageUpload("gallery", imageFile, existingUrl);
+  const actionResult = await runAdminAction({
+    actionKey: isUpdate ? `gallery-update-${itemId}` : "gallery-create",
+    controls: [submitBtn],
+    progressTitle: isUpdate ? "Updating gallery image" : "Creating gallery image",
+    progressText: "Preparing gallery data...",
+    task: async (progress) => {
+      let displayOrder;
+      if (displayOrderInput === "" && !isUpdate) {
+        displayOrder = await getNextDisplayOrder(API_ENDPOINTS.GALLERY);
+      } else {
+        displayOrder = parseInt(displayOrderInput || "0", 10);
+      }
 
-    const formData = {
-      alt,
-      image: upload.url,
-      display_order: displayOrder,
-    };
+      if (!Number.isFinite(displayOrder) || displayOrder < 0) {
+        setFieldError(displayOrderField, "Display order must be 0 or higher.");
+        throw new Error("Display order must be 0 or higher");
+      }
 
-    if (upload.meta) {
-      formData.width = upload.meta.width || null;
-      formData.height = upload.meta.height || null;
-      formData.file_size = upload.meta.size || null;
-    }
+      const existingUrl = isUpdate && itemId ? tempImageCache.get(itemId) : "";
+      const upload = await processImageUpload("gallery", imageFile, existingUrl);
 
-    const result = await saveItem("gallery", formData);
+      const formData = {
+        alt,
+        image: upload.url,
+        display_order: displayOrder,
+      };
 
-    if (!result.success) {
-      await rollbackUploadedImage(upload);
-      showNotification(result.message || "Failed to save gallery image", "error");
-      return;
-    }
+      if (upload.meta) {
+        formData.width = upload.meta.width || null;
+        formData.height = upload.meta.height || null;
+        formData.file_size = upload.meta.size || null;
+      }
 
-    await finalizeImageReplacement(upload);
-    resetGalleryForm();
-    await renderGalleryItems(true);
-    await updateItemCounts();
-    showNotification("Gallery image saved successfully!", "success");
-    dataSync.notifyDataChanged(isEditing ? "update" : "create", "gallery");
-  } catch (error) {
-    await rollbackUploadedImage(upload);
-    console.error("Error saving gallery item:", error);
-    showNotification("Failed to save gallery item", "error");
+      const result = await saveItem("gallery", formData, { itemId });
+
+      if (!result.success) {
+        await rollbackUploadedImage(upload);
+        throw new Error(result.message || "Failed to save gallery image");
+      }
+
+      await finalizeImageReplacement(upload);
+      resetGalleryForm();
+      await Promise.all([renderGalleryItems(true), updateItemCounts()]);
+      progress.complete("Gallery image saved");
+      showNotification("Gallery image saved successfully!", "success");
+      dataSync.notifyDataChanged(result.operation, "gallery", {
+        contentVersion: result.contentVersion,
+      });
+      return result;
+    },
+  });
+
+  if (!actionResult.ok && !actionResult.skipped) {
+    console.error("Error saving gallery item:", actionResult.error);
+    showNotification(
+      actionResult.error?.message || "Failed to save gallery item",
+      "error"
+    );
   }
 }
 
@@ -3701,98 +4538,123 @@ async function renderCarouselItems(forceRefresh = false) {
 
 async function saveCarouselItem(e) {
   e.preventDefault();
+  const form = e.currentTarget || document.getElementById("carousel-form");
+  const submitBtn =
+    e.submitter || form?.querySelector('button[type="submit"], .btn-admin');
 
-  const alt = document.getElementById("carousel-alt").value.trim();
-  const title = document.getElementById("carousel-title").value.trim();
-  const subtitle = document.getElementById("carousel-subtitle").value.trim();
-  const ctaText = document.getElementById("carousel-cta-text").value.trim();
-  const ctaLink = document.getElementById("carousel-cta-link").value.trim();
-  const displayOrderInput = document.getElementById(
-    "carousel-display-order"
-  ).value;
-  const isActive = document.getElementById("carousel-active").value === "true";
-  const imageFile = document.getElementById("carousel-image").files[0];
-  const itemId = document.getElementById("carousel-id").value;
-  let upload = null;
+  const altField = document.getElementById("carousel-alt");
+  const titleField = document.getElementById("carousel-title");
+  const subtitleField = document.getElementById("carousel-subtitle");
+  const ctaTextField = document.getElementById("carousel-cta-text");
+  const ctaLinkField = document.getElementById("carousel-cta-link");
+  const displayOrderField = document.getElementById("carousel-display-order");
+  const activeField = document.getElementById("carousel-active");
+  const imageField = document.getElementById("carousel-image");
+  const idField = document.getElementById("carousel-id");
 
-  try {
-    if (!alt || alt.length > 255) {
-      showNotification("Alt text must be 1-255 characters", "error");
-      return;
-    }
+  clearFormFieldErrors(form);
 
-    if (title && title.length > 100) {
-      showNotification("Title must be 100 characters or fewer", "error");
-      return;
-    }
+  const alt = toSafeString(altField?.value).trim();
+  const title = toSafeString(titleField?.value).trim();
+  const subtitle = toSafeString(subtitleField?.value).trim();
+  const ctaText = toSafeString(ctaTextField?.value).trim();
+  const ctaLink = toSafeString(ctaLinkField?.value).trim();
+  const displayOrderInput = toSafeString(displayOrderField?.value).trim();
+  const isActive = activeField?.value === "true";
+  const imageFile = imageField?.files?.[0] || null;
+  const itemId = toSafeString(idField?.value).trim();
+  const isUpdate = Boolean(itemId);
 
-    if (ctaText && ctaText.length > 50) {
-      showNotification("CTA text must be 50 characters or fewer", "error");
-      return;
-    }
+  if (!alt || alt.length > 255) {
+    setFieldError(altField, "Alt text must be 1-255 characters.");
+    showNotification("Alt text must be 1-255 characters", "error");
+    return;
+  }
 
-    if (ctaLink && ctaLink.length > 255) {
-      showNotification("CTA link must be 255 characters or fewer", "error");
-      return;
-    }
+  if (title && title.length > 100) {
+    setFieldError(titleField, "Title must be 100 characters or fewer.");
+    showNotification("Title must be 100 characters or fewer", "error");
+    return;
+  }
 
-    let displayOrder;
-    if (displayOrderInput === "" && !isEditing) {
-      displayOrder = await getNextDisplayOrder(API_ENDPOINTS.CAROUSEL);
-    } else {
-      displayOrder = parseInt(displayOrderInput || "0", 10);
-    }
+  if (ctaText && ctaText.length > 50) {
+    setFieldError(ctaTextField, "CTA text must be 50 characters or fewer.");
+    showNotification("CTA text must be 50 characters or fewer", "error");
+    return;
+  }
 
-    if (!Number.isFinite(displayOrder) || displayOrder < 0) {
-      showNotification("Display order must be 0 or higher", "error");
-      return;
-    }
+  if (ctaLink && ctaLink.length > 255) {
+    setFieldError(ctaLinkField, "CTA link must be 255 characters or fewer.");
+    showNotification("CTA link must be 255 characters or fewer", "error");
+    return;
+  }
 
-    if (ctaLink) {
-      try {
-        new URL(ctaLink, window.location.origin);
-      } catch (error) {
-        showNotification("CTA link must be a valid URL or path", "error");
-        return;
+  const actionResult = await runAdminAction({
+    actionKey: isUpdate ? `carousel-update-${itemId}` : "carousel-create",
+    controls: [submitBtn],
+    progressTitle: isUpdate ? "Updating carousel slide" : "Creating carousel slide",
+    progressText: "Preparing carousel data...",
+    task: async (progress) => {
+      let displayOrder;
+      if (displayOrderInput === "" && !isUpdate) {
+        displayOrder = await getNextDisplayOrder(API_ENDPOINTS.CAROUSEL);
+      } else {
+        displayOrder = parseInt(displayOrderInput || "0", 10);
       }
-    }
 
-    const existingUrl = isEditing && itemId ? tempImageCache.get(itemId) : "";
-    upload = await processImageUpload(
-      "carousel",
-      imageFile,
-      existingUrl
+      if (!Number.isFinite(displayOrder) || displayOrder < 0) {
+        setFieldError(displayOrderField, "Display order must be 0 or higher.");
+        throw new Error("Display order must be 0 or higher");
+      }
+
+      if (ctaLink) {
+        try {
+          new URL(ctaLink, window.location.origin);
+        } catch {
+          setFieldError(ctaLinkField, "CTA link must be a valid URL or path.");
+          throw new Error("CTA link must be a valid URL or path");
+        }
+      }
+
+      const existingUrl = isUpdate && itemId ? tempImageCache.get(itemId) : "";
+      const upload = await processImageUpload("carousel", imageFile, existingUrl);
+
+      const formData = {
+        alt,
+        title: title || null,
+        subtitle: subtitle || null,
+        cta_text: ctaText || null,
+        cta_link: ctaLink || null,
+        display_order: displayOrder,
+        is_active: isActive,
+        image: upload.url,
+      };
+
+      const result = await saveItem("carousel", formData, { itemId });
+
+      if (!result.success) {
+        await rollbackUploadedImage(upload);
+        throw new Error(result.message || "Failed to save carousel image");
+      }
+
+      await finalizeImageReplacement(upload);
+      resetCarouselForm();
+      await Promise.all([renderCarouselItems(true), updateItemCounts()]);
+      progress.complete("Carousel image saved");
+      showNotification("Carousel image saved successfully!", "success");
+      dataSync.notifyDataChanged(result.operation, "carousel", {
+        contentVersion: result.contentVersion,
+      });
+      return result;
+    },
+  });
+
+  if (!actionResult.ok && !actionResult.skipped) {
+    console.error("Error saving carousel item:", actionResult.error);
+    showNotification(
+      actionResult.error?.message || "Failed to save carousel item",
+      "error"
     );
-
-    const formData = {
-      alt,
-      title: title || null,
-      subtitle: subtitle || null,
-      cta_text: ctaText || null,
-      cta_link: ctaLink || null,
-      display_order: displayOrder,
-      is_active: isActive,
-      image: upload.url,
-    };
-
-    const result = await saveItem("carousel", formData);
-
-    if (!result.success) {
-      await rollbackUploadedImage(upload);
-      showNotification(result.message || "Failed to save carousel image", "error");
-      return;
-    }
-
-    await finalizeImageReplacement(upload);
-    resetCarouselForm();
-    await renderCarouselItems(true);
-    await updateItemCounts();
-    showNotification("Carousel image saved successfully!", "success");
-    dataSync.notifyDataChanged(isEditing ? "update" : "create", "carousel");
-  } catch (error) {
-    await rollbackUploadedImage(upload);
-    console.error("Error saving carousel item:", error);
-    showNotification("Failed to save carousel item", "error");
   }
 }
 
@@ -3991,65 +4853,78 @@ async function importData(file) {
       return;
     }
 
-    showNotification("Starting import...", "info");
+    const importDataBtn = document.getElementById("import-data");
+    const actionResult = await runAdminAction({
+      actionKey: "import-data",
+      controls: [importDataBtn],
+      progressTitle: "Importing data",
+      progressText: "Uploading backup payload...",
+      task: async (progress) => {
+        const baselineVersion = await fetchServerContentVersion();
 
-    // Clear existing data - UPDATED WITH CAROUSEL
-    await Promise.all([
-      secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE", null, {
-        authRequired: true,
-      }),
-      secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE", null, {
-        authRequired: true,
-      }),
-      secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE", null, {
-        authRequired: true,
-      }),
-      secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=gt.0`, "DELETE", null, {
-        authRequired: true,
-      }), // Added carousel
-    ]);
+        await Promise.all([
+          secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE", null, {
+            authRequired: true,
+          }),
+          secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE", null, {
+            authRequired: true,
+          }),
+          secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE", null, {
+            authRequired: true,
+          }),
+          secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=gt.0`, "DELETE", null, {
+            authRequired: true,
+          }),
+        ]);
+        setAdminCrudProgress(28, "Importing records...");
 
-    // Import new data
-    const totalItems =
-      data.featured.length +
-      data.menu.length +
-      data.gallery.length +
-      data.carousel.length; // Added carousel
-    let imported = 0;
+        const totalItems =
+          data.featured.length +
+          data.menu.length +
+          data.gallery.length +
+          data.carousel.length;
+        let imported = 0;
 
-    // Import batches
-    const importBatch = async (items, endpoint) => {
-      for (const item of items) {
-        await secureRequest(endpoint, "POST", item, { authRequired: true });
-        imported++;
+        const importBatch = async (items, endpoint) => {
+          for (const item of items) {
+            await secureRequest(endpoint, "POST", item, { authRequired: true });
+            imported++;
+            const ratio = totalItems > 0 ? imported / totalItems : 1;
+            const nextProgress = Math.min(90, Math.round(28 + ratio * 62));
+            setAdminCrudProgress(nextProgress, `Imported ${imported}/${totalItems}`);
+            await new Promise((resolve) => setTimeout(resolve, 70));
+          }
+        };
 
-        // Small delay to prevent rate limiting
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-    };
+        await importBatch(data.featured, API_ENDPOINTS.FEATURED);
+        await importBatch(data.menu, API_ENDPOINTS.MENU);
+        await importBatch(data.gallery, API_ENDPOINTS.GALLERY);
+        await importBatch(data.carousel, API_ENDPOINTS.CAROUSEL);
 
-    await importBatch(data.featured, API_ENDPOINTS.FEATURED);
-    await importBatch(data.menu, API_ENDPOINTS.MENU);
-    await importBatch(data.gallery, API_ENDPOINTS.GALLERY);
-    await importBatch(data.carousel, API_ENDPOINTS.CAROUSEL); // Added carousel
+        clearDataCache();
+        markPublicContentCacheDirty();
+        const contentVersion = await ensureContentVersionAfterWrite(
+          baselineVersion
+        );
 
-    // Cleanup
-    clearDataCache();
-    markPublicContentCacheDirty();
+        await Promise.all([
+          renderFeaturedItems(true),
+          renderMenuItems(true),
+          renderGalleryItems(true),
+          renderCarouselItems(true),
+        ]);
+        await populateFeaturedMenuSelect(null, true);
+        await updateItemCounts();
 
-    showNotification(`Successfully imported ${imported} items!`, "success");
+        dataSync.notifyDataChanged("import", "all", { contentVersion });
+        progress.complete("Import complete");
+        showNotification(`Successfully imported ${imported} items!`, "success");
+      },
+    });
 
-    // Refresh displays - UPDATED WITH CAROUSEL
-    await Promise.all([
-      renderFeaturedItems(true),
-      renderMenuItems(true),
-      renderGalleryItems(true),
-      renderCarouselItems(true), // Added carousel
-    ]);
-    await populateFeaturedMenuSelect(null, true);
-    await updateItemCounts();
-
-    dataSync.notifyDataChanged("import", "all");
+    if (!actionResult.ok && !actionResult.skipped) {
+      throw actionResult.error || new Error("Import failed");
+    }
   } catch (error) {
     console.error("Error importing data:", error);
     showNotification("Failed to import data", "error");
@@ -4155,6 +5030,7 @@ async function initAdminPanel() {
 
   // Setup event listeners
   setupEventListeners();
+  ensureChatWidgetScriptLoaded();
 
   // Load initial data if logged in
   if (currentAdmin) {
@@ -4168,7 +5044,10 @@ async function initAdminPanel() {
   }
 }
 
+let adminEventListenersBound = false;
 function setupEventListeners() {
+  if (adminEventListenersBound) return;
+  adminEventListenersBound = true;
   debugLog("Setting up event listeners...");
 
   setupPasswordVisibilityToggle("admin-password", "admin-password-toggle");
@@ -4518,39 +5397,53 @@ function setupEventListeners() {
       }
 
       try {
-        showNotification("Resetting data...", "info");
+        const actionResult = await runAdminAction({
+          actionKey: "reset-all-data",
+          controls: [resetDataBtn],
+          progressTitle: "Resetting all data",
+          progressText: "Deleting existing records...",
+          task: async (progress) => {
+            const baselineVersion = await fetchServerContentVersion();
+            await Promise.all([
+              secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE", null, {
+                authRequired: true,
+              }),
+              secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE", null, {
+                authRequired: true,
+              }),
+              secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE", null, {
+                authRequired: true,
+              }),
+              secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=gt.0`, "DELETE", null, {
+                authRequired: true,
+              }),
+            ]);
 
-        // UPDATED WITH CAROUSEL
-        await Promise.all([
-          secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE", null, {
-            authRequired: true,
-          }),
-          secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE", null, {
-            authRequired: true,
-          }),
-          secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE", null, {
-            authRequired: true,
-          }),
-          secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=gt.0`, "DELETE", null, {
-            authRequired: true,
-          }), // Added carousel
-        ]);
+            setAdminCrudProgress(80, "Refreshing dashboard...");
+            clearDataCache();
+            markPublicContentCacheDirty();
+            const contentVersion = await ensureContentVersionAfterWrite(
+              baselineVersion
+            );
 
-        clearDataCache();
-        markPublicContentCacheDirty();
-        showNotification("All data has been reset!", "success");
+            await Promise.all([
+              renderFeaturedItems(true),
+              renderMenuItems(true),
+              renderGalleryItems(true),
+              renderCarouselItems(true),
+            ]);
+            await populateFeaturedMenuSelect(null, true);
+            await updateItemCounts();
 
-        // UPDATED WITH CAROUSEL
-        await Promise.all([
-          renderFeaturedItems(true),
-          renderMenuItems(true),
-          renderGalleryItems(true),
-          renderCarouselItems(true), // Added carousel
-        ]);
-        await populateFeaturedMenuSelect(null, true);
-        await updateItemCounts();
+            dataSync.notifyDataChanged("reset", "all", { contentVersion });
+            progress.complete("Reset complete");
+            showNotification("All data has been reset!", "success");
+          },
+        });
 
-        dataSync.notifyDataChanged("reset", "all");
+        if (!actionResult.ok && !actionResult.skipped) {
+          throw actionResult.error || new Error("Failed to reset data");
+        }
       } catch (error) {
         console.error("Error resetting data:", error);
         showNotification("Failed to reset data", "error");
@@ -4625,18 +5518,22 @@ if (document.readyState === "loading") {
 /* ================== FINAL OPTIMIZATIONS ================== */
 
 // Add connection status indicator
+let connectionMonitorBound = false;
 function setupConnectionMonitor() {
+  if (connectionMonitorBound) return;
+  connectionMonitorBound = true;
+
   window.addEventListener("online", () => {
-    showNotification("✅ Back online - Sync active", "success");
+    showNotification("Back online - sync active", "success");
   });
 
   window.addEventListener("offline", () => {
-    showNotification("⚠️ Offline - Working locally", "warning");
+    showNotification("Offline - working locally", "warning");
   });
 }
 
 // Add to initAdminPanel
 setupConnectionMonitor();
 
-debugLog("✅ Toke Bakes Admin Panel v2.1 - WITH CAROUSEL SUCCESS");
+debugLog("Toke Bakes Admin Panel v2.1 - WITH CAROUSEL SUCCESS");
 

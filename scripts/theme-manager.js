@@ -693,10 +693,14 @@ const ThemeManager = {
       return null;
     }
 
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      return null;
+    }
+
     this.lastDbCheck = now;
 
     try {
-      const url = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?is_active=eq.true&select=css_file,logo_file,theme_name,updated_at&order=updated_at.desc&limit=1${force ? `&_=${Date.now()}` : ""}`;
+      const url = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?is_active=eq.true&select=css_file,logo_file,theme_name,updated_at&order=updated_at.desc&limit=1`;
       const response = await fetch(url, {
         headers: {
           apikey: SUPABASE_CONFIG.ANON_KEY,

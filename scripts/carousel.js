@@ -552,9 +552,7 @@ class HeroCarousel {
       };
 
       const doFetch = async (simpleOrder = false) => {
-        const requestUrl = forceRefresh
-          ? `${buildUrl(simpleOrder)}&_=` + Date.now()
-          : buildUrl(simpleOrder);
+        const requestUrl = buildUrl(simpleOrder);
         const response = await fetchWithTimeout(
           requestUrl,
           {
