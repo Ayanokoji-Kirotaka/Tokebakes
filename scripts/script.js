@@ -4713,11 +4713,6 @@ function initModern3DInteractions() {
 
 /* ================== HOME UX ENHANCEMENTS (HOME ONLY) ================== */
 let homeRevealObserver = null;
-let homeScrollTicking = false;
-let homeScrollToTopRaf = null;
-let homeScrollListenerTarget = null;
-let homeScrollListenerHandler = null;
-let homeScrollResizeHandler = null;
 
 function ensureHomeEnhancementStyles() {
   if (document.getElementById("home-enhancement-styles")) return;
@@ -4793,205 +4788,6 @@ function isHomePageRuntime() {
   return page === "" || page === "/" || page === "index.html" || page === "index";
 }
 
-function ensureScrollTopButton() {
-  const existing = document.getElementById("scroll-top-btn");
-
-  let btn = existing;
-  if (!btn) {
-    btn = document.createElement("button");
-    btn.id = "scroll-top-btn";
-    btn.type = "button";
-    btn.className = "scroll-top-btn";
-    btn.setAttribute("aria-label", "Scroll to top");
-    btn.innerHTML = '<i class="fas fa-arrow-up"></i>';
-    document.body.appendChild(btn);
-  }
-
-  const prefersReducedMotion = () =>
-    window.matchMedia &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  const resolveScrollContext = () => {
-    const candidateSelectors = [
-      "[data-scroll-container='main']",
-      "[data-scroll-container='true']",
-      ".spa-scroll-container",
-      ".page-scroll",
-      ".main-scroll",
-      "#main-content",
-    ];
-    const candidate = candidateSelectors
-      .map((selector) => document.querySelector(selector))
-      .find((node) => {
-        if (!node || node === document.body || node === document.documentElement) {
-          return false;
-        }
-        try {
-          const computed = window.getComputedStyle(node);
-          const overflowY = computed ? computed.overflowY : "";
-          const canScroll = /(auto|scroll|overlay)/i.test(overflowY);
-          return canScroll && node.scrollHeight > node.clientHeight + 20;
-        } catch {
-          return false;
-        }
-      });
-
-    if (candidate) {
-      return {
-        isWindow: false,
-        target: candidate,
-      };
-    }
-
-    return {
-      isWindow: true,
-      target: window,
-    };
-  };
-
-  const context = resolveScrollContext();
-
-  const getScrollTop = () => {
-    if (!context.isWindow) {
-      return context.target.scrollTop || 0;
-    }
-
-    const scrollingElement =
-      document.scrollingElement || document.documentElement || document.body;
-    return (
-      (scrollingElement && scrollingElement.scrollTop) ||
-      window.scrollY ||
-      (document.documentElement && document.documentElement.scrollTop) ||
-      (document.body && document.body.scrollTop) ||
-      0
-    );
-  };
-
-  const getMaxScroll = () => {
-    if (!context.isWindow) {
-      return Math.max(0, context.target.scrollHeight - context.target.clientHeight);
-    }
-
-    const doc = document.scrollingElement || document.documentElement || document.body;
-    return Math.max(0, (doc?.scrollHeight || 0) - (doc?.clientHeight || 0));
-  };
-
-  const setScrollTop = (value) => {
-    const top = Math.max(0, Number(value) || 0);
-    if (!context.isWindow) {
-      context.target.scrollTop = top;
-      return;
-    }
-    try {
-      window.scrollTo({ top, left: 0, behavior: "auto" });
-    } catch {
-      window.scrollTo(0, top);
-    }
-    if (document.scrollingElement) {
-      document.scrollingElement.scrollTop = top;
-    }
-    document.documentElement.scrollTop = top;
-    document.body.scrollTop = top;
-  };
-
-  const smoothScrollToTop = () => {
-    const start = getScrollTop();
-    if (start <= 0) return;
-
-    if (prefersReducedMotion()) {
-      setScrollTop(0);
-      return;
-    }
-
-    try {
-      if (context.isWindow) {
-        window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
-      } else if (typeof context.target.scrollTo === "function") {
-        context.target.scrollTo({ top: 0, left: 0, behavior: "smooth" });
-      } else {
-        context.target.scrollTop = 0;
-      }
-      return;
-    } catch {}
-
-    if (homeScrollToTopRaf) {
-      cancelAnimationFrame(homeScrollToTopRaf);
-      homeScrollToTopRaf = null;
-    }
-
-    const duration = Math.max(350, Math.min(900, Math.round(start * 0.38)));
-    const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
-    let animationStart = null;
-
-    const tick = (timestamp) => {
-      if (animationStart === null) animationStart = timestamp;
-      const elapsed = timestamp - animationStart;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased = easeOutCubic(progress);
-      setScrollTop(Math.round(start * (1 - eased)));
-
-      if (progress < 1) {
-        homeScrollToTopRaf = requestAnimationFrame(tick);
-      } else {
-        homeScrollToTopRaf = null;
-        setScrollTop(0);
-      }
-    };
-
-    homeScrollToTopRaf = requestAnimationFrame(tick);
-  };
-
-  if (!btn.dataset.bound) {
-    btn.addEventListener("click", (event) => {
-      event.preventDefault();
-      smoothScrollToTop();
-    });
-    btn.dataset.bound = "true";
-  }
-
-  const update = () => {
-    const scrollTop = getScrollTop();
-    const maxScroll = getMaxScroll();
-    const showThreshold = Math.max(140, Math.round(window.innerHeight * 0.25));
-    const shouldShow = maxScroll > showThreshold && scrollTop >= showThreshold;
-    btn.classList.toggle("show", shouldShow);
-    btn.style.opacity = shouldShow ? "1" : "";
-    btn.style.pointerEvents = shouldShow ? "auto" : "";
-  };
-
-  update();
-
-  if (
-    homeScrollListenerTarget !== context.target &&
-    homeScrollListenerTarget &&
-    homeScrollListenerHandler
-  ) {
-    homeScrollListenerTarget.removeEventListener("scroll", homeScrollListenerHandler);
-    homeScrollListenerTarget = null;
-    homeScrollListenerHandler = null;
-  }
-
-  if (!homeScrollListenerHandler || homeScrollListenerTarget !== context.target) {
-    homeScrollListenerHandler = () => {
-      if (homeScrollTicking) return;
-      homeScrollTicking = true;
-      requestAnimationFrame(() => {
-        homeScrollTicking = false;
-        update();
-      });
-    };
-    homeScrollListenerTarget = context.target;
-    context.target.addEventListener("scroll", homeScrollListenerHandler, {
-      passive: true,
-    });
-  }
-
-  if (!homeScrollResizeHandler) {
-    homeScrollResizeHandler = () => update();
-    window.addEventListener("resize", homeScrollResizeHandler, { passive: true });
-  }
-}
-
 function setupHomeScrollReveal() {
   if (!isHomePageRuntime()) {
     if (homeRevealObserver) {
@@ -5049,7 +4845,6 @@ function setupHomeScrollReveal() {
 
 function refreshHomeEnhancements() {
   ensureHomeEnhancementStyles();
-  ensureScrollTopButton();
   setupHomeScrollReveal();
 }
 
@@ -5195,11 +4990,3 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   debugLog("Toke Bakes fully initialized");
 });
-
-// Ensure scroll-to-top is available even if another initializer throws
-document.addEventListener("DOMContentLoaded", () => {
-  try {
-    ensureScrollTopButton();
-  } catch {}
-});
-

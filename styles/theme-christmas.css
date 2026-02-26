@@ -3551,6 +3551,10 @@ html {
   gap: 0.75rem;
 }
 
+.system-info p strong {
+  white-space: nowrap;
+}
+
 .system-info p i {
   color: #c62828;
   width: 20px;
@@ -3558,19 +3562,20 @@ html {
 
 .system-info ul {
   margin-top: 1rem;
-  padding-left: 1.75rem;
+  padding-left: 1.25rem;
+  list-style: disc;
 }
 
 .system-info li {
   margin-bottom: 0.75rem;
-  position: relative;
+}
+
+.system-info li::marker {
+  color: #c62828;
 }
 
 .system-info li::before {
-  content: "•";
-  color: #c62828;
-  position: absolute;
-  left: -1.25rem;
+  content: none;
 }
 
 .empty-state {
@@ -4874,48 +4879,6 @@ body.spa-navigating .navbar button {
   }
 }
 
-/* ================== SCROLL-TO-TOP ================== */
-.scroll-top-btn {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  width: 44px;
-  height: 44px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  background: linear-gradient(135deg, var(--primary), var(--secondary));
-  color: #fff;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
-  opacity: 0;
-  transform: translateY(10px) scale(0.96);
-  pointer-events: none;
-  z-index: 2500;
-  transition: opacity 200ms ease, transform 200ms ease, box-shadow 200ms ease;
-}
-
-[data-theme="dark"] .scroll-top-btn {
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.scroll-top-btn.show {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  pointer-events: auto;
-}
-
-.scroll-top-btn:hover {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
-}
-
-.scroll-top-btn:active {
-  transform: translateY(0) scale(0.99);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
-}
-
 /* Reduced Motion Support */
 @media (prefers-reduced-motion: reduce) {
   * {
@@ -4988,3 +4951,4 @@ body.spa-navigating .navbar button {
     transform: none;
   }
 }
+

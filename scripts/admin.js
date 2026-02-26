@@ -115,6 +115,45 @@ const SESSION_TIMEOUT_MINUTES = 30;
 // Store for temporary image data
 let tempImageCache = new Map();
 
+function normalizeTempImageCacheKey(id) {
+  return toSafeString(id).trim();
+}
+
+function cacheTempImageForItem(id, imageUrl) {
+  const key = normalizeTempImageCacheKey(id);
+  const safeUrl = toSafeString(imageUrl).trim();
+  if (!key || !safeUrl) return;
+  tempImageCache.set(key, safeUrl);
+}
+
+function getExistingImageUrlForItem(itemType, id) {
+  const key = normalizeTempImageCacheKey(id);
+  if (!key) return "";
+
+  let cachedUrl = toSafeString(tempImageCache.get(key)).trim();
+  if (cachedUrl) return cachedUrl;
+
+  // Legacy fallback for older numeric keys that may still exist in memory.
+  for (const [entryKey, entryUrl] of tempImageCache.entries()) {
+    if (normalizeTempImageCacheKey(entryKey) === key) {
+      cachedUrl = toSafeString(entryUrl).trim();
+      if (cachedUrl) {
+        tempImageCache.set(key, cachedUrl);
+        return cachedUrl;
+      }
+    }
+  }
+
+  const record = getCachedItemForType(itemType, key);
+  const resolved = toSafeString(resolveRecordImage(record)).trim();
+  if (resolved) {
+    tempImageCache.set(key, resolved);
+    return resolved;
+  }
+
+  return "";
+}
+
 // Storage buckets aligned with Supabase SQL
 const STORAGE_BUCKETS = {
   featured: "featured-items",
@@ -2747,13 +2786,13 @@ async function secureRequest(
           result.forEach((item) => {
             const img = resolveRecordImage(item);
             if (img && item.id && tempImageCache.size < 50) {
-              tempImageCache.set(item.id, img);
+              cacheTempImageForItem(item.id, img);
             }
           });
         } else {
           const img = resolveRecordImage(result);
           if (img && result.id && tempImageCache.size < 50) {
-            tempImageCache.set(result.id, img);
+            cacheTempImageForItem(result.id, img);
           }
         }
 
@@ -3355,6 +3394,9 @@ async function saveFeaturedItem(e) {
   const imageFile = imageField?.files?.[0] || null;
   const itemId = toSafeString(idField?.value).trim();
   const isUpdate = Boolean(itemId);
+  const existingUrl = isUpdate
+    ? getExistingImageUrlForItem("featured", itemId)
+    : "";
 
   if (!title || title.length > 100) {
     setFieldError(titleField, "Title must be 1-100 characters.");
@@ -3365,6 +3407,12 @@ async function saveFeaturedItem(e) {
   if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
     setFieldError(endDateField, "End date must be after start date.");
     showNotification("End date must be after start date", "error");
+    return;
+  }
+
+  if (!imageFile && !existingUrl) {
+    setFieldError(imageField, "Please choose an image file.");
+    showNotification("Please choose an image file", "error");
     return;
   }
 
@@ -3386,7 +3434,6 @@ async function saveFeaturedItem(e) {
         throw new Error("Display order must be 0 or higher");
       }
 
-      const existingUrl = isUpdate && itemId ? tempImageCache.get(itemId) : "";
       const upload = await processImageUpload("featured", imageFile, existingUrl);
 
       const formData = {
@@ -3452,6 +3499,11 @@ async function editFeaturedItem(id) {
     document.getElementById("featured-start-date").value =
       item.start_date || "";
     document.getElementById("featured-end-date").value = item.end_date || "";
+    const imageField = document.getElementById("featured-image");
+    if (imageField) {
+      imageField.required = false;
+    }
+    cacheTempImageForItem(item.id, resolveRecordImage(item));
 
     const preview = document.getElementById("featured-image-preview");
     preview.innerHTML = `<img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.featured)}" alt="Current image" style="max-height: 150px; border-radius: 8px;" decoding="async"
@@ -3598,6 +3650,7 @@ async function saveMenuItem(e) {
   const imageFile = imageField?.files?.[0] || null;
   const itemId = toSafeString(idField?.value).trim();
   const isUpdate = Boolean(itemId);
+  const existingUrl = isUpdate ? getExistingImageUrlForItem("menu", itemId) : "";
 
   if (!title || title.length > 100) {
     setFieldError(titleField, "Title must be 1-100 characters.");
@@ -3614,6 +3667,12 @@ async function saveMenuItem(e) {
   if (!Number.isFinite(rawPriceValue) || rawPriceValue < 0) {
     setFieldError(priceField, "Price must be 0 or higher.");
     showNotification("Price must be 0 or higher", "error");
+    return;
+  }
+
+  if (!imageFile && !existingUrl) {
+    setFieldError(imageField, "Please choose an image file.");
+    showNotification("Please choose an image file", "error");
     return;
   }
 
@@ -3641,7 +3700,6 @@ async function saveMenuItem(e) {
         throw new Error("Calories must be a positive number");
       }
 
-      const existingUrl = isUpdate && itemId ? tempImageCache.get(itemId) : "";
       const upload = await processImageUpload("menu", imageFile, existingUrl);
 
       const formData = {
@@ -3715,6 +3773,11 @@ async function editMenuItem(id) {
       item.calories !== null && item.calories !== undefined
         ? item.calories
         : "";
+    const imageField = document.getElementById("menu-image");
+    if (imageField) {
+      imageField.required = false;
+    }
+    cacheTempImageForItem(item.id, resolveRecordImage(item));
 
     const preview = document.getElementById("menu-image-preview");
     preview.innerHTML = `<img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.menu)}" alt="Current image" style="max-height: 150px; border-radius: 8px;" decoding="async"
@@ -4363,10 +4426,17 @@ async function saveGalleryItem(e) {
   const imageFile = imageField?.files?.[0] || null;
   const itemId = toSafeString(idField?.value).trim();
   const isUpdate = Boolean(itemId);
+  const existingUrl = isUpdate ? getExistingImageUrlForItem("gallery", itemId) : "";
 
   if (!alt || alt.length > 255) {
     setFieldError(altField, "Alt text must be 1-255 characters.");
     showNotification("Alt text must be 1-255 characters", "error");
+    return;
+  }
+
+  if (!imageFile && !existingUrl) {
+    setFieldError(imageField, "Please choose an image file.");
+    showNotification("Please choose an image file", "error");
     return;
   }
 
@@ -4388,7 +4458,6 @@ async function saveGalleryItem(e) {
         throw new Error("Display order must be 0 or higher");
       }
 
-      const existingUrl = isUpdate && itemId ? tempImageCache.get(itemId) : "";
       const upload = await processImageUpload("gallery", imageFile, existingUrl);
 
       const formData = {
@@ -4444,6 +4513,11 @@ async function editGalleryItem(id) {
     document.getElementById("gallery-alt").value = item.alt;
     document.getElementById("gallery-display-order").value =
       item.display_order ?? 0;
+    const imageField = document.getElementById("gallery-image");
+    if (imageField) {
+      imageField.required = false;
+    }
+    cacheTempImageForItem(item.id, resolveRecordImage(item));
 
     const preview = document.getElementById("gallery-image-preview");
     preview.innerHTML = `<img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.gallery)}" alt="Current image" style="max-height: 150px; border-radius: 8px;" decoding="async"
@@ -4564,6 +4638,7 @@ async function saveCarouselItem(e) {
   const imageFile = imageField?.files?.[0] || null;
   const itemId = toSafeString(idField?.value).trim();
   const isUpdate = Boolean(itemId);
+  const existingUrl = isUpdate ? getExistingImageUrlForItem("carousel", itemId) : "";
 
   if (!alt || alt.length > 255) {
     setFieldError(altField, "Alt text must be 1-255 characters.");
@@ -4586,6 +4661,12 @@ async function saveCarouselItem(e) {
   if (ctaLink && ctaLink.length > 255) {
     setFieldError(ctaLinkField, "CTA link must be 255 characters or fewer.");
     showNotification("CTA link must be 255 characters or fewer", "error");
+    return;
+  }
+
+  if (!imageFile && !existingUrl) {
+    setFieldError(imageField, "Please choose an image file.");
+    showNotification("Please choose an image file", "error");
     return;
   }
 
@@ -4616,7 +4697,6 @@ async function saveCarouselItem(e) {
         }
       }
 
-      const existingUrl = isUpdate && itemId ? tempImageCache.get(itemId) : "";
       const upload = await processImageUpload("carousel", imageFile, existingUrl);
 
       const formData = {
@@ -4678,6 +4758,11 @@ async function editCarouselItem(id) {
     document.getElementById("carousel-active").value = item.is_active
       ? "true"
       : "false";
+    const imageField = document.getElementById("carousel-image");
+    if (imageField) {
+      imageField.required = false;
+    }
+    cacheTempImageForItem(item.id, resolveRecordImage(item));
 
     const preview = document.getElementById("carousel-image-preview");
     preview.innerHTML = `<img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.carousel)}" alt="Current image" style="max-height: 150px; border-radius: 8px;" decoding="async"
@@ -4937,6 +5022,10 @@ function resetFeaturedForm() {
   const form = document.getElementById("featured-form");
   if (form) form.reset();
   document.getElementById("featured-id").value = "";
+  const imageField = document.getElementById("featured-image");
+  if (imageField) {
+    imageField.required = true;
+  }
   document.getElementById("featured-image-preview").innerHTML = "";
   document.getElementById("featured-form-container").style.display = "none";
   isEditing = false;
@@ -4947,6 +5036,10 @@ function resetMenuForm() {
   const form = document.getElementById("menu-form");
   if (form) form.reset();
   document.getElementById("menu-id").value = "";
+  const imageField = document.getElementById("menu-image");
+  if (imageField) {
+    imageField.required = true;
+  }
   document.getElementById("menu-image-preview").innerHTML = "";
   document.getElementById("menu-form-container").style.display = "none";
   isEditing = false;
@@ -4957,6 +5050,10 @@ function resetGalleryForm() {
   const form = document.getElementById("gallery-form");
   if (form) form.reset();
   document.getElementById("gallery-id").value = "";
+  const imageField = document.getElementById("gallery-image");
+  if (imageField) {
+    imageField.required = true;
+  }
   document.getElementById("gallery-image-preview").innerHTML = "";
   document.getElementById("gallery-form-container").style.display = "none";
   isEditing = false;
@@ -4969,6 +5066,10 @@ function resetCarouselForm() {
   document.getElementById("carousel-id").value = "";
   document.getElementById("carousel-display-order").value = "0";
   document.getElementById("carousel-active").value = "true";
+  const imageField = document.getElementById("carousel-image");
+  if (imageField) {
+    imageField.required = true;
+  }
   document.getElementById("carousel-image-preview").innerHTML = "";
   document.getElementById("carousel-form-container").style.display = "none";
   isEditing = false;

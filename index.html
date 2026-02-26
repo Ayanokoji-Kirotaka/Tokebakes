@@ -212,7 +212,7 @@
       })();
     </script>
     <script>
-      (function preloadHeroImageFromCache() {
+      (function warmHeroImageFromCache() {
         try {
           const raw = localStorage.getItem("hero_carousel_data");
           if (!raw) return;
@@ -224,26 +224,14 @@
 
           const imageUrl = String(first.image).trim();
           if (!imageUrl) return;
-          const existingPreload = Array.from(
-            document.querySelectorAll('link[rel="preload"][as="image"]')
-          ).some((el) => {
-            try {
-              return el.href === new URL(imageUrl, window.location.href).href;
-            } catch {
-              return false;
-            }
-          });
-          if (existingPreload) {
-            return;
-          }
 
-          const preload = document.createElement("link");
-          preload.rel = "preload";
-          preload.as = "image";
-          preload.href = imageUrl;
-          preload.fetchPriority = "high";
-          preload.crossOrigin = "anonymous";
-          document.head.appendChild(preload);
+          const img = new Image();
+          img.decoding = "async";
+          img.fetchPriority = "high";
+          img.src = imageUrl;
+          if (typeof img.decode === "function") {
+            img.decode().catch(() => {});
+          }
         } catch {}
       })();
     </script>

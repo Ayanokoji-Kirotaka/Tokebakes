@@ -180,6 +180,9 @@ class HeroCarousel {
     }
     this.resumeTimeout = null;
     this.resumeDelay = 3500;
+    this.pointerIdleResumeDelay = 3800;
+    this.pointerActivityThrottleMs = 160;
+    this.lastPointerActivityAt = 0;
     this.isHovered = false;
 
     // State management
@@ -333,9 +336,7 @@ class HeroCarousel {
             return;
           }
 
-          if (!this.isHovered) {
-            this.scheduleAutoPlayResume(220);
-          }
+          this.scheduleAutoPlayResume(220);
         },
         { root: null, threshold: 0.15 }
       );
@@ -905,19 +906,36 @@ class HeroCarousel {
       this.navContainer.addEventListener("click", this.boundHandlers.navClick);
     }
 
-    // Mouse hover handling
+    // Hover no longer hard-pauses autoplay. Resume behavior is now inactivity-based.
     this.boundHandlers.mouseEnter = () => {
       this.isHovered = true;
-      this.stopAutoPlay();
-      this.clearResumeTimer();
+      this.scheduleAutoPlayResume(220);
     };
     this.container.addEventListener("mouseenter", this.boundHandlers.mouseEnter);
 
     this.boundHandlers.mouseLeave = () => {
       this.isHovered = false;
-      this.scheduleAutoPlayResume();
+      this.scheduleAutoPlayResume(220);
     };
     this.container.addEventListener("mouseleave", this.boundHandlers.mouseLeave);
+
+    // While user is actively moving/clicking inside carousel, pause briefly then auto-resume.
+    this.boundHandlers.mouseMove = () => {
+      const now = Date.now();
+      if (now - this.lastPointerActivityAt < this.pointerActivityThrottleMs) return;
+      this.lastPointerActivityAt = now;
+      this.pauseAutoPlay(this.pointerIdleResumeDelay);
+    };
+    this.container.addEventListener("mousemove", this.boundHandlers.mouseMove, {
+      passive: true,
+    });
+
+    this.boundHandlers.pointerDown = () => {
+      this.pauseAutoPlay(this.pointerIdleResumeDelay);
+    };
+    this.container.addEventListener("pointerdown", this.boundHandlers.pointerDown, {
+      passive: true,
+    });
 
     // Touch/swipe support
     this.boundHandlers.touchStart = (e) => {
@@ -971,9 +989,7 @@ class HeroCarousel {
         this.clearResumeTimer();
         return;
       }
-      if (!this.isHovered) {
-        this.scheduleAutoPlayResume(220);
-      }
+      this.scheduleAutoPlayResume(220);
     };
     document.addEventListener(
       "visibilitychange",
@@ -993,6 +1009,12 @@ class HeroCarousel {
     }
     if (this.container && this.boundHandlers.mouseLeave) {
       this.container.removeEventListener("mouseleave", this.boundHandlers.mouseLeave);
+    }
+    if (this.container && this.boundHandlers.mouseMove) {
+      this.container.removeEventListener("mousemove", this.boundHandlers.mouseMove);
+    }
+    if (this.container && this.boundHandlers.pointerDown) {
+      this.container.removeEventListener("pointerdown", this.boundHandlers.pointerDown);
     }
     if (this.track && this.boundHandlers.touchStart) {
       this.track.removeEventListener("touchstart", this.boundHandlers.touchStart);
@@ -1130,7 +1152,6 @@ class HeroCarousel {
     if (
       this.slides.length <= 1 ||
       !this.autoPlayEnabled ||
-      this.isHovered ||
       !this.isInView
     )
       return;
@@ -1165,7 +1186,7 @@ class HeroCarousel {
 
     this.resumeTimeout = setTimeout(() => {
       this.resumeTimeout = null;
-      if (this.autoPlayEnabled && !this.isHovered) {
+      if (this.autoPlayEnabled) {
         this.startAutoPlay();
       }
     }, delay);

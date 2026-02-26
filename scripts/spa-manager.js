@@ -402,8 +402,19 @@ class SPAManager {
     // Prime CMS containers immediately to avoid a brief unmasked flash
     this.primeCmsLoadingState();
 
-    // Ensure new page starts at the top (prevents odd mid-page flashes)
-    window.scrollTo(0, 0);
+    // Ensure new page starts at the top with smooth motion unless user prefers reduced motion.
+    try {
+      const prefersReducedMotion =
+        window.matchMedia &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      window.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+      });
+    } catch {
+      window.scrollTo(0, 0);
+    }
 
     // 3. Fade in
     mainEl.classList.remove("spa-fade-out");
