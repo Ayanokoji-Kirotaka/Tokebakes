@@ -1,7 +1,9 @@
 -- ============================================
--- TOKE BAKES SUPABASE STATS MIGRATION
--- Run after: supabase-master-reset.sql
--- Purpose: event logging + admin analytics functions
+-- TOKE BAKES UNIFIED SQL (PRODUCTION-SAFE)
+-- Combines:
+-- 1) content version sync / freshness
+-- 2) site event logging + admin stats RPCs
+-- Non-destructive and idempotent.
 -- ============================================
 
 BEGIN;
@@ -9,8 +11,227 @@ BEGIN;
 SET search_path = public;
 
 -- ============================================
--- STATS EVENT TABLE
+-- CONTENT VERSION + FRESHNESS CORE
 -- ============================================
+
+CREATE TABLE IF NOT EXISTS public.site_metadata (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT '0',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.site_metadata
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+INSERT INTO public.site_metadata (key, value, updated_at)
+VALUES ('content_version', '1', now())
+ON CONFLICT (key) DO UPDATE
+SET value = COALESCE(NULLIF(public.site_metadata.value, ''), '1'),
+    updated_at = now();
+
+CREATE OR REPLACE FUNCTION public.handle_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.bump_content_version()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO public.site_metadata (key, value, updated_at)
+  VALUES ('content_version', '1', now())
+  ON CONFLICT (key)
+  DO UPDATE SET
+    value = (
+      COALESCE(
+        NULLIF(regexp_replace(public.site_metadata.value, '[^0-9]', '', 'g'), ''),
+        '0'
+      )::BIGINT + 1
+    )::TEXT,
+    updated_at = now();
+
+  RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_content_version()
+RETURNS BIGINT
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT COALESCE(
+    (
+      SELECT COALESCE(
+        NULLIF(regexp_replace(sm.value, '[^0-9]', '', 'g'), ''),
+        '0'
+      )::BIGINT
+      FROM public.site_metadata sm
+      WHERE sm.key = 'content_version'
+      LIMIT 1
+    ),
+    0
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.site_last_updated()
+RETURNS TIMESTAMPTZ
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT GREATEST(
+    COALESCE((SELECT max(updated_at) FROM public.menu_items), 'epoch'::timestamptz),
+    COALESCE((SELECT max(updated_at) FROM public.featured_items), 'epoch'::timestamptz),
+    COALESCE((SELECT max(updated_at) FROM public.gallery), 'epoch'::timestamptz),
+    COALESCE((SELECT max(updated_at) FROM public.hero_carousel), 'epoch'::timestamptz),
+    COALESCE((SELECT max(updated_at) FROM public.website_themes), 'epoch'::timestamptz),
+    COALESCE((SELECT max(updated_at) FROM public.product_option_groups), 'epoch'::timestamptz),
+    COALESCE((SELECT max(updated_at) FROM public.product_option_values), 'epoch'::timestamptz),
+    COALESCE((SELECT max(updated_at) FROM public.site_metadata WHERE key = 'content_version'), 'epoch'::timestamptz)
+  );
+$$;
+
+DO $$
+BEGIN
+  IF to_regclass('public.menu_items') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS set_updated_at_menu ON public.menu_items;
+    CREATE TRIGGER set_updated_at_menu
+    BEFORE UPDATE ON public.menu_items
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+    DROP TRIGGER IF EXISTS trg_menu_items_bump_content_version ON public.menu_items;
+    CREATE TRIGGER trg_menu_items_bump_content_version
+    AFTER INSERT OR UPDATE OR DELETE ON public.menu_items
+    FOR EACH STATEMENT EXECUTE FUNCTION public.bump_content_version();
+  END IF;
+
+  IF to_regclass('public.featured_items') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS set_updated_at_featured ON public.featured_items;
+    CREATE TRIGGER set_updated_at_featured
+    BEFORE UPDATE ON public.featured_items
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+    DROP TRIGGER IF EXISTS trg_featured_items_bump_content_version ON public.featured_items;
+    CREATE TRIGGER trg_featured_items_bump_content_version
+    AFTER INSERT OR UPDATE OR DELETE ON public.featured_items
+    FOR EACH STATEMENT EXECUTE FUNCTION public.bump_content_version();
+  END IF;
+
+  IF to_regclass('public.gallery') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS set_updated_at_gallery ON public.gallery;
+    CREATE TRIGGER set_updated_at_gallery
+    BEFORE UPDATE ON public.gallery
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+    DROP TRIGGER IF EXISTS trg_gallery_bump_content_version ON public.gallery;
+    CREATE TRIGGER trg_gallery_bump_content_version
+    AFTER INSERT OR UPDATE OR DELETE ON public.gallery
+    FOR EACH STATEMENT EXECUTE FUNCTION public.bump_content_version();
+  END IF;
+
+  IF to_regclass('public.hero_carousel') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS set_updated_at_hero ON public.hero_carousel;
+    CREATE TRIGGER set_updated_at_hero
+    BEFORE UPDATE ON public.hero_carousel
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+    DROP TRIGGER IF EXISTS trg_hero_carousel_bump_content_version ON public.hero_carousel;
+    CREATE TRIGGER trg_hero_carousel_bump_content_version
+    AFTER INSERT OR UPDATE OR DELETE ON public.hero_carousel
+    FOR EACH STATEMENT EXECUTE FUNCTION public.bump_content_version();
+  END IF;
+
+  IF to_regclass('public.website_themes') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS set_updated_at_theme ON public.website_themes;
+    CREATE TRIGGER set_updated_at_theme
+    BEFORE UPDATE ON public.website_themes
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+    DROP TRIGGER IF EXISTS trg_website_themes_bump_content_version ON public.website_themes;
+    CREATE TRIGGER trg_website_themes_bump_content_version
+    AFTER INSERT OR UPDATE OR DELETE ON public.website_themes
+    FOR EACH STATEMENT EXECUTE FUNCTION public.bump_content_version();
+  END IF;
+
+  IF to_regclass('public.product_option_groups') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS set_updated_at_product_option_groups ON public.product_option_groups;
+    CREATE TRIGGER set_updated_at_product_option_groups
+    BEFORE UPDATE ON public.product_option_groups
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+    DROP TRIGGER IF EXISTS trg_product_option_groups_bump_content_version ON public.product_option_groups;
+    CREATE TRIGGER trg_product_option_groups_bump_content_version
+    AFTER INSERT OR UPDATE OR DELETE ON public.product_option_groups
+    FOR EACH STATEMENT EXECUTE FUNCTION public.bump_content_version();
+  END IF;
+
+  IF to_regclass('public.product_option_values') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS set_updated_at_product_option_values ON public.product_option_values;
+    CREATE TRIGGER set_updated_at_product_option_values
+    BEFORE UPDATE ON public.product_option_values
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+    DROP TRIGGER IF EXISTS trg_product_option_values_bump_content_version ON public.product_option_values;
+    CREATE TRIGGER trg_product_option_values_bump_content_version
+    AFTER INSERT OR UPDATE OR DELETE ON public.product_option_values
+    FOR EACH STATEMENT EXECUTE FUNCTION public.bump_content_version();
+  END IF;
+
+  IF to_regclass('public.site_metadata') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS set_updated_at_site_metadata ON public.site_metadata;
+    CREATE TRIGGER set_updated_at_site_metadata
+    BEFORE UPDATE ON public.site_metadata
+    FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+  END IF;
+END;
+$$;
+
+CREATE INDEX IF NOT EXISTS idx_site_metadata_key
+  ON public.site_metadata(key);
+
+ALTER TABLE IF EXISTS public.site_metadata ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "site_metadata_public_read_policy" ON public.site_metadata;
+CREATE POLICY "site_metadata_public_read_policy"
+ON public.site_metadata
+FOR SELECT
+USING (key = 'content_version');
+
+DROP POLICY IF EXISTS "site_metadata_admin_policy" ON public.site_metadata;
+CREATE POLICY "site_metadata_admin_policy"
+ON public.site_metadata
+FOR ALL
+TO authenticated
+USING (
+  current_user IN ('postgres', 'supabase_admin')
+  OR EXISTS (
+    SELECT 1
+    FROM public.app_admins a
+    WHERE a.user_id = auth.uid()
+  )
+)
+WITH CHECK (
+  current_user IN ('postgres', 'supabase_admin')
+  OR EXISTS (
+    SELECT 1
+    FROM public.app_admins a
+    WHERE a.user_id = auth.uid()
+  )
+);
+
+GRANT EXECUTE ON FUNCTION public.site_last_updated() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_content_version() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.bump_content_version() TO authenticated;
+
+-- ============================================
+-- SITE EVENTS + ADMIN STATS
+-- ============================================
+
 CREATE TABLE IF NOT EXISTS public.site_events (
   id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
   event_name TEXT NOT NULL CHECK (event_name ~ '^[a-z0-9_:-]{2,64}$'),
@@ -35,9 +256,6 @@ CREATE INDEX IF NOT EXISTS idx_site_events_session_id
 CREATE INDEX IF NOT EXISTS idx_site_events_user_id
   ON public.site_events(user_id);
 
--- ============================================
--- ACCESS HELPER
--- ============================================
 CREATE OR REPLACE FUNCTION public.can_access_admin_stats()
 RETURNS BOOLEAN
 LANGUAGE sql
@@ -56,9 +274,6 @@ AS $$
   );
 $$;
 
--- ============================================
--- PUBLIC EVENT LOGGING RPC (SAFE)
--- ============================================
 CREATE OR REPLACE FUNCTION public.log_site_event(
   p_event_name TEXT,
   p_page_path TEXT DEFAULT NULL,
@@ -113,9 +328,6 @@ BEGIN
 END;
 $$;
 
--- ============================================
--- ADMIN SUMMARY STATS RPC
--- ============================================
 CREATE OR REPLACE FUNCTION public.get_site_stats(p_days INTEGER DEFAULT 30)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -226,9 +438,6 @@ BEGIN
 END;
 $$;
 
--- ============================================
--- ADMIN DAILY STATS RPC
--- ============================================
 CREATE OR REPLACE FUNCTION public.get_site_stats_daily(p_days INTEGER DEFAULT 30)
 RETURNS TABLE (
   day DATE,
@@ -269,9 +478,6 @@ BEGIN
 END;
 $$;
 
--- ============================================
--- ADMIN FLAT COUNTS RPC (TABLE OUTPUT)
--- ============================================
 CREATE OR REPLACE FUNCTION public.get_site_stats_counts(p_days INTEGER DEFAULT 30)
 RETURNS TABLE (
   window_days INTEGER,
@@ -329,9 +535,6 @@ BEGIN
 END;
 $$;
 
--- ============================================
--- ADMIN CLEANUP RPC
--- ============================================
 CREATE OR REPLACE FUNCTION public.purge_site_events(p_keep_days INTEGER DEFAULT 180)
 RETURNS INTEGER
 LANGUAGE plpgsql
@@ -354,9 +557,6 @@ BEGIN
 END;
 $$;
 
--- ============================================
--- RLS + POLICIES
--- ============================================
 ALTER TABLE public.site_events ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "site_events_admin_read" ON public.site_events;
@@ -387,9 +587,6 @@ USING (
   )
 );
 
--- ============================================
--- GRANTS
--- ============================================
 REVOKE ALL ON TABLE public.site_events FROM anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.log_site_event(TEXT, TEXT, TEXT, TEXT, NUMERIC, JSONB)
@@ -412,9 +609,3 @@ TO authenticated;
 
 COMMIT;
 
--- ============================================
--- VERIFICATION
--- ============================================
-SELECT to_regclass('public.site_events') AS site_events_table;
-SELECT COUNT(*) AS site_events_count FROM public.site_events;
-SELECT * FROM public.get_site_stats_counts(30);
