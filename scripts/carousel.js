@@ -11,11 +11,65 @@ const CAROUSEL_LAST_UPDATE_KEY = "toke_bakes_last_update";
 const CAROUSEL_LAST_PAYLOAD_KEY = "toke_bakes_last_update_payload";
 const CAROUSEL_DB_LAST_UPDATED_KEY = "toke_bakes_db_last_updated";
 const CAROUSEL_ASSET_VERSION_PARAM = "cv";
+const CAROUSEL_RUNTIME_CONNECTION =
+  typeof navigator !== "undefined"
+    ? navigator.connection || navigator.mozConnection || navigator.webkitConnection
+    : null;
 const carouselDebugLog = (...args) => {
   if (CAROUSEL_DEBUG) console.log(...args);
 };
 const carouselDebugWarn = (...args) => {
   if (CAROUSEL_DEBUG) console.warn(...args);
+};
+
+const getCarouselRuntimeProfile = () => {
+  const connection = CAROUSEL_RUNTIME_CONNECTION;
+  const effectiveType = String(connection?.effectiveType || "").toLowerCase();
+  const saveData = Boolean(connection?.saveData);
+  const downlink = Number(connection?.downlink || 0);
+  const rtt = Number(connection?.rtt || 0);
+  const prefersReducedMotion = Boolean(
+    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+  const memory = Number(navigator.deviceMemory || 0);
+  const cores = Number(navigator.hardwareConcurrency || 0);
+  const lowEndDevice =
+    (Number.isFinite(memory) && memory > 0 && memory <= 2) ||
+    (Number.isFinite(cores) && cores > 0 && cores <= 4);
+
+  let networkTier = "fast";
+  if (
+    saveData ||
+    effectiveType === "slow-2g" ||
+    effectiveType === "2g" ||
+    (Number.isFinite(downlink) && downlink > 0 && downlink < 0.9) ||
+    (Number.isFinite(rtt) && rtt > 900)
+  ) {
+    networkTier = "slow";
+  } else if (
+    effectiveType === "3g" ||
+    (Number.isFinite(downlink) && downlink > 0 && downlink < 1.8) ||
+    (Number.isFinite(rtt) && rtt > 450)
+  ) {
+    networkTier = "standard";
+  }
+
+  return {
+    networkTier,
+    saveData,
+    lowEndDevice,
+    prefersReducedMotion,
+  };
+};
+
+const getCarouselAdaptiveTimeoutMs = (baseTimeoutMs = CAROUSEL_FETCH_TIMEOUT_MS) => {
+  const profile = getCarouselRuntimeProfile();
+  let multiplier = 1;
+  if (profile.networkTier === "standard") multiplier = 1.35;
+  if (profile.networkTier === "slow") multiplier = 2.1;
+  if (profile.lowEndDevice) multiplier += 0.15;
+  if (profile.saveData) multiplier += 0.2;
+  return Math.round(Math.max(4000, Number(baseTimeoutMs) || CAROUSEL_FETCH_TIMEOUT_MS) * multiplier);
 };
 const isCarouselSlideActive = (value) => {
   if (value === null || value === undefined || value === "") return true;
@@ -84,8 +138,9 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = CAROUSEL_FETCH_TI
     return fetch(url, options);
   }
 
+  const adaptiveTimeoutMs = getCarouselAdaptiveTimeoutMs(timeoutMs);
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutId = setTimeout(() => controller.abort(), adaptiveTimeoutMs);
   try {
     return await fetch(url, {
       ...options,
@@ -166,24 +221,32 @@ class HeroCarousel {
     this.navContainer = this.container.querySelector(".carousel-nav");
     this.slides = [];
     this.currentIndex = 0;
+    this.runtimeProfile = getCarouselRuntimeProfile();
 
     // Auto-play timers
     this.autoPlayInterval = null;
     this.autoPlayDelay = 2500;
     this.autoPlayEnabled = true;
     if (
-      typeof window !== "undefined" &&
-      window.matchMedia &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      this.runtimeProfile.prefersReducedMotion
     ) {
       this.autoPlayEnabled = false;
     }
     this.resumeTimeout = null;
     this.resumeDelay = 3500;
     this.pointerIdleResumeDelay = 3800;
-    this.pointerActivityThrottleMs = 160;
+    this.pointerActivityThrottleMs =
+      this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.lowEndDevice
+        ? 240
+        : 160;
     this.lastPointerActivityAt = 0;
     this.isHovered = false;
+    this.preloadNeighborDepth =
+      this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.saveData
+        ? 0
+        : this.runtimeProfile.networkTier === "standard"
+          ? 1
+          : 2;
 
     // State management
     this.isTransitioning = false;
@@ -203,6 +266,7 @@ class HeroCarousel {
     this.touchStartX = 0;
     this.touchEndX = 0;
     this.boundHandlers = {};
+    this.connectionChangeHandler = null;
 
     // Hero content elements
     this.heroContent = {
@@ -223,8 +287,43 @@ class HeroCarousel {
       window.__tokeCarouselReady = false;
     }
 
+    this.setupRuntimeProfileListener();
+    this.applyRuntimeProfileHints();
+
     // Initialize immediately
     this.init();
+  }
+
+  applyRuntimeProfileHints() {
+    this.runtimeProfile = getCarouselRuntimeProfile();
+    this.pointerActivityThrottleMs =
+      this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.lowEndDevice
+        ? 240
+        : 160;
+    this.preloadNeighborDepth =
+      this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.saveData
+        ? 0
+        : this.runtimeProfile.networkTier === "standard"
+          ? 1
+          : 2;
+  }
+
+  setupRuntimeProfileListener() {
+    if (
+      !CAROUSEL_RUNTIME_CONNECTION ||
+      typeof CAROUSEL_RUNTIME_CONNECTION.addEventListener !== "function" ||
+      this.connectionChangeHandler
+    ) {
+      return;
+    }
+
+    this.connectionChangeHandler = () => {
+      this.applyRuntimeProfileHints();
+    };
+    CAROUSEL_RUNTIME_CONNECTION.addEventListener(
+      "change",
+      this.connectionChangeHandler
+    );
   }
 
   async init() {
@@ -366,10 +465,11 @@ class HeroCarousel {
 
   preloadNeighbors() {
     if (!Array.isArray(this.slides) || this.slides.length <= 1) return;
+    if (this.preloadNeighborDepth <= 0) return;
     const nextIndex = (this.currentIndex + 1) % this.slides.length;
     const nextNextIndex = (this.currentIndex + 2) % this.slides.length;
     this.preloadImage(this.slides[nextIndex]?.image);
-    if (this.slides.length > 2) {
+    if (this.preloadNeighborDepth > 1 && this.slides.length > 2) {
       this.preloadImage(this.slides[nextNextIndex]?.image);
     }
   }
@@ -443,6 +543,18 @@ class HeroCarousel {
       } catch {}
       this.intersectionObserver = null;
     }
+
+    if (
+      CAROUSEL_RUNTIME_CONNECTION &&
+      this.connectionChangeHandler &&
+      typeof CAROUSEL_RUNTIME_CONNECTION.removeEventListener === "function"
+    ) {
+      CAROUSEL_RUNTIME_CONNECTION.removeEventListener(
+        "change",
+        this.connectionChangeHandler
+      );
+    }
+    this.connectionChangeHandler = null;
 
     // Clear references
     this.container = null;
@@ -747,8 +859,10 @@ class HeroCarousel {
       slideEl.className = `carousel-slide ${isActive ? "active" : ""}`;
       slideEl.dataset.index = index;
 
-      // Use eager loading for active image, lazy for others
-      const loading = isActive ? "eager" : "lazy";
+      const conservativeImageLoading =
+        this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.saveData;
+      const loading = isActive && !conservativeImageLoading ? "eager" : "lazy";
+      const fetchPriority = isActive && !conservativeImageLoading ? "high" : "auto";
 
       slideEl.innerHTML = `
         <img src="${slide.image}"
@@ -756,7 +870,7 @@ class HeroCarousel {
              class="slide-image"
              loading="${loading}"
              decoding="async"
-             fetchpriority="${isActive ? "high" : "auto"}"
+             fetchpriority="${fetchPriority}"
              onerror="this.onerror=null; this.src='${CAROUSEL_FALLBACK_IMAGE}';">
       `;
 

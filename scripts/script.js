@@ -46,6 +46,8 @@ class WebsiteAutoUpdater {
     this.refreshWatchdogTimer = null;
     this.boundVisibilityHandler = null;
     this.boundOnlineHandler = null;
+    this.boundPerfProfileHandler = null;
+    this.currentPollingInterval = 0;
     this.lastRenderedUpdateTs =
       Number(localStorage.getItem(this.dbLastUpdateKey)) ||
       Number(localStorage.getItem(this.lastUpdateKey)) ||
@@ -73,13 +75,16 @@ class WebsiteAutoUpdater {
       typeof this.syncBus.isServerSyncEnabled === "function" &&
       this.syncBus.isServerSyncEnabled();
 
-    // Prefer sync-bus server polling when available, keep this as lighter backup.
-    if (syncBusHasServerPolling) {
-      this.dbCheckInterval = 90000;
-      this.startPolling(25000);
-    } else {
-      this.startPolling(10000);
-    }
+    this.applyAdaptiveNetworkConfig(syncBusHasServerPolling);
+
+    this.boundPerfProfileHandler = () => {
+      const hasServerPolling =
+        this.syncBus &&
+        typeof this.syncBus.isServerSyncEnabled === "function" &&
+        this.syncBus.isServerSyncEnabled();
+      this.applyAdaptiveNetworkConfig(hasServerPolling);
+    };
+    window.addEventListener(TB_PERF_PROFILE_EVENT, this.boundPerfProfileHandler);
 
     // 3. Check when user returns to tab
     this.boundVisibilityHandler = () => {
@@ -235,6 +240,11 @@ class WebsiteAutoUpdater {
       this.boundOnlineHandler = null;
     }
 
+    if (this.boundPerfProfileHandler) {
+      window.removeEventListener(TB_PERF_PROFILE_EVENT, this.boundPerfProfileHandler);
+      this.boundPerfProfileHandler = null;
+    }
+
     if (this.syncIndicatorTimer) {
       clearTimeout(this.syncIndicatorTimer);
       this.syncIndicatorTimer = null;
@@ -340,8 +350,44 @@ class WebsiteAutoUpdater {
     this.refreshDataWithUI(tsNumber, true);
   }
 
+  getAdaptivePollingConfig(syncBusHasServerPolling = false) {
+    const profile = getRuntimePerfProfile();
+    const isSlow = profile.networkTier === "slow" || profile.saveData;
+    const isStandard = profile.networkTier === "standard";
+
+    if (syncBusHasServerPolling) {
+      if (isSlow) {
+        return { dbCheckInterval: 180000, pollingInterval: 45000 };
+      }
+      if (isStandard) {
+        return { dbCheckInterval: 120000, pollingInterval: 32000 };
+      }
+      return { dbCheckInterval: 90000, pollingInterval: 25000 };
+    }
+
+    if (isSlow) {
+      return { dbCheckInterval: 90000, pollingInterval: 22000 };
+    }
+    if (isStandard) {
+      return { dbCheckInterval: 45000, pollingInterval: 14000 };
+    }
+    return { dbCheckInterval: 30000, pollingInterval: 10000 };
+  }
+
+  applyAdaptiveNetworkConfig(syncBusHasServerPolling = false) {
+    const config = this.getAdaptivePollingConfig(syncBusHasServerPolling);
+    this.dbCheckInterval = config.dbCheckInterval;
+    if (
+      !this.pollingInterval ||
+      this.currentPollingInterval !== config.pollingInterval
+    ) {
+      this.startPolling(config.pollingInterval);
+    }
+  }
+
   startPolling(interval = 25000) {
     if (this.pollingInterval) clearInterval(this.pollingInterval);
+    this.currentPollingInterval = interval;
     this.pollingInterval = setInterval(() => {
       if (document.hidden) {
         return;
@@ -704,6 +750,128 @@ const debugWarn = (...args) => {
   if (DEBUG) console.warn(...args);
 };
 
+const TB_PERF_PROFILE_EVENT = "tb:perf-profile-changed";
+const TB_RUNTIME_CONNECTION =
+  typeof navigator !== "undefined"
+    ? navigator.connection || navigator.mozConnection || navigator.webkitConnection
+    : null;
+let tbRuntimePerfProfile = null;
+let tbRuntimePerfBound = false;
+
+function computeRuntimePerfProfile() {
+  const connection = TB_RUNTIME_CONNECTION;
+  const effectiveType = toSafeString(connection?.effectiveType).toLowerCase();
+  const saveData = Boolean(connection?.saveData);
+  const downlink = Number(connection?.downlink || 0);
+  const rtt = Number(connection?.rtt || 0);
+  const prefersReducedMotion = Boolean(
+    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+  const memory = Number(navigator.deviceMemory || 0);
+  const cores = Number(navigator.hardwareConcurrency || 0);
+  const lowEndDevice =
+    (Number.isFinite(memory) && memory > 0 && memory <= 2) ||
+    (Number.isFinite(cores) && cores > 0 && cores <= 4);
+
+  let networkTier = "fast";
+  if (
+    saveData ||
+    effectiveType === "slow-2g" ||
+    effectiveType === "2g" ||
+    (Number.isFinite(downlink) && downlink > 0 && downlink < 0.9) ||
+    (Number.isFinite(rtt) && rtt > 900)
+  ) {
+    networkTier = "slow";
+  } else if (
+    effectiveType === "3g" ||
+    (Number.isFinite(downlink) && downlink > 0 && downlink < 1.8) ||
+    (Number.isFinite(rtt) && rtt > 450)
+  ) {
+    networkTier = "standard";
+  }
+
+  const conservativeMode =
+    prefersReducedMotion || lowEndDevice || saveData || networkTier === "slow";
+
+  return {
+    networkTier,
+    effectiveType,
+    saveData,
+    downlink: Number.isFinite(downlink) ? downlink : 0,
+    rtt: Number.isFinite(rtt) ? rtt : 0,
+    lowEndDevice,
+    prefersReducedMotion,
+    conservativeMode,
+  };
+}
+
+function getRuntimePerfProfile(force = false) {
+  if (!tbRuntimePerfProfile || force) {
+    tbRuntimePerfProfile = computeRuntimePerfProfile();
+  }
+  return tbRuntimePerfProfile;
+}
+
+function shouldUseConservativePerfMode(profile = getRuntimePerfProfile()) {
+  return Boolean(profile?.conservativeMode);
+}
+
+function getAdaptiveFetchTimeoutMs(baseMs = SUPABASE_FETCH_TIMEOUT_MS) {
+  const base = Math.max(4000, Number(baseMs) || SUPABASE_FETCH_TIMEOUT_MS);
+  const profile = getRuntimePerfProfile();
+
+  let multiplier = 1;
+  if (profile.networkTier === "standard") {
+    multiplier = 1.35;
+  } else if (profile.networkTier === "slow") {
+    multiplier = 2.1;
+  }
+
+  if (profile.lowEndDevice) multiplier += 0.15;
+  if (profile.saveData) multiplier += 0.2;
+
+  return Math.round(base * multiplier);
+}
+
+function getAdaptiveImageHints(index = 0) {
+  const profile = getRuntimePerfProfile();
+  let eagerCount = 2;
+
+  if (profile.networkTier === "standard" || profile.lowEndDevice) {
+    eagerCount = 1;
+  }
+  if (profile.networkTier === "slow" || profile.saveData) {
+    eagerCount = 0;
+  }
+
+  const eager = index < eagerCount;
+  return {
+    loading: eager ? "eager" : "lazy",
+    fetchPriority: index === 0 && eager ? "high" : "auto",
+  };
+}
+
+function bindRuntimePerfSignals() {
+  if (tbRuntimePerfBound) return;
+  tbRuntimePerfBound = true;
+
+  if (
+    TB_RUNTIME_CONNECTION &&
+    typeof TB_RUNTIME_CONNECTION.addEventListener === "function"
+  ) {
+    TB_RUNTIME_CONNECTION.addEventListener("change", () => {
+      const profile = getRuntimePerfProfile(true);
+      try {
+        window.dispatchEvent(
+          new CustomEvent(TB_PERF_PROFILE_EVENT, { detail: profile })
+        );
+      } catch {}
+    });
+  }
+}
+
+bindRuntimePerfSignals();
+
 // ================== DATA LOADING FUNCTIONS ==================
 
 // Cache for menu items to reduce API calls
@@ -741,8 +909,9 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = SUPABASE_FETCH_TI
     return fetch(url, options);
   }
 
+  const adaptiveTimeoutMs = getAdaptiveFetchTimeoutMs(timeoutMs);
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutId = setTimeout(() => controller.abort(), adaptiveTimeoutMs);
   try {
     return await fetch(url, {
       ...options,
@@ -1966,9 +2135,8 @@ async function loadDynamicContent(forceReload = false, silentRefresh = false) {
       document.body.classList.remove("cms-loading");
     }
 
-    // Home-only UI (scroll reveal + scroll-to-top) should refresh after content loads
-    refreshHomeEnhancements();
-    initModern3DInteractions();
+    // Home-only UI enhancements run after content settles.
+    schedulePostRenderEnhancements();
   }
 }
 
@@ -2112,16 +2280,14 @@ function renderFeaturedItems(container, items) {
   container.innerHTML = safeItems
     .map(
       (item, index) => {
-        const isPriority = index === 0;
+        const imageHints = getAdaptiveImageHints(index);
         return `
           <article class="featured-card" data-ripple="true">
             <div class="featured-card-media">
               <img src="${item.image}" alt="${escapeHtml(
                 item.title
-              )}" loading="${
-                isPriority ? "eager" : "lazy"
-              }" decoding="async" fetchpriority="${
-                isPriority ? "high" : "auto"
+              )}" loading="${imageHints.loading}" decoding="async" fetchpriority="${
+                imageHints.fetchPriority
               }" width="800" height="600"
               sizes="(max-width: 640px) 92vw, (max-width: 1024px) 45vw, 360px"
                    onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkZlYXR1cmVkPC90ZXh0Pjwvc3ZnPg==';">
@@ -2152,7 +2318,7 @@ function renderMenuItems(container, items) {
   container.innerHTML = safeItems
     .map(
       (item, index) => {
-        const isPriority = index === 0;
+        const imageHints = getAdaptiveImageHints(index);
         const itemId = normalizeItemId(item.id);
         const priceLabel = Number(item.price) > 0 ? formatPrice(item.price) : "0";
         return `
@@ -2167,10 +2333,8 @@ function renderMenuItems(container, items) {
                aria-label="Preferences for ${escapeHtml(item.title)}">
             <img src="${item.image}" alt="${escapeHtml(
         item.title
-      )}" loading="${
-        isPriority ? "eager" : "lazy"
-      }" decoding="async" fetchpriority="${
-        isPriority ? "high" : "auto"
+      )}" loading="${imageHints.loading}" decoding="async" fetchpriority="${
+        imageHints.fetchPriority
       }" width="800" height="600"
       sizes="(max-width: 640px) 92vw, (max-width: 1024px) 45vw, 360px"
       onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4='">
@@ -2195,16 +2359,14 @@ function renderGalleryImages(container, items) {
       (item, index) => {
         const width = Number(item.width) > 0 ? Number(item.width) : 800;
         const height = Number(item.height) > 0 ? Number(item.height) : 600;
-        const isPriority = index === 0;
+        const imageHints = getAdaptiveImageHints(index);
         return `
             <figure class="gallery-card" data-ripple="true">
               <div class="gallery-card-media">
                 <img src="${item.image}" alt="${escapeHtml(
                   item.alt || ""
-                )}" loading="${
-                  isPriority ? "eager" : "lazy"
-                }" decoding="async" fetchpriority="${
-                  isPriority ? "high" : "auto"
+                )}" loading="${imageHints.loading}" decoding="async" fetchpriority="${
+                  imageHints.fetchPriority
                 }" width="${width}" height="${height}"
                 sizes="(max-width: 640px) 92vw, (max-width: 1024px) 45vw, 360px"
                      onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+='">
@@ -4761,16 +4923,18 @@ function bindModern3DCard(card) {
   card.dataset.modern3dBound = "true";
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  let rafId = 0;
+  let pendingPoint = null;
 
-  const onPointerMove = (event) => {
-    if (!card.classList.contains("interactive-3d")) return;
-    if (event.pointerType === "touch") return;
+  const applyPointerTilt = () => {
+    rafId = 0;
+    if (!pendingPoint) return;
 
     const rect = card.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
 
-    const posX = clamp((event.clientX - rect.left) / rect.width, 0, 1);
-    const posY = clamp((event.clientY - rect.top) / rect.height, 0, 1);
+    const posX = clamp((pendingPoint.x - rect.left) / rect.width, 0, 1);
+    const posY = clamp((pendingPoint.y - rect.top) / rect.height, 0, 1);
     const tiltY = (posX - 0.5) * 12;
     const tiltX = (0.5 - posY) * 10;
 
@@ -4779,7 +4943,21 @@ function bindModern3DCard(card) {
     card.classList.add("is-interacting");
   };
 
+  const onPointerMove = (event) => {
+    if (!card.classList.contains("interactive-3d")) return;
+    if (event.pointerType === "touch") return;
+
+    pendingPoint = { x: event.clientX, y: event.clientY };
+    if (rafId) return;
+    rafId = requestAnimationFrame(applyPointerTilt);
+  };
+
   const onPointerLeave = () => {
+    pendingPoint = null;
+    if (rafId) {
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    }
     resetModern3DCard(card);
   };
 
@@ -4792,11 +4970,15 @@ function bindModern3DCard(card) {
 function initModern3DInteractions() {
   ensureModern3DStyles();
 
+  const profile = getRuntimePerfProfile();
   const prefersReducedMotion =
     window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const canUseFinePointer =
     window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
-  const enable3D = canUseFinePointer && !prefersReducedMotion;
+  const enable3D =
+    canUseFinePointer &&
+    !prefersReducedMotion &&
+    !shouldUseConservativePerfMode(profile);
 
   document.querySelectorAll(MODERN_3D_SELECTOR).forEach((card) => {
     bindModern3DCard(card);
@@ -4859,6 +5041,12 @@ function ensureHomeEnhancementStyles() {
     .item-card {
       height: 100%;
     }
+    #featured-container .featured-card,
+    #menu-container .menu-item,
+    #gallery-container .gallery-card {
+      content-visibility: auto;
+      contain-intrinsic-size: 360px 420px;
+    }
     .menu-item h3,
     .cms-menu-item h3,
     .featured-card-body h4,
@@ -4915,6 +5103,7 @@ function setupHomeScrollReveal() {
     return;
   }
 
+  const conservativeMode = shouldUseConservativePerfMode();
   const targets = [
     document.querySelector(".about-preview"),
     ...Array.from(document.querySelectorAll(".about-features .feature")),
@@ -4924,7 +5113,11 @@ function setupHomeScrollReveal() {
     ...Array.from(document.querySelectorAll("#gallery-container .gallery-card")),
   ].filter(Boolean);
 
-  if (!("IntersectionObserver" in window)) {
+  if (conservativeMode || !("IntersectionObserver" in window)) {
+    if (homeRevealObserver) {
+      homeRevealObserver.disconnect();
+      homeRevealObserver = null;
+    }
     targets.forEach((el) => el.classList.add("is-visible"));
     return;
   }
@@ -4961,18 +5154,62 @@ function refreshHomeEnhancements() {
   setupHomeScrollReveal();
 }
 
+let postRenderEnhanceRaf = 0;
+let postRenderEnhanceIdle = null;
+function schedulePostRenderEnhancements() {
+  if (postRenderEnhanceRaf) {
+    cancelAnimationFrame(postRenderEnhanceRaf);
+    postRenderEnhanceRaf = 0;
+  }
+
+  if (postRenderEnhanceIdle !== null) {
+    if (typeof window.cancelIdleCallback === "function") {
+      window.cancelIdleCallback(postRenderEnhanceIdle);
+    } else {
+      clearTimeout(postRenderEnhanceIdle);
+    }
+    postRenderEnhanceIdle = null;
+  }
+
+  postRenderEnhanceRaf = requestAnimationFrame(() => {
+    postRenderEnhanceRaf = 0;
+    refreshHomeEnhancements();
+
+    const run3D = () => {
+      postRenderEnhanceIdle = null;
+      initModern3DInteractions();
+    };
+
+    if (shouldUseConservativePerfMode()) {
+      run3D();
+      return;
+    }
+
+    if (typeof window.requestIdleCallback === "function") {
+      postRenderEnhanceIdle = window.requestIdleCallback(run3D, {
+        timeout: 260,
+      });
+      return;
+    }
+
+    postRenderEnhanceIdle = setTimeout(run3D, 48);
+  });
+}
+
+window.addEventListener(TB_PERF_PROFILE_EVENT, () => {
+  schedulePostRenderEnhancements();
+});
+
 // Refresh enhancements after SPA navigation swaps the DOM
 window.addEventListener("spa:navigated", () => {
   setTimeout(() => {
-    refreshHomeEnhancements();
-    initModern3DInteractions();
+    schedulePostRenderEnhancements();
   }, 0);
 });
 
 window.addEventListener("spa:reinitialized", () => {
   setTimeout(() => {
-    refreshHomeEnhancements();
-    initModern3DInteractions();
+    schedulePostRenderEnhancements();
   }, 0);
 });
 
@@ -5094,8 +5331,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     console.error("Failed to load initial content:", error);
   }
 
-  refreshHomeEnhancements();
-  initModern3DInteractions();
+  schedulePostRenderEnhancements();
 
   // If on order page, render cart
   if (currentPage.includes("order")) {
