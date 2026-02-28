@@ -1293,7 +1293,7 @@ function buildMenuAdminCardElement(item = {}) {
   return card;
 }
 
-function buildGalleryAdminCardElement(item = {}) {
+function buildGalleryAdminCardElement(item = {}, badgeOrder = null) {
   const id = toSafeString(item.id).trim();
   if (!id) return null;
   const imgSrc = resolveImageForDisplay(
@@ -1302,6 +1302,10 @@ function buildGalleryAdminCardElement(item = {}) {
   );
   const alt = toSafeString(item.alt, "Gallery image");
   const orderValue = parseDisplayOrderValue(item.display_order, 0);
+  const badgeValue =
+    Number.isFinite(Number(badgeOrder)) && Number(badgeOrder) > 0
+      ? Math.trunc(Number(badgeOrder))
+      : orderValue + 1;
   const escapedId = escapeHtml(id);
 
   const card = document.createElement("div");
@@ -1313,7 +1317,7 @@ function buildGalleryAdminCardElement(item = {}) {
          onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.gallery}';">
     <div class="gallery-admin-overlay">
       <p><strong>Alt Text:</strong> ${escapeHtml(alt)}</p>
-      <p><strong>Order:</strong> ${orderValue}</p>
+      <p><strong>Order:</strong> <span data-order-label="true">${badgeValue}</span></p>
       <div class="gallery-admin-actions">
         <button class="btn-edit" onclick="editGalleryItem('${escapedId}')">
           <i class="fas fa-edit"></i> Edit
@@ -1328,11 +1332,15 @@ function buildGalleryAdminCardElement(item = {}) {
   return card;
 }
 
-function buildCarouselAdminCardElement(item = {}) {
+function buildCarouselAdminCardElement(item = {}, badgeOrder = null) {
   const id = toSafeString(item.id).trim();
   if (!id) return null;
   const alt = toSafeString(item.alt, "Carousel image");
   const orderValue = parseDisplayOrderValue(item.display_order, 0);
+  const badgeValue =
+    Number.isFinite(Number(badgeOrder)) && Number(badgeOrder) > 0
+      ? Math.trunc(Number(badgeOrder))
+      : orderValue + 1;
   const isActive = parseRecordBoolean(item.is_active, true);
   const escapedId = escapeHtml(id);
 
@@ -1345,12 +1353,12 @@ function buildCarouselAdminCardElement(item = {}) {
       <i class="fas fa-${isActive ? "check-circle" : "pause-circle"}"></i>
       ${isActive ? "Active" : "Inactive"}
     </div>
-    <div class="carousel-slide-number">${orderValue}</div>
+    <div class="carousel-slide-number" data-order-badge="true">${badgeValue}</div>
     <img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.carousel)}" alt="${escapeHtml(alt)}" loading="lazy" decoding="async"
          onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.carousel}';">
     <div class="carousel-admin-overlay">
       <p><strong>Alt Text:</strong> ${escapeHtml(alt)}</p>
-      <p><strong>Order:</strong> ${orderValue}</p>
+      <p><strong>Order:</strong> <span data-order-label="true">${badgeValue}</span></p>
       <div class="carousel-admin-actions">
         <button class="btn-edit" onclick="editCarouselItem('${escapedId}')">
           <i class="fas fa-edit"></i> Edit
@@ -1365,11 +1373,26 @@ function buildCarouselAdminCardElement(item = {}) {
   return card;
 }
 
-function buildAdminCardElement(itemType, item) {
+function buildAdminCardElement(itemType, item, badgeOrder = null) {
   if (itemType === "menu") return buildMenuAdminCardElement(item);
-  if (itemType === "gallery") return buildGalleryAdminCardElement(item);
-  if (itemType === "carousel") return buildCarouselAdminCardElement(item);
+  if (itemType === "gallery") return buildGalleryAdminCardElement(item, badgeOrder);
+  if (itemType === "carousel") return buildCarouselAdminCardElement(item, badgeOrder);
   return null;
+}
+
+function refreshOrderBadges(itemType) {
+  const container = getAdminListContainer(itemType);
+  if (!container) return;
+  const cards = Array.from(container.children).filter(
+    (child) => child && child.dataset && child.dataset.id
+  );
+  cards.forEach((card, index) => {
+    const badgeValue = String(index + 1);
+    const badge = card.querySelector("[data-order-badge='true']");
+    if (badge) badge.textContent = badgeValue;
+    const label = card.querySelector("[data-order-label='true']");
+    if (label) label.textContent = badgeValue;
+  });
 }
 
 function syncCachedListAfterUpsert(itemType, item) {
@@ -1440,6 +1463,8 @@ function upsertItemCardInUi(itemType, item) {
     cards.forEach((card) => fragment.appendChild(card));
     container.appendChild(fragment);
   }
+
+  refreshOrderBadges(itemType);
 
   syncCachedListAfterUpsert(itemType, item);
   return true;
@@ -4801,8 +4826,8 @@ async function renderGalleryItems(forceRefresh = false) {
     }
 
     const fragment = document.createDocumentFragment();
-    sortedItems.forEach((item) => {
-      const card = buildGalleryAdminCardElement(item);
+    sortedItems.forEach((item, index) => {
+      const card = buildGalleryAdminCardElement(item, index + 1);
       if (card) fragment.appendChild(card);
     });
 
@@ -4818,6 +4843,7 @@ async function renderGalleryItems(forceRefresh = false) {
     }
 
     container.replaceChildren(fragment);
+    refreshOrderBadges("gallery");
     cacheItemsForType("gallery", sortedItems);
   } catch (error) {
     console.error(`Error rendering gallery items:`, error);
@@ -5014,8 +5040,8 @@ async function renderCarouselItems(forceRefresh = false) {
     }
 
     const fragment = document.createDocumentFragment();
-    sortedItems.forEach((item) => {
-      const card = buildCarouselAdminCardElement(item);
+    sortedItems.forEach((item, index) => {
+      const card = buildCarouselAdminCardElement(item, index + 1);
       if (card) fragment.appendChild(card);
     });
 
@@ -5031,6 +5057,7 @@ async function renderCarouselItems(forceRefresh = false) {
     }
 
     container.replaceChildren(fragment);
+    refreshOrderBadges("carousel");
     cacheItemsForType("carousel", sortedItems);
   } catch (error) {
     console.error(`Error rendering carousel items:`, error);
