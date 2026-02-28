@@ -170,7 +170,12 @@ const STORAGE_LIMITS_KB = {
 };
 
 const ITEM_TYPES = ["featured", "menu", "gallery", "carousel"];
-const DISPLAY_ORDER_MANAGED_TYPES = new Set(["menu", "gallery", "carousel"]);
+const DISPLAY_ORDER_MANAGED_TYPES = new Set([
+  "featured",
+  "menu",
+  "gallery",
+  "carousel",
+]);
 const itemStateCache = ITEM_TYPES.reduce((acc, type) => {
   acc[type] = new Map();
   return acc;
@@ -3847,11 +3852,33 @@ async function saveFeaturedItem(e) {
         throw new Error(result.message || "Failed to save featured item");
       }
 
+      const recordCandidate =
+        result.record && typeof result.record === "object" ? result.record : null;
+      const savedRecord = {
+        ...(recordCandidate || {}),
+        ...formData,
+        id: recordCandidate?.id || itemId || null,
+      };
+      const savedId = toSafeString(savedRecord.id).trim();
+      const normalization = await normalizeDisplayOrderConflicts(
+        "featured",
+        savedId,
+        displayOrder
+      );
+
       await finalizeImageReplacement(upload);
       resetFeaturedForm();
-      await Promise.all([renderFeaturedItems(true), updateItemCounts()]);
+      await withPreservedScroll(() => renderFeaturedItems(true));
+      await updateItemCounts();
       progress.complete("Featured item saved");
-      showNotification("Featured item saved successfully!", "success");
+      if (normalization.normalized) {
+        showNotification(
+          "Featured item saved and display order normalized successfully.",
+          "success"
+        );
+      } else {
+        showNotification("Featured item saved successfully!", "success");
+      }
       dataSync.notifyDataChanged(result.operation, "featured", {
         contentVersion: result.contentVersion,
       });
@@ -5818,6 +5845,9 @@ function setupEventListeners() {
       document
         .getElementById("featured-form-container")
         .scrollIntoView({ behavior: "smooth" });
+      Promise.resolve(
+        prefillNextDisplayOrder("featured", "featured-display-order")
+      ).catch(() => {});
     });
   }
 
