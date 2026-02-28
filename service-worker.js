@@ -1,4 +1,4 @@
-const SW_VERSION = "v10";
+const SW_VERSION = "v11";
 const CACHE_PREFIX = "toke-bakes";
 const CACHE_NAMES = {
   precache: `${CACHE_PREFIX}-precache-${SW_VERSION}`,
@@ -405,7 +405,7 @@ async function clearDynamicCaches() {
 }
 
 async function clearThemeStyleCacheEntries() {
-  const targetCaches = [CACHE_NAMES.assets];
+  const targetCaches = [CACHE_NAMES.assets, CACHE_NAMES.precache];
   await Promise.all(
     targetCaches.map(async (cacheName) => {
       const cache = await caches.open(cacheName);

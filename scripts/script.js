@@ -4323,8 +4323,68 @@ function renderOrderSummary(summaryEl, prepared) {
   summaryEl.appendChild(fragment);
 }
 
+function ensureBottomSheet() {
+  let sheet = document.getElementById("order-bottom-sheet");
+  if (sheet) return sheet;
+  initBottomSheet();
+  return document.getElementById("order-bottom-sheet");
+}
+
+function openBottomSheet(sheet) {
+  if (!sheet) return;
+  if (sheet.__tbHideTimer) {
+    clearTimeout(sheet.__tbHideTimer);
+    sheet.__tbHideTimer = null;
+  }
+  sheet.removeAttribute("hidden");
+  sheet.style.display = "";
+  sheet.setAttribute("aria-hidden", "false");
+
+  requestAnimationFrame(() => {
+    sheet.classList.add("visible");
+  });
+}
+
+function closeBottomSheet(sheet) {
+  if (!sheet) return;
+  if (sheet.__tbHideTimer) {
+    clearTimeout(sheet.__tbHideTimer);
+    sheet.__tbHideTimer = null;
+  }
+
+  const wasVisible = sheet.classList.contains("visible");
+  sheet.classList.remove("visible");
+  sheet.setAttribute("aria-hidden", "true");
+
+  const hideNow = () => {
+    sheet.setAttribute("hidden", "hidden");
+    sheet.style.display = "none";
+    if (sheet.__tbHideTimer) {
+      clearTimeout(sheet.__tbHideTimer);
+      sheet.__tbHideTimer = null;
+    }
+  };
+
+  if (
+    window.matchMedia &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ) {
+    hideNow();
+    return;
+  }
+
+  const panel = sheet.querySelector(".sheet-panel");
+  if (!panel || !wasVisible) {
+    hideNow();
+    return;
+  }
+
+  panel.addEventListener("transitionend", hideNow, { once: true });
+  sheet.__tbHideTimer = setTimeout(hideNow, 420);
+}
+
 function showPreparedOrderOptions(prepared) {
-  const sheet = document.getElementById("order-bottom-sheet");
+  const sheet = ensureBottomSheet();
   if (!sheet) return;
   if (!prepared) {
     showNotification("Unable to prepare order details right now.", "error");
@@ -4335,7 +4395,7 @@ function showPreparedOrderOptions(prepared) {
   sheet.__tbOrderPayload = prepared;
   sheet.dataset.order = orderSummaryState.key || "";
   renderOrderSummary(sheet.querySelector(".order-summary"), prepared);
-  sheet.classList.add("visible");
+  openBottomSheet(sheet);
 }
 
 function showOrderOptions(orderData) {
@@ -4354,7 +4414,7 @@ function initBottomSheet() {
   if (document.getElementById("order-bottom-sheet")) return;
 
   const html = `
-    <div id="order-bottom-sheet" class="order-bottom-sheet" aria-hidden="true">
+    <div id="order-bottom-sheet" class="order-bottom-sheet" aria-hidden="true" hidden style="display:none;">
       <div class="sheet-backdrop"></div>
       <div class="sheet-panel" role="dialog" aria-modal="true" aria-label="Choose order method">
         <button class="sheet-close" aria-label="Close">x</button>
@@ -4400,7 +4460,7 @@ function initBottomSheet() {
       e.target.closest(".sheet-close") ||
       e.target.classList.contains("sheet-backdrop")
     ) {
-      sheet.classList.remove("visible");
+      closeBottomSheet(sheet);
     }
 
     const gmailBtn = e.target.closest("#order-via-gmail");
@@ -4455,14 +4515,14 @@ function initBottomSheet() {
         activeBtn.removeAttribute("aria-busy");
       }, 500);
 
-      sheet.classList.remove("visible");
+      closeBottomSheet(sheet);
     }
   });
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       const sheet = document.getElementById("order-bottom-sheet");
-      if (sheet) sheet.classList.remove("visible");
+      if (sheet) closeBottomSheet(sheet);
     }
   });
 }
@@ -5021,7 +5081,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   initMobileMenu();
   initMenuInteractions();
   initOrderFunctionality();
-  initBottomSheet();
 
   // Initialize ripple - EXACT WORKING SELECTOR
   initRipple(

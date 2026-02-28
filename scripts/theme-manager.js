@@ -27,6 +27,7 @@ const ThemeManager = {
   themeLoadingTimer: null,
   systemModeMedia: null,
   systemModeHandler: null,
+  themeAutoUpdateBound: false,
 
   /* ================== INITIALIZATION ================== */
   init() {
@@ -95,21 +96,26 @@ const ThemeManager = {
     this.bindSpaReapplyHooks();
 
     // Sync with database active theme on startup
-    this.fetchActiveThemeFromDatabase(true).then((dbTheme) => {
-      const dbCandidate = this.buildThemeCandidateFromRecord(dbTheme);
-      if (dbCandidate && this.shouldApplyDbCandidate(dbCandidate)) {
-        this.applyTheme(dbCandidate.cssFile, false, false, {
-          logoFile: dbCandidate.logoFile,
-          persist: true,
-          timestampOverride: dbCandidate.timestamp,
-          updatedAt: dbTheme.updated_at,
-        });
-      }
-    });
+    this.fetchActiveThemeFromDatabase(true)
+      .then((dbTheme) => {
+        const dbCandidate = this.buildThemeCandidateFromRecord(dbTheme);
+        if (dbCandidate && this.shouldApplyDbCandidate(dbCandidate)) {
+          this.applyTheme(dbCandidate.cssFile, false, false, {
+            logoFile: dbCandidate.logoFile,
+            persist: true,
+            timestampOverride: dbCandidate.timestamp,
+            updatedAt: dbTheme.updated_at,
+          });
+        }
+      })
+      .catch(() => {});
   },
 
   /* ================== NEW: THEME AUTO-UPDATE SYSTEM ================== */
   setupThemeAutoUpdate() {
+    if (this.themeAutoUpdateBound) return;
+    this.themeAutoUpdateBound = true;
+
     // Check for theme updates periodically without over-polling low-end devices.
     setInterval(() => this.checkForThemeUpdates(), 15000);
 
@@ -118,6 +124,14 @@ const ThemeManager = {
       if (!document.hidden) {
         this.checkForThemeUpdates();
       }
+    });
+
+    window.addEventListener("focus", () => {
+      this.checkForThemeUpdates(true);
+    });
+
+    window.addEventListener("online", () => {
+      this.checkForThemeUpdates(true);
     });
 
     // Listen for theme updates via shared sync bus
@@ -417,6 +431,16 @@ const ThemeManager = {
   getRecordTimestamp(updatedAt) {
     const parsed = Date.parse(updatedAt || "");
     return Number.isNaN(parsed) || parsed <= 0 ? 0 : Math.trunc(parsed);
+  },
+
+  normalizeThemeRecord(record) {
+    if (!record || !record.css_file) return null;
+    const updatedAt =
+      record.updated_at || record.updatedAt || record.created_at || null;
+    return {
+      ...record,
+      updated_at: updatedAt,
+    };
   },
 
   buildThemeCandidateFromRecord(record) {
@@ -747,34 +771,75 @@ const ThemeManager = {
 
     this.lastDbCheck = now;
 
-    try {
-      const url = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?is_active=eq.true&select=css_file,logo_file,theme_name,updated_at&order=updated_at.desc&limit=1`;
-      const response = await fetch(url, {
-        headers: {
-          apikey: SUPABASE_CONFIG.ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-          Pragma: "no-cache",
-          "Cache-Control": "no-store",
-        },
-        cache: "no-store",
-      });
+    const restCandidates = [
+      {
+        select: "css_file,logo_file,theme_name,updated_at,created_at",
+        order: "updated_at.desc,created_at.desc",
+      },
+      {
+        select: "css_file,logo_file,theme_name,created_at",
+        order: "created_at.desc",
+      },
+      {
+        select: "css_file,logo_file,theme_name",
+        order: "theme_name.asc",
+      },
+    ];
 
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          return this.fetchActiveThemeViaRpc();
-        }
-        return null;
+    let lastError = null;
+    for (const candidate of restCandidates) {
+      try {
+        const row = await this.fetchActiveThemeViaRest(
+          candidate.select,
+          candidate.order
+        );
+        if (row) return row;
+      } catch (error) {
+        lastError = error;
       }
-
-      const data = await response.json();
-      if (Array.isArray(data) && data.length) {
-        return data[0];
-      }
-      return this.fetchActiveThemeViaRpc();
-    } catch (error) {
-      themeDebugWarn("Theme DB fetch failed:", error);
-      return this.fetchActiveThemeViaRpc();
     }
+
+    const rpcRow = await this.fetchActiveThemeViaRpc();
+    if (rpcRow) return rpcRow;
+
+    if (lastError) {
+      themeDebugWarn("Theme DB fetch failed:", lastError);
+    }
+    return null;
+  },
+
+  async fetchActiveThemeViaRest(
+    selectClause = "css_file,logo_file,theme_name,updated_at",
+    orderClause = "updated_at.desc,created_at.desc"
+  ) {
+    if (!window.SUPABASE_CONFIG?.URL || !window.SUPABASE_CONFIG?.ANON_KEY) {
+      return null;
+    }
+
+    const params = new URLSearchParams();
+    params.set("is_active", "eq.true");
+    params.set("select", selectClause);
+    params.set("order", orderClause);
+    params.set("limit", "1");
+
+    const url = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?${params.toString()}`;
+    const response = await fetch(url, {
+      headers: {
+        apikey: SUPABASE_CONFIG.ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+        Pragma: "no-cache",
+        "Cache-Control": "no-store",
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(`Theme REST fetch failed (${response.status})`);
+    }
+
+    const data = await response.json();
+    if (!Array.isArray(data) || !data.length) return null;
+    return this.normalizeThemeRecord(data[0]);
   },
 
   async fetchActiveThemeViaRpc() {
@@ -783,9 +848,9 @@ const ThemeManager = {
     }
 
     const rpcCandidates = [
-      "get_active_theme",
       "get_active_theme_public",
       "get_public_active_theme",
+      "get_active_theme",
     ];
     for (const rpcName of rpcCandidates) {
       try {
@@ -814,8 +879,9 @@ const ThemeManager = {
 
         const payload = await response.json();
         const row = Array.isArray(payload) ? payload[0] : payload;
-        if (row && row.css_file) {
-          return row;
+        const normalized = this.normalizeThemeRecord(row);
+        if (normalized) {
+          return normalized;
         }
       } catch (error) {
         themeDebugWarn(`Theme RPC fetch failed (${rpcName}):`, error);
