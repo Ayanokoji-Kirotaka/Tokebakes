@@ -170,6 +170,7 @@ const STORAGE_LIMITS_KB = {
 };
 
 const ITEM_TYPES = ["featured", "menu", "gallery", "carousel"];
+const DISPLAY_ORDER_MANAGED_TYPES = new Set(["menu", "gallery", "carousel"]);
 const itemStateCache = ITEM_TYPES.reduce((acc, type) => {
   acc[type] = new Map();
   return acc;
@@ -1190,6 +1191,360 @@ function formatOptionAdjustmentLabel(value) {
   return `${prefix}NGN ${formatPrice(Math.abs(amount))}`;
 }
 
+function parseDisplayOrderValue(value, fallback = 0) {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  const safeFallback = Number.parseInt(fallback, 10);
+  return Number.isFinite(safeFallback) && safeFallback >= 0 ? safeFallback : 0;
+}
+
+function parseRecordBoolean(value, fallback = false) {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "boolean") return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "true" || normalized === "1" || normalized === "yes") {
+    return true;
+  }
+  if (normalized === "false" || normalized === "0" || normalized === "no") {
+    return false;
+  }
+  return fallback;
+}
+
+function compareRecordsByDisplayOrder(a, b) {
+  const aOrder = parseDisplayOrderValue(a?.display_order, 0);
+  const bOrder = parseDisplayOrderValue(b?.display_order, 0);
+  if (aOrder !== bOrder) return aOrder - bOrder;
+
+  const aCreated = Date.parse(a?.created_at || "") || 0;
+  const bCreated = Date.parse(b?.created_at || "") || 0;
+  if (aCreated !== bCreated) return bCreated - aCreated;
+
+  return String(a?.id || "").localeCompare(String(b?.id || ""));
+}
+
+async function withPreservedScroll(task) {
+  if (typeof task !== "function") return null;
+  const x = window.scrollX || 0;
+  const y = window.scrollY || 0;
+  const result = await task();
+  try {
+    window.scrollTo({ left: x, top: y, behavior: "auto" });
+  } catch {
+    window.scrollTo(x, y);
+  }
+  return result;
+}
+
+function getAdminListContainer(itemType) {
+  const selectors = {
+    featured: "featured-items-list",
+    menu: "menu-items-list",
+    gallery: "gallery-admin-grid",
+    carousel: "carousel-admin-grid",
+  };
+  return document.getElementById(selectors[itemType] || "");
+}
+
+function buildMenuAdminCardElement(item = {}) {
+  const id = toSafeString(item.id).trim();
+  if (!id) return null;
+  const imgSrc = resolveImageForDisplay(
+    resolveRecordImage(item),
+    ADMIN_IMAGE_PLACEHOLDERS.menu
+  );
+  const title = toSafeString(item.title, "Menu Item");
+  const description = toSafeString(item.description);
+  const orderValue = parseDisplayOrderValue(item.display_order, 0);
+  const priceValue = toMoney(item.price, 0);
+  const escapedId = escapeHtml(id);
+
+  const card = document.createElement("div");
+  card.className = "item-card";
+  card.dataset.id = id;
+  card.dataset.order = String(orderValue);
+  card.dataset.item = title;
+  card.dataset.price = String(priceValue);
+  card.innerHTML = `
+    <img src="${imgSrc}" alt="${escapeHtml(title)}" class="item-card-img" loading="lazy" decoding="async"
+         onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.menu}';">
+    <div class="item-card-content">
+      <h3 class="item-card-title">${escapeHtml(title)}</h3>
+      <p class="item-card-desc">${escapeHtml(description)}</p>
+      <div class="item-card-actions">
+        <button class="btn-edit" onclick="editMenuItem('${escapedId}')">
+          <i class="fas fa-edit"></i> Edit
+        </button>
+        <button class="btn-options" onclick="openMenuOptionsManager('${escapedId}')">
+          <i class="fas fa-sliders-h"></i> Options
+        </button>
+        <button class="btn-delete" onclick="deleteMenuItem('${escapedId}')">
+          <i class="fas fa-trash"></i> Delete
+        </button>
+      </div>
+    </div>
+  `;
+
+  return card;
+}
+
+function buildGalleryAdminCardElement(item = {}) {
+  const id = toSafeString(item.id).trim();
+  if (!id) return null;
+  const imgSrc = resolveImageForDisplay(
+    resolveRecordImage(item),
+    ADMIN_IMAGE_PLACEHOLDERS.gallery
+  );
+  const alt = toSafeString(item.alt, "Gallery image");
+  const orderValue = parseDisplayOrderValue(item.display_order, 0);
+  const escapedId = escapeHtml(id);
+
+  const card = document.createElement("div");
+  card.className = "gallery-admin-item";
+  card.dataset.id = id;
+  card.dataset.order = String(orderValue);
+  card.innerHTML = `
+    <img src="${imgSrc}" alt="${escapeHtml(alt)}" loading="lazy" decoding="async"
+         onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.gallery}';">
+    <div class="gallery-admin-overlay">
+      <p><strong>Alt Text:</strong> ${escapeHtml(alt)}</p>
+      <p><strong>Order:</strong> ${orderValue}</p>
+      <div class="gallery-admin-actions">
+        <button class="btn-edit" onclick="editGalleryItem('${escapedId}')">
+          <i class="fas fa-edit"></i> Edit
+        </button>
+        <button class="btn-delete" onclick="deleteGalleryItem('${escapedId}')">
+          <i class="fas fa-trash"></i> Delete
+        </button>
+      </div>
+    </div>
+  `;
+
+  return card;
+}
+
+function buildCarouselAdminCardElement(item = {}) {
+  const id = toSafeString(item.id).trim();
+  if (!id) return null;
+  const alt = toSafeString(item.alt, "Carousel image");
+  const orderValue = parseDisplayOrderValue(item.display_order, 0);
+  const isActive = parseRecordBoolean(item.is_active, true);
+  const escapedId = escapeHtml(id);
+
+  const card = document.createElement("div");
+  card.className = "carousel-admin-item";
+  card.dataset.id = id;
+  card.dataset.order = String(orderValue);
+  card.innerHTML = `
+    <div class="carousel-slide-badge ${isActive ? "active" : "inactive"}">
+      <i class="fas fa-${isActive ? "check-circle" : "pause-circle"}"></i>
+      ${isActive ? "Active" : "Inactive"}
+    </div>
+    <div class="carousel-slide-number">${orderValue}</div>
+    <img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.carousel)}" alt="${escapeHtml(alt)}" loading="lazy" decoding="async"
+         onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.carousel}';">
+    <div class="carousel-admin-overlay">
+      <p><strong>Alt Text:</strong> ${escapeHtml(alt)}</p>
+      <p><strong>Order:</strong> ${orderValue}</p>
+      <div class="carousel-admin-actions">
+        <button class="btn-edit" onclick="editCarouselItem('${escapedId}')">
+          <i class="fas fa-edit"></i> Edit
+        </button>
+        <button class="btn-delete" onclick="deleteCarouselItem('${escapedId}')">
+          <i class="fas fa-trash"></i> Delete
+        </button>
+      </div>
+    </div>
+  `;
+
+  return card;
+}
+
+function buildAdminCardElement(itemType, item) {
+  if (itemType === "menu") return buildMenuAdminCardElement(item);
+  if (itemType === "gallery") return buildGalleryAdminCardElement(item);
+  if (itemType === "carousel") return buildCarouselAdminCardElement(item);
+  return null;
+}
+
+function syncCachedListAfterUpsert(itemType, item) {
+  if (!item || item.id === undefined || item.id === null) return;
+  const id = String(item.id);
+  const endpoint = getEndpointForType(itemType);
+  const map = itemStateCache[itemType];
+  if (map) {
+    map.set(id, item);
+  }
+  cacheTempImageForItem(id, resolveRecordImage(item));
+
+  if (!endpoint) return;
+  const listCache = dataCache.get(endpoint);
+  if (listCache && Array.isArray(listCache.data)) {
+    const nextList = listCache.data.slice();
+    const existingIndex = nextList.findIndex(
+      (entry) => String(entry?.id || "") === id
+    );
+    if (existingIndex >= 0) {
+      nextList[existingIndex] = item;
+    } else {
+      nextList.push(item);
+    }
+    nextList.sort(compareRecordsByDisplayOrder);
+    dataCache.set(endpoint, {
+      data: nextList,
+      timestamp: Date.now(),
+    });
+  }
+
+  dataCache.set(`${endpoint}_${id}`, {
+    data: item,
+    timestamp: Date.now(),
+  });
+}
+
+function upsertItemCardInUi(itemType, item) {
+  if (!item || item.id === undefined || item.id === null) return false;
+  const container = getAdminListContainer(itemType);
+  const nextCard = buildAdminCardElement(itemType, item);
+  if (!container || !nextCard) return false;
+
+  const emptyState = container.querySelector(".empty-state");
+  if (emptyState && container.children.length === 1) {
+    container.innerHTML = "";
+  }
+
+  const safeId = String(item.id).replace(/"/g, '\\"');
+  const existing = container.querySelector(`[data-id="${safeId}"]`);
+  if (existing) {
+    existing.replaceWith(nextCard);
+  } else {
+    container.appendChild(nextCard);
+  }
+
+  const cards = Array.from(container.children).filter(
+    (child) => child && child.dataset && child.dataset.id
+  );
+  if (cards.length > 1) {
+    cards.sort((a, b) => {
+      const aOrder = parseDisplayOrderValue(a.dataset.order, 0);
+      const bOrder = parseDisplayOrderValue(b.dataset.order, 0);
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return String(a.dataset.id || "").localeCompare(String(b.dataset.id || ""));
+    });
+    const fragment = document.createDocumentFragment();
+    cards.forEach((card) => fragment.appendChild(card));
+    container.appendChild(fragment);
+  }
+
+  syncCachedListAfterUpsert(itemType, item);
+  return true;
+}
+
+async function normalizeDisplayOrderConflicts(itemType, itemId, desiredOrder) {
+  if (!DISPLAY_ORDER_MANAGED_TYPES.has(itemType)) {
+    return { normalized: false, changedCount: 0 };
+  }
+
+  const endpoint = getEndpointForType(itemType);
+  const id = String(itemId || "").trim();
+  const orderValue = parseDisplayOrderValue(desiredOrder, 0);
+  if (!endpoint || !id) {
+    return { normalized: false, changedCount: 0 };
+  }
+
+  try {
+    const encodedId = encodeURIComponent(id);
+    const conflictRows = await secureRequest(
+      `${endpoint}?select=id&display_order=eq.${orderValue}&id=neq.${encodedId}&limit=1`,
+      "GET",
+      null,
+      {
+        authRequired: true,
+        retries: 1,
+        timeout: 9000,
+        suppressNotifications: true,
+      }
+    );
+
+    if (!Array.isArray(conflictRows) || conflictRows.length === 0) {
+      return { normalized: false, changedCount: 0 };
+    }
+
+    const rows = await secureRequest(
+      `${endpoint}?select=id,display_order,created_at&order=display_order.asc,created_at.desc`,
+      "GET",
+      null,
+      {
+        authRequired: true,
+        retries: 1,
+        timeout: 12000,
+        suppressNotifications: true,
+      }
+    );
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return { normalized: false, changedCount: 0 };
+    }
+
+    const orderedIds = rows
+      .map((row) => String(row?.id || "").trim())
+      .filter(Boolean)
+      .filter((rowId) => rowId !== id);
+
+    const insertIndex = Math.min(orderValue, orderedIds.length);
+    orderedIds.splice(insertIndex, 0, id);
+
+    const currentById = new Map(
+      rows.map((row) => [
+        String(row?.id || "").trim(),
+        parseDisplayOrderValue(row?.display_order, 0),
+      ])
+    );
+
+    const changedRows = orderedIds
+      .map((rowId, idx) => ({
+        id: rowId,
+        display_order: idx,
+      }))
+      .filter(
+        (row) =>
+          currentById.has(row.id) &&
+          currentById.get(row.id) !== row.display_order
+      );
+
+    if (!changedRows.length) {
+      return { normalized: false, changedCount: 0 };
+    }
+
+    await Promise.all(
+      changedRows.map((row) =>
+        secureRequest(
+          `${endpoint}?id=eq.${encodeURIComponent(row.id)}`,
+          "PATCH",
+          { display_order: row.display_order },
+          {
+            authRequired: true,
+            retries: 1,
+            timeout: 12000,
+            suppressNotifications: true,
+          }
+        )
+      )
+    );
+
+    invalidateEndpointCache(endpoint);
+    dataCache.delete(endpoint);
+    changedRows.forEach((row) => {
+      dataCache.delete(`${endpoint}_${row.id}`);
+    });
+
+    return { normalized: true, changedCount: changedRows.length };
+  } catch (error) {
+    console.error(`Display order normalization failed (${itemType}):`, error);
+    return { normalized: false, changedCount: 0, error };
+  }
+}
+
 function removeItemFromUi(itemType, id) {
   if (!id) return;
   const selectorMap = {
@@ -2091,6 +2446,31 @@ async function getNextDisplayOrder(endpoint) {
       : -1;
 
   return Number.isFinite(maxValue) ? maxValue + 1 : 0;
+}
+
+async function prefillNextDisplayOrder(itemType, fieldId) {
+  if (!DISPLAY_ORDER_MANAGED_TYPES.has(itemType)) return;
+  const input = document.getElementById(fieldId);
+  if (!input) return;
+
+  const current = toSafeString(input.value).trim();
+  if (current !== "") return;
+
+  const endpoint = getEndpointForType(itemType);
+  if (!endpoint) return;
+
+  input.placeholder = "Auto";
+  input.setAttribute("data-auto-order-loading", "true");
+  try {
+    const nextValue = await getNextDisplayOrder(endpoint);
+    if (toSafeString(input.value).trim() === "") {
+      input.value = String(Math.max(0, Number(nextValue) || 0));
+    }
+  } catch (error) {
+    debugWarn(`Failed to prefill display order for ${itemType}:`, error);
+  } finally {
+    input.removeAttribute("data-auto-order-loading");
+  }
 }
 
 async function processImageUpload(itemType, imageFile, existingUrl) {
@@ -3265,18 +3645,30 @@ async function saveItem(itemType, formData, options = {}) {
     const isUpdate = Boolean(editingId);
     const baselineVersion = await fetchServerContentVersion();
 
+    let writeResult = null;
     if (isUpdate) {
-      await secureRequest(
+      writeResult = await secureRequest(
         `${endpoint}?id=eq.${editingId}`,
         "PATCH",
         payload,
-        { authRequired: true }
+        { authRequired: true, retries: 2, timeout: 15000 }
       );
       debugLog(`${itemType} item updated successfully!`);
     } else {
-      await secureRequest(endpoint, "POST", payload, { authRequired: true });
+      // Use a single create attempt to prevent duplicate inserts after network timeouts.
+      writeResult = await secureRequest(endpoint, "POST", payload, {
+        authRequired: true,
+        retries: 1,
+        timeout: 20000,
+      });
       debugLog(`${itemType} item added successfully!`);
     }
+
+    const savedRecord = Array.isArray(writeResult)
+      ? writeResult[0] || null
+      : writeResult && typeof writeResult === "object"
+      ? writeResult
+      : null;
 
     const contentVersion = await ensureContentVersionAfterWrite(baselineVersion);
 
@@ -3291,6 +3683,7 @@ async function saveItem(itemType, formData, options = {}) {
       success: true,
       operation: isUpdate ? "update" : "create",
       contentVersion,
+      record: savedRecord,
     };
   } catch (error) {
     console.error(`Error saving ${itemType} item:`, error);
@@ -3533,8 +3926,11 @@ async function renderMenuItems(forceRefresh = false) {
       null,
       forceRefresh
     );
+    const sortedItems = Array.isArray(items)
+      ? items.slice().sort(compareRecordsByDisplayOrder)
+      : [];
 
-    if (!items || items.length === 0) {
+    if (sortedItems.length === 0) {
       cacheItemsForType("menu", []);
       container.innerHTML = `
         <div class="empty-state">
@@ -3545,41 +3941,25 @@ async function renderMenuItems(forceRefresh = false) {
       return;
     }
 
-    container.innerHTML = items
-      .map((item) => {
-        const imgSrc = resolveImageForDisplay(
-          resolveRecordImage(item),
-          ADMIN_IMAGE_PLACEHOLDERS.menu
-        );
-        return `
-      <div class="item-card" data-id="${item.id}" data-item="${escapeHtml(
-          item.title
-        )}" data-price="${item.price}">
-        <img src="${imgSrc}" alt="${
-          item.title
-        }" class="item-card-img" loading="lazy" decoding="async"
-             onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.menu}';">
-        <div class="item-card-content">
-          <h3 class="item-card-title">${item.title}</h3>
-          <p class="item-card-desc">${item.description}</p>
-          <!-- Price is NOT displayed here, only stored in data attributes -->
-          <div class="item-card-actions">
-            <button class="btn-edit" onclick="editMenuItem('${item.id}')">
-              <i class="fas fa-edit"></i> Edit
-            </button>
-            <button class="btn-options" onclick="openMenuOptionsManager('${item.id}')">
-              <i class="fas fa-sliders-h"></i> Options
-            </button>
-            <button class="btn-delete" onclick="deleteMenuItem('${item.id}')">
-              <i class="fas fa-trash"></i> Delete
-            </button>
-          </div>
+    const fragment = document.createDocumentFragment();
+    sortedItems.forEach((item) => {
+      const card = buildMenuAdminCardElement(item);
+      if (card) fragment.appendChild(card);
+    });
+
+    if (!fragment.childNodes.length) {
+      cacheItemsForType("menu", []);
+      container.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-utensils"></i>
+          <p>No menu items yet. Add your first item!</p>
         </div>
-      </div>
-    `;
-      })
-      .join("");
-    cacheItemsForType("menu", items);
+      `;
+      return;
+    }
+
+    container.replaceChildren(fragment);
+    cacheItemsForType("menu", sortedItems);
   } catch (error) {
     console.error(`Error rendering menu items:`, error);
     cacheItemsForType("menu", []);
@@ -3721,15 +4101,36 @@ async function saveMenuItem(e) {
         throw new Error(result.message || "Failed to save menu item");
       }
 
+      const recordCandidate =
+        result.record && typeof result.record === "object" ? result.record : null;
+      const savedRecord = {
+        ...(recordCandidate || {}),
+        ...formData,
+        id: recordCandidate?.id || itemId || null,
+      };
+      const savedId = toSafeString(savedRecord.id).trim();
+      const normalization = await normalizeDisplayOrderConflicts(
+        "menu",
+        savedId,
+        displayOrder
+      );
+
       await finalizeImageReplacement(upload);
       resetMenuForm();
-      await Promise.all([
-        renderMenuItems(true),
-        populateFeaturedMenuSelect(null, true),
-        updateItemCounts(),
-      ]);
+      const updatedInPlace = savedId ? upsertItemCardInUi("menu", savedRecord) : false;
+      if (normalization.normalized || !updatedInPlace) {
+        await withPreservedScroll(() => renderMenuItems(true));
+      }
+      await Promise.all([populateFeaturedMenuSelect(null, true), updateItemCounts()]);
       progress.complete("Menu item saved");
-      showNotification("Menu item saved successfully!", "success");
+      if (normalization.normalized) {
+        showNotification(
+          "Menu item saved and display order normalized successfully.",
+          "success"
+        );
+      } else {
+        showNotification("Menu item saved successfully!", "success");
+      }
       dataSync.notifyDataChanged(result.operation, "menu", {
         contentVersion: result.contentVersion,
       });
@@ -4357,8 +4758,11 @@ async function renderGalleryItems(forceRefresh = false) {
       null,
       forceRefresh
     );
+    const sortedItems = Array.isArray(items)
+      ? items.slice().sort(compareRecordsByDisplayOrder)
+      : [];
 
-    if (!items || items.length === 0) {
+    if (sortedItems.length === 0) {
       cacheItemsForType("gallery", []);
       container.innerHTML = `
         <div class="empty-state">
@@ -4369,33 +4773,25 @@ async function renderGalleryItems(forceRefresh = false) {
       return;
     }
 
-    container.innerHTML = items
-      .map((item) => {
-        const imgSrc = resolveImageForDisplay(
-          resolveRecordImage(item),
-          ADMIN_IMAGE_PLACEHOLDERS.gallery
-        );
-        return `
-      <div class="gallery-admin-item" data-id="${item.id}">
-        <img src="${imgSrc}" alt="${item.alt}" loading="lazy" decoding="async"
-             onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.gallery}';">
-        <div class="gallery-admin-overlay">
-          <p><strong>Alt Text:</strong> ${item.alt}</p>
-          <p><strong>Order:</strong> ${item.display_order ?? 0}</p>
-          <div class="gallery-admin-actions">
-            <button class="btn-edit" onclick="editGalleryItem('${item.id}')">
-              <i class="fas fa-edit"></i> Edit
-            </button>
-            <button class="btn-delete" onclick="deleteGalleryItem('${item.id}')">
-              <i class="fas fa-trash"></i> Delete
-            </button>
-          </div>
+    const fragment = document.createDocumentFragment();
+    sortedItems.forEach((item) => {
+      const card = buildGalleryAdminCardElement(item);
+      if (card) fragment.appendChild(card);
+    });
+
+    if (!fragment.childNodes.length) {
+      cacheItemsForType("gallery", []);
+      container.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-images"></i>
+          <p>No gallery images yet. Add your first image!</p>
         </div>
-      </div>
-    `;
-      })
-      .join("");
-    cacheItemsForType("gallery", items);
+      `;
+      return;
+    }
+
+    container.replaceChildren(fragment);
+    cacheItemsForType("gallery", sortedItems);
   } catch (error) {
     console.error(`Error rendering gallery items:`, error);
     cacheItemsForType("gallery", []);
@@ -4479,11 +4875,38 @@ async function saveGalleryItem(e) {
         throw new Error(result.message || "Failed to save gallery image");
       }
 
+      const recordCandidate =
+        result.record && typeof result.record === "object" ? result.record : null;
+      const savedRecord = {
+        ...(recordCandidate || {}),
+        ...formData,
+        id: recordCandidate?.id || itemId || null,
+      };
+      const savedId = toSafeString(savedRecord.id).trim();
+      const normalization = await normalizeDisplayOrderConflicts(
+        "gallery",
+        savedId,
+        displayOrder
+      );
+
       await finalizeImageReplacement(upload);
       resetGalleryForm();
-      await Promise.all([renderGalleryItems(true), updateItemCounts()]);
+      const updatedInPlace = savedId
+        ? upsertItemCardInUi("gallery", savedRecord)
+        : false;
+      if (normalization.normalized || !updatedInPlace) {
+        await withPreservedScroll(() => renderGalleryItems(true));
+      }
+      await updateItemCounts();
       progress.complete("Gallery image saved");
-      showNotification("Gallery image saved successfully!", "success");
+      if (normalization.normalized) {
+        showNotification(
+          "Gallery image saved and display order normalized successfully.",
+          "success"
+        );
+      } else {
+        showNotification("Gallery image saved successfully!", "success");
+      }
       dataSync.notifyDataChanged(result.operation, "gallery", {
         contentVersion: result.contentVersion,
       });
@@ -4548,8 +4971,11 @@ async function renderCarouselItems(forceRefresh = false) {
       null,
       forceRefresh
     );
+    const sortedItems = Array.isArray(items)
+      ? items.slice().sort(compareRecordsByDisplayOrder)
+      : [];
 
-    if (!items || items.length === 0) {
+    if (sortedItems.length === 0) {
       cacheItemsForType("carousel", []);
       container.innerHTML = `
         <div class="empty-state">
@@ -4560,44 +4986,25 @@ async function renderCarouselItems(forceRefresh = false) {
       return;
     }
 
-    container.innerHTML = items
-      .map((item, index) => {
-        const orderLabel = Number.isFinite(item.display_order)
-          ? item.display_order
-          : index + 1;
+    const fragment = document.createDocumentFragment();
+    sortedItems.forEach((item) => {
+      const card = buildCarouselAdminCardElement(item);
+      if (card) fragment.appendChild(card);
+    });
 
-        return `
-      <div class="carousel-admin-item" data-id="${item.id}">
-        <div class="carousel-slide-badge ${
-          item.is_active ? "active" : "inactive"
-        }">
-          <i class="fas fa-${
-            item.is_active ? "check-circle" : "pause-circle"
-          }"></i>
-          ${item.is_active ? "Active" : "Inactive"}
+    if (!fragment.childNodes.length) {
+      cacheItemsForType("carousel", []);
+      container.innerHTML = `
+        <div class="empty-state">
+          <i class="fas fa-images"></i>
+          <p>No carousel images yet. Add your first background image!</p>
         </div>
-        <div class="carousel-slide-number">${orderLabel}</div>
-        <img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.carousel)}" alt="${item.alt}" loading="lazy" decoding="async"
-             onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.carousel}';">
-        <div class="carousel-admin-overlay">
-          <p><strong>Alt Text:</strong> ${item.alt}</p>
-          <p><strong>Order:</strong> ${item.display_order || 0}</p>
-          <div class="carousel-admin-actions">
-            <button class="btn-edit" onclick="editCarouselItem('${item.id}')">
-              <i class="fas fa-edit"></i> Edit
-            </button>
-            <button class="btn-delete" onclick="deleteCarouselItem('${
-              item.id
-            }')">
-              <i class="fas fa-trash"></i> Delete
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-      })
-      .join("");
-    cacheItemsForType("carousel", items);
+      `;
+      return;
+    }
+
+    container.replaceChildren(fragment);
+    cacheItemsForType("carousel", sortedItems);
   } catch (error) {
     console.error(`Error rendering carousel items:`, error);
     cacheItemsForType("carousel", []);
@@ -4717,11 +5124,38 @@ async function saveCarouselItem(e) {
         throw new Error(result.message || "Failed to save carousel image");
       }
 
+      const recordCandidate =
+        result.record && typeof result.record === "object" ? result.record : null;
+      const savedRecord = {
+        ...(recordCandidate || {}),
+        ...formData,
+        id: recordCandidate?.id || itemId || null,
+      };
+      const savedId = toSafeString(savedRecord.id).trim();
+      const normalization = await normalizeDisplayOrderConflicts(
+        "carousel",
+        savedId,
+        displayOrder
+      );
+
       await finalizeImageReplacement(upload);
       resetCarouselForm();
-      await Promise.all([renderCarouselItems(true), updateItemCounts()]);
+      const updatedInPlace = savedId
+        ? upsertItemCardInUi("carousel", savedRecord)
+        : false;
+      if (normalization.normalized || !updatedInPlace) {
+        await withPreservedScroll(() => renderCarouselItems(true));
+      }
+      await updateItemCounts();
       progress.complete("Carousel image saved");
-      showNotification("Carousel image saved successfully!", "success");
+      if (normalization.normalized) {
+        showNotification(
+          "Carousel image saved and display order normalized successfully.",
+          "success"
+        );
+      } else {
+        showNotification("Carousel image saved successfully!", "success");
+      }
       dataSync.notifyDataChanged(result.operation, "carousel", {
         contentVersion: result.contentVersion,
       });
@@ -5064,7 +5498,7 @@ function resetCarouselForm() {
   const form = document.getElementById("carousel-form");
   if (form) form.reset();
   document.getElementById("carousel-id").value = "";
-  document.getElementById("carousel-display-order").value = "0";
+  document.getElementById("carousel-display-order").value = "";
   document.getElementById("carousel-active").value = "true";
   const imageField = document.getElementById("carousel-image");
   if (imageField) {
@@ -5394,6 +5828,9 @@ function setupEventListeners() {
       document
         .getElementById("menu-form-container")
         .scrollIntoView({ behavior: "smooth" });
+      Promise.resolve(prefillNextDisplayOrder("menu", "menu-display-order")).catch(
+        () => {}
+      );
     });
   }
 
@@ -5404,6 +5841,9 @@ function setupEventListeners() {
       document
         .getElementById("gallery-form-container")
         .scrollIntoView({ behavior: "smooth" });
+      Promise.resolve(
+        prefillNextDisplayOrder("gallery", "gallery-display-order")
+      ).catch(() => {});
     });
   }
 
@@ -5416,6 +5856,9 @@ function setupEventListeners() {
       document
         .getElementById("carousel-form-container")
         .scrollIntoView({ behavior: "smooth" });
+      Promise.resolve(
+        prefillNextDisplayOrder("carousel", "carousel-display-order")
+      ).catch(() => {});
     });
   }
 

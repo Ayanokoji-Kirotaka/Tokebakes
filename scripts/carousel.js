@@ -169,7 +169,7 @@ class HeroCarousel {
 
     // Auto-play timers
     this.autoPlayInterval = null;
-    this.autoPlayDelay = 8000;
+    this.autoPlayDelay = 2500;
     this.autoPlayEnabled = true;
     if (
       typeof window !== "undefined" &&

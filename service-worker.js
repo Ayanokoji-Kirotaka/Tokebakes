@@ -1,4 +1,4 @@
-const SW_VERSION = "v9";
+const SW_VERSION = "v10";
 const CACHE_PREFIX = "toke-bakes";
 const CACHE_NAMES = {
   precache: `${CACHE_PREFIX}-precache-${SW_VERSION}`,
@@ -84,6 +84,7 @@ self.addEventListener("activate", (event) => {
       );
 
       await self.clients.claim();
+      await clearThemeStyleCacheEntries();
       await pruneAllCaches();
     })()
   );
@@ -145,6 +146,28 @@ function isScriptOrStyleRequest(request, url) {
   return url.pathname.endsWith(".js") || url.pathname.endsWith(".css");
 }
 
+function isThemeStylePath(pathname = "") {
+  if (typeof pathname !== "string") return false;
+  return (
+    pathname.endsWith("/styles/style.css") ||
+    /\/styles\/theme-[a-z0-9-]+\.css$/i.test(pathname)
+  );
+}
+
+function isThemeStylesheetRequest(request, url) {
+  if (!url) return false;
+  if (!isThemeStylePath(url.pathname)) return false;
+  return request.destination === "style" || url.pathname.endsWith(".css");
+}
+
+function requestTargetsThemeStyle(requestUrl) {
+  try {
+    return isThemeStylePath(new URL(requestUrl).pathname);
+  } catch {
+    return false;
+  }
+}
+
 function isFontRequest(request, url) {
   if (request.destination === "font") return true;
   return /\.(woff2?|ttf|otf)$/i.test(url.pathname);
@@ -181,9 +204,16 @@ function canStoreRequest(request, cacheName = "") {
 function stripCacheBustParam(requestUrl) {
   try {
     const url = new URL(requestUrl);
-    if (!url.searchParams.has("_")) return requestUrl;
-    url.searchParams.delete("_");
-    return url.toString();
+    let changed = false;
+    if (url.searchParams.has("_")) {
+      url.searchParams.delete("_");
+      changed = true;
+    }
+    if (isThemeStylePath(url.pathname) && url.searchParams.has("v")) {
+      url.searchParams.delete("v");
+      changed = true;
+    }
+    return changed ? url.toString() : requestUrl;
   } catch {
     return requestUrl;
   }
@@ -256,7 +286,7 @@ function dedupedFetch(request, options = {}, timeoutMs = 10000) {
 async function cachePut(cacheName, request, response) {
   if (!canStoreRequest(request, cacheName)) return;
   const cacheKey =
-    cacheName === CACHE_NAMES.api
+    cacheName === CACHE_NAMES.api || requestTargetsThemeStyle(request.url)
       ? stripCacheBustParam(request.url)
       : request.url;
   const cache = await caches.open(cacheName);
@@ -364,6 +394,7 @@ async function pruneAllCaches() {
 }
 
 async function clearDynamicCaches() {
+  await clearThemeStyleCacheEntries();
   await Promise.all([
     caches.delete(CACHE_NAMES.pages),
     caches.delete(CACHE_NAMES.assets),
@@ -371,6 +402,26 @@ async function clearDynamicCaches() {
     caches.delete(CACHE_NAMES.api),
     caches.delete(CACHE_NAMES.meta),
   ]);
+}
+
+async function clearThemeStyleCacheEntries() {
+  const targetCaches = [CACHE_NAMES.assets];
+  await Promise.all(
+    targetCaches.map(async (cacheName) => {
+      const cache = await caches.open(cacheName);
+      const requests = await cache.keys();
+      await Promise.all(
+        requests.map(async (request) => {
+          try {
+            const url = new URL(request.url);
+            if (!isThemeStylePath(url.pathname)) return;
+            await cache.delete(request);
+            await deleteCacheTimestamp(cacheName, request.url);
+          } catch {}
+        })
+      );
+    })
+  );
 }
 
 async function networkFirst(request, options = {}, event) {
@@ -382,12 +433,13 @@ async function networkFirst(request, options = {}, event) {
     allowOpaque = false,
     allowCacheBustFallback = false,
     errorResponseFactory = null,
+    cacheWrites = true,
   } = options;
 
   try {
     const networkResponse = await dedupedFetch(request, fetchOptions, timeoutMs);
 
-    if (isCacheableResponse(networkResponse, allowOpaque)) {
+    if (cacheWrites && isCacheableResponse(networkResponse, allowOpaque)) {
       const writeTask = cachePut(cacheName, request, networkResponse.clone())
         .then(() => pruneCache(cacheName))
         .catch(() => {});
@@ -532,6 +584,20 @@ async function routeRequest(request, event) {
         fetchOptions: { cache: "no-store" },
         fallbackUrl: OFFLINE_FALLBACK_URL,
         allowOpaque: false,
+      },
+      event
+    );
+  }
+
+  if (isThemeStylesheetRequest(request, url)) {
+    return networkFirst(
+      request,
+      {
+        cacheName: CACHE_NAMES.assets,
+        timeoutMs: 9000,
+        fetchOptions: { cache: "no-store" },
+        allowOpaque: false,
+        allowCacheBustFallback: true,
       },
       event
     );

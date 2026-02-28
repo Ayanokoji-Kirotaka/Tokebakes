@@ -6,6 +6,15 @@ const themeDebugLog = (...args) => {
 const themeDebugWarn = (...args) => {
   if (THEME_DEBUG) console.warn(...args);
 };
+const THEME_STORAGE_KEYS = {
+  legacyCss: "toke_bakes_css_theme",
+  legacyLogo: "toke_bakes_theme_logo",
+  legacyUpdated: "toke_bakes_theme_last_update",
+  globalCss: "toke_bakes_global_theme_css",
+  globalLogo: "toke_bakes_global_theme_logo",
+  globalUpdated: "toke_bakes_global_theme_updated_at",
+  localCheck: "my_theme_check",
+};
 const ThemeManager = {
   currentTheme: "styles/style.css",
   currentMode: "light",
@@ -25,7 +34,9 @@ const ThemeManager = {
 
     // Load saved preferences
     const savedThemeRaw =
-      localStorage.getItem("toke_bakes_css_theme") || "styles/style.css";
+      localStorage.getItem(THEME_STORAGE_KEYS.globalCss) ||
+      localStorage.getItem(THEME_STORAGE_KEYS.legacyCss) ||
+      "styles/style.css";
     const savedTheme = this.fixLegacyThemePath(
       this.normalizeAssetPath(savedThemeRaw) || "styles/style.css"
     );
@@ -41,10 +52,12 @@ const ThemeManager = {
     }
     const savedMode = this.resolveMode(savedModeRaw);
     if (savedThemeRaw !== savedTheme) {
-      localStorage.setItem("toke_bakes_css_theme", savedTheme);
+      localStorage.setItem(THEME_STORAGE_KEYS.legacyCss, savedTheme);
+      localStorage.setItem(THEME_STORAGE_KEYS.globalCss, savedTheme);
     }
     const savedLogo =
-      localStorage.getItem("toke_bakes_theme_logo") ||
+      localStorage.getItem(THEME_STORAGE_KEYS.globalLogo) ||
+      localStorage.getItem(THEME_STORAGE_KEYS.legacyLogo) ||
       this.getLogoForTheme(savedTheme);
 
     this.currentTheme = savedTheme;
@@ -137,8 +150,9 @@ const ThemeManager = {
           const ts = Number(payload.timestamp) || Date.now();
           themeDebugLog("?? Theme data update received", payload);
           // Force a DB + local re-check so other devices update immediately
-          localStorage.setItem("toke_bakes_theme_last_update", String(ts));
-          localStorage.setItem("my_theme_check", "0");
+          localStorage.setItem(THEME_STORAGE_KEYS.legacyUpdated, String(ts));
+          localStorage.setItem(THEME_STORAGE_KEYS.globalUpdated, String(ts));
+          localStorage.setItem(THEME_STORAGE_KEYS.localCheck, "0");
           this.checkForThemeUpdates(true);
         }
       });
@@ -169,50 +183,60 @@ const ThemeManager = {
   async checkForThemeUpdates(force = false) {
     if (!force && document.hidden) return false;
 
-    // Get the last theme update timestamp from localStorage
-    const lastUpdate = Number(
-      localStorage.getItem("toke_bakes_theme_last_update") || "0"
+    // DB remains the source of truth for active theme.
+    const dbTheme = await this.fetchActiveThemeFromDatabase(force);
+    const dbCandidate = this.buildThemeCandidateFromRecord(dbTheme);
+    if (dbCandidate) {
+      if (this.shouldApplyDbCandidate(dbCandidate)) {
+        this.applyTheme(dbCandidate.cssFile, false, false, {
+          logoFile: dbCandidate.logoFile,
+          persist: true,
+          timestampOverride: dbCandidate.timestamp,
+          updatedAt: dbTheme.updated_at,
+        });
+        return true;
+      }
+      this.syncThemeSnapshotStorage(
+        dbCandidate.cssFile,
+        dbCandidate.logoFile,
+        dbCandidate.timestamp
+      );
+    }
+
+    // Local fallback for in-tab/broadcast updates while offline.
+    const lastUpdate = Math.max(
+      Number(localStorage.getItem(THEME_STORAGE_KEYS.globalUpdated) || "0"),
+      Number(localStorage.getItem(THEME_STORAGE_KEYS.legacyUpdated) || "0")
     );
-    const myLastCheck = Number(localStorage.getItem("my_theme_check") || "0");
+    const myLastCheck = Number(
+      localStorage.getItem(THEME_STORAGE_KEYS.localCheck) || "0"
+    );
 
     if (lastUpdate > myLastCheck) {
-      themeDebugLog("?? Theme update detected!");
-
-      // Get the new theme
+      themeDebugLog("?? Theme snapshot update detected!");
       const newTheme = this.fixLegacyThemePath(
         this.normalizeAssetPath(
-          localStorage.getItem("toke_bakes_css_theme") || "styles/style.css"
+          localStorage.getItem(THEME_STORAGE_KEYS.globalCss) ||
+            localStorage.getItem(THEME_STORAGE_KEYS.legacyCss) ||
+            "styles/style.css"
         ) || "styles/style.css"
       );
       const newLogo =
-        this.normalizeAssetPath(localStorage.getItem("toke_bakes_theme_logo")) ||
-        this.getLogoForTheme(newTheme);
+        this.normalizeAssetPath(
+          localStorage.getItem(THEME_STORAGE_KEYS.globalLogo) ||
+            localStorage.getItem(THEME_STORAGE_KEYS.legacyLogo)
+        ) || this.getLogoForTheme(newTheme);
 
-      // Update my last check timestamp
-      localStorage.setItem("my_theme_check", String(lastUpdate));
+      localStorage.setItem(THEME_STORAGE_KEYS.localCheck, String(lastUpdate));
 
-      // Apply the new theme
       if (newTheme !== this.currentTheme || newLogo !== this.currentLogo) {
         this.applyTheme(newTheme, false, false, {
           logoFile: newLogo,
           persist: true,
           timestampOverride: lastUpdate,
         });
+        return true;
       }
-      return true;
-    }
-
-    // Fallback: check database for active theme (cross-device changes)
-    const dbTheme = await this.fetchActiveThemeFromDatabase(force);
-    const dbCandidate = this.buildThemeCandidateFromRecord(dbTheme);
-    if (dbCandidate && this.shouldApplyDbCandidate(dbCandidate)) {
-      this.applyTheme(dbCandidate.cssFile, false, false, {
-        logoFile: dbCandidate.logoFile,
-        persist: true,
-        timestampOverride: dbCandidate.timestamp,
-        updatedAt: dbTheme.updated_at,
-      });
-      return true;
     }
 
     return false;
@@ -238,11 +262,13 @@ const ThemeManager = {
     this.currentLogo = resolvedLogo;
 
     // Save to localStorage (exact path)
-    let timestamp = localStorage.getItem("toke_bakes_theme_last_update") || "";
+    let timestamp = localStorage.getItem(THEME_STORAGE_KEYS.globalUpdated) || "";
     const shouldPersist = saveToStorage || persist;
     if (shouldPersist) {
-      localStorage.setItem("toke_bakes_css_theme", normalizedCssFile);
-      localStorage.setItem("toke_bakes_theme_logo", resolvedLogo);
+      localStorage.setItem(THEME_STORAGE_KEYS.legacyCss, normalizedCssFile);
+      localStorage.setItem(THEME_STORAGE_KEYS.globalCss, normalizedCssFile);
+      localStorage.setItem(THEME_STORAGE_KEYS.legacyLogo, resolvedLogo);
+      localStorage.setItem(THEME_STORAGE_KEYS.globalLogo, resolvedLogo);
 
       const parsedTimestamp = Number(timestampOverride);
       const parsed = updatedAt ? Date.parse(updatedAt) : NaN;
@@ -256,8 +282,9 @@ const ThemeManager = {
         candidateTs = Date.now();
       }
       timestamp = `${Math.max(existingTs, candidateTs)}`;
-      localStorage.setItem("toke_bakes_theme_last_update", timestamp);
-      localStorage.setItem("my_theme_check", timestamp);
+      localStorage.setItem(THEME_STORAGE_KEYS.legacyUpdated, timestamp);
+      localStorage.setItem(THEME_STORAGE_KEYS.globalUpdated, timestamp);
+      localStorage.setItem(THEME_STORAGE_KEYS.localCheck, timestamp);
 
       // Broadcast to other tabs if admin is making the change
       if (isAdminChange) {
@@ -380,7 +407,10 @@ const ThemeManager = {
   },
 
   getStoredThemeTimestamp() {
-    const stored = Number(localStorage.getItem("toke_bakes_theme_last_update") || "0");
+    const stored = Math.max(
+      Number(localStorage.getItem(THEME_STORAGE_KEYS.globalUpdated) || "0"),
+      Number(localStorage.getItem(THEME_STORAGE_KEYS.legacyUpdated) || "0")
+    );
     return Number.isFinite(stored) && stored > 0 ? Math.trunc(stored) : 0;
   },
 
@@ -408,6 +438,30 @@ const ThemeManager = {
     return candidate.timestamp > localTs;
   },
 
+  syncThemeSnapshotStorage(cssFile, logoFile, timestamp = 0) {
+    const normalizedCss = this.fixLegacyThemePath(
+      this.normalizeAssetPath(cssFile) || "styles/style.css"
+    );
+    const normalizedLogo = this.resolveLogoFile(normalizedCss, logoFile);
+    const ts = Number(timestamp);
+    const timestampString =
+      Number.isFinite(ts) && ts > 0
+        ? String(Math.trunc(ts))
+        : String(this.getStoredThemeTimestamp());
+
+    try {
+      localStorage.setItem(THEME_STORAGE_KEYS.legacyCss, normalizedCss);
+      localStorage.setItem(THEME_STORAGE_KEYS.globalCss, normalizedCss);
+      localStorage.setItem(THEME_STORAGE_KEYS.legacyLogo, normalizedLogo);
+      localStorage.setItem(THEME_STORAGE_KEYS.globalLogo, normalizedLogo);
+      if (timestampString && Number(timestampString) > 0) {
+        localStorage.setItem(THEME_STORAGE_KEYS.legacyUpdated, timestampString);
+        localStorage.setItem(THEME_STORAGE_KEYS.globalUpdated, timestampString);
+        localStorage.setItem(THEME_STORAGE_KEYS.localCheck, timestampString);
+      }
+    } catch {}
+  },
+
   /* ================== FIXED: ADMIN THEME ACTIVATION ================== */
   setupAdminListeners() {
     document.addEventListener("click", (e) => {
@@ -425,12 +479,6 @@ const ThemeManager = {
             card.dataset.themeLogo || this.getLogoForTheme(themeFile);
           themeDebugLog("Admin theme activation:", themeFile);
           this.applyTheme(themeFile, true, true, { logoFile });
-
-          // Persist change to database so ALL visitors/devices pick it up
-          // even if they are on a different browser/session.
-          Promise.resolve(
-            this.persistThemeToDatabase(themeFile, logoFile)
-          ).catch((err) => themeDebugWarn("Theme persist failed:", err));
         }
       }
     });
@@ -712,15 +760,69 @@ const ThemeManager = {
       });
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          return this.fetchActiveThemeViaRpc();
+        }
         return null;
       }
 
       const data = await response.json();
-      return Array.isArray(data) && data.length ? data[0] : null;
+      if (Array.isArray(data) && data.length) {
+        return data[0];
+      }
+      return this.fetchActiveThemeViaRpc();
     } catch (error) {
       themeDebugWarn("Theme DB fetch failed:", error);
+      return this.fetchActiveThemeViaRpc();
+    }
+  },
+
+  async fetchActiveThemeViaRpc() {
+    if (!window.SUPABASE_CONFIG?.URL || !window.SUPABASE_CONFIG?.ANON_KEY) {
       return null;
     }
+
+    const rpcCandidates = [
+      "get_active_theme",
+      "get_active_theme_public",
+      "get_public_active_theme",
+    ];
+    for (const rpcName of rpcCandidates) {
+      try {
+        const response = await fetch(
+          `${SUPABASE_CONFIG.URL}/rest/v1/rpc/${rpcName}`,
+          {
+            method: "POST",
+            headers: {
+              apikey: SUPABASE_CONFIG.ANON_KEY,
+              Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+              "Content-Type": "application/json",
+              Pragma: "no-cache",
+              "Cache-Control": "no-store",
+            },
+            body: "{}",
+            cache: "no-store",
+          }
+        );
+
+        if (!response.ok) {
+          if (response.status === 404 || response.status === 400) {
+            continue;
+          }
+          continue;
+        }
+
+        const payload = await response.json();
+        const row = Array.isArray(payload) ? payload[0] : payload;
+        if (row && row.css_file) {
+          return row;
+        }
+      } catch (error) {
+        themeDebugWarn(`Theme RPC fetch failed (${rpcName}):`, error);
+      }
+    }
+
+    return null;
   },
 
   /* ================== NEW: SPA REINITIALIZATION SUPPORT ================== */
@@ -904,24 +1006,30 @@ window.ThemeManager = ThemeManager;
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     // Fix any legacy saved theme paths before initialization
-    const savedTheme = localStorage.getItem("toke_bakes_css_theme");
+    const savedTheme =
+      localStorage.getItem(THEME_STORAGE_KEYS.globalCss) ||
+      localStorage.getItem(THEME_STORAGE_KEYS.legacyCss);
     if (savedTheme && !savedTheme.includes("styles/")) {
       const fixedTheme = ThemeManager.fixLegacyThemePath(savedTheme);
       if (fixedTheme !== savedTheme) {
         themeDebugLog("?? Fixed legacy theme path:", savedTheme, "?", fixedTheme);
-        localStorage.setItem("toke_bakes_css_theme", fixedTheme);
+        localStorage.setItem(THEME_STORAGE_KEYS.legacyCss, fixedTheme);
+        localStorage.setItem(THEME_STORAGE_KEYS.globalCss, fixedTheme);
       }
     }
     ThemeManager.init();
   });
 } else {
   // Fix legacy paths immediately
-  const savedTheme = localStorage.getItem("toke_bakes_css_theme");
+  const savedTheme =
+    localStorage.getItem(THEME_STORAGE_KEYS.globalCss) ||
+    localStorage.getItem(THEME_STORAGE_KEYS.legacyCss);
   if (savedTheme && !savedTheme.includes("styles/")) {
     const fixedTheme = ThemeManager.fixLegacyThemePath(savedTheme);
     if (fixedTheme !== savedTheme) {
       themeDebugLog("?? Fixed legacy theme path:", savedTheme, "?", fixedTheme);
-      localStorage.setItem("toke_bakes_css_theme", fixedTheme);
+      localStorage.setItem(THEME_STORAGE_KEYS.legacyCss, fixedTheme);
+      localStorage.setItem(THEME_STORAGE_KEYS.globalCss, fixedTheme);
     }
   }
   ThemeManager.init();

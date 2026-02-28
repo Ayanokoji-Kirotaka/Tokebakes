@@ -2245,6 +2245,10 @@ const BUSINESS_PHONE_WAME = "2347063466822";
 const BUSINESS_EMAIL = "tokebakes@gmail.com";
 const ORDER_PREFILL_CACHE_LIMIT = 24;
 const orderPrefillCache = new Map();
+const orderSummaryState = {
+  key: "",
+  payload: null,
+};
 let latestOrderSheetPayload = null;
 
 function ensureChatWidgetScriptLoaded() {
@@ -2468,10 +2472,27 @@ function readCart() {
   }
 }
 
+function queueLiveOrderPayloadPrime(cartItems = []) {
+  const snapshot = toArray(cartItems).map((item) => normalizeCartEntry(item));
+  const runPrime = () => {
+    try {
+      updateLiveOrderSummaryState(snapshot);
+    } catch {}
+  };
+
+  if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(runPrime, { timeout: 1200 });
+    return;
+  }
+
+  setTimeout(runPrime, 0);
+}
+
 function saveCart(cart) {
   const normalizedCart = toArray(cart).map((item) => normalizeCartEntry(item));
   localStorage.setItem(CART_KEY, JSON.stringify(normalizedCart));
   refreshCartCount();
+  queueLiveOrderPayloadPrime(normalizedCart);
 
   // Let any page (including SPA-swapped pages) react immediately to cart changes
   try {
@@ -2671,13 +2692,18 @@ function getOrderItemOptionLines(item) {
 }
 
 function getOrderItemMessageLines(item) {
+  const name = toSafeString(item?.name, "Item");
   const unitPrice = toMoney(item?.price, 0);
   const quantity = Math.max(1, Math.floor(parseNumber(item?.qty, 1)));
-  const baseLine = `- ${item?.name || "Item"} x ${quantity} ${
-    unitPrice ? `(NGN ${formatPrice(unitPrice)} each)` : ""
-  }`;
-  const optionLines = getOrderItemOptionLines(item).map((line) => `  - ${line}`);
-  return [baseLine, ...optionLines];
+  const itemTotal = multiplyMoney(unitPrice, quantity);
+  const baseLine = `- Product: ${name}`;
+  const detailsLine = `  Quantity: ${quantity} | Unit Price: NGN ${formatPrice(
+    unitPrice
+  )} | Total: NGN ${formatPrice(itemTotal)}`;
+  const optionLines = getOrderItemOptionLines(item).map(
+    (line) => `  Preferences: ${line}`
+  );
+  return [baseLine, ...optionLines, detailsLine];
 }
 
 /* ================== NOTIFICATION FUNCTION ================== */
@@ -4032,15 +4058,35 @@ function buildOrderDataFromCart(cartItems = []) {
   };
 }
 
-function primeOrderPayloadFromCart(cartItems = []) {
-  if (!toArray(cartItems).length) {
+function updateLiveOrderSummaryState(cartItems = []) {
+  const safeCartItems = toArray(cartItems).map((item) => normalizeCartEntry(item));
+  if (!safeCartItems.length) {
+    orderSummaryState.key = "";
+    orderSummaryState.payload = null;
     latestOrderSheetPayload = null;
     return null;
   }
 
-  const orderData = buildOrderDataFromCart(cartItems);
-  latestOrderSheetPayload = getPreparedOrderPayload(orderData);
-  return orderData;
+  const orderData = buildOrderDataFromCart(safeCartItems);
+  const key = createOrderPrefillCacheKey(orderData);
+  if (orderSummaryState.key === key && orderSummaryState.payload) {
+    latestOrderSheetPayload = orderSummaryState.payload;
+    return orderSummaryState.payload;
+  }
+
+  const prepared = getPreparedOrderPayload(orderData);
+  orderSummaryState.key = key;
+  orderSummaryState.payload = prepared || null;
+  latestOrderSheetPayload = prepared || null;
+  return prepared;
+}
+
+function primeOrderPayloadFromCart(cartItems = []) {
+  const prepared = updateLiveOrderSummaryState(cartItems);
+  if (!prepared) {
+    return null;
+  }
+  return buildOrderDataFromCart(cartItems);
 }
 
 function initOrderFunctionality() {
@@ -4074,8 +4120,8 @@ function initOrderFunctionality() {
       return;
     }
 
-    const orderData = primeOrderPayloadFromCart(cart);
-    showOrderOptions(orderData);
+    const prepared = latestOrderSheetPayload || updateLiveOrderSummaryState(cart);
+    showPreparedOrderOptions(prepared);
   };
 
   document.addEventListener("click", handler);
@@ -4277,15 +4323,9 @@ function renderOrderSummary(summaryEl, prepared) {
   summaryEl.appendChild(fragment);
 }
 
-function showOrderOptions(orderData) {
+function showPreparedOrderOptions(prepared) {
   const sheet = document.getElementById("order-bottom-sheet");
   if (!sheet) return;
-  if (!orderData) {
-    showNotification("No order details available yet.", "warning");
-    return;
-  }
-
-  const prepared = getPreparedOrderPayload(orderData);
   if (!prepared) {
     showNotification("Unable to prepare order details right now.", "error");
     return;
@@ -4293,9 +4333,20 @@ function showOrderOptions(orderData) {
 
   latestOrderSheetPayload = prepared;
   sheet.__tbOrderPayload = prepared;
-  sheet.dataset.order = createOrderPrefillCacheKey(orderData);
+  sheet.dataset.order = orderSummaryState.key || "";
   renderOrderSummary(sheet.querySelector(".order-summary"), prepared);
   sheet.classList.add("visible");
+}
+
+function showOrderOptions(orderData) {
+  if (!orderData) {
+    showNotification("No order details available yet.", "warning");
+    return;
+  }
+  const prepared = getPreparedOrderPayload(orderData);
+  orderSummaryState.key = createOrderPrefillCacheKey(orderData);
+  orderSummaryState.payload = prepared || null;
+  showPreparedOrderOptions(prepared);
 }
 
 // Bottom sheet functionality
@@ -4431,6 +4482,8 @@ async function renderCartOnOrderPage(shouldValidate = true) {
 
     if (currentCart.length === 0) {
       latestOrderSheetPayload = null;
+      orderSummaryState.key = "";
+      orderSummaryState.payload = null;
       cartContainer.innerHTML =
         '<p class="empty-cart">Your cart is empty. Visit the <a href="menu.html">menu</a> to add items.</p>';
 
@@ -4443,7 +4496,7 @@ async function renderCartOnOrderPage(shouldValidate = true) {
       return;
     }
 
-    primeOrderPayloadFromCart(currentCart);
+    updateLiveOrderSummaryState(currentCart);
 
     // Show clear cart button only if there are items
     if (clearCartBtn) {
@@ -4927,7 +4980,14 @@ function setupCartEventListeners() {
 
 // Keep cart UI in sync across SPA navigation and immediate cart adds
 let cartUpdatedRaf = 0;
-window.addEventListener("cart:updated", () => {
+window.addEventListener("cart:updated", (event) => {
+  const incomingCart = toArray(event?.detail?.cart);
+  if (incomingCart.length) {
+    updateLiveOrderSummaryState(incomingCart);
+  } else {
+    updateLiveOrderSummaryState(readCart());
+  }
+
   if (cartUpdatedRaf) return;
   cartUpdatedRaf = requestAnimationFrame(() => {
     cartUpdatedRaf = 0;
@@ -4947,6 +5007,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Initialize cart count immediately to prevent flash
   refreshCartCount();
+  updateLiveOrderSummaryState(readCart());
 
   // STEP 2: Initialize sync system
   try {

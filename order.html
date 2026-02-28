@@ -81,12 +81,13 @@
             ? savedModeRaw
             : systemMode;
 
-        const savedThemeRaw = lsGet("toke_bakes_css_theme") || "styles/style.css";
+        const savedThemeRaw = lsGet("toke_bakes_global_theme_css") || lsGet("toke_bakes_css_theme") || "styles/style.css";
         const savedTheme = fixLegacyThemePath(savedThemeRaw);
-        const themeVersion = lsGet("toke_bakes_theme_last_update") || "";
+        const themeVersion = lsGet("toke_bakes_global_theme_updated_at") || lsGet("toke_bakes_theme_last_update") || "";
 
         if (savedThemeRaw !== savedTheme) {
           lsSet("toke_bakes_css_theme", savedTheme);
+          lsSet("toke_bakes_global_theme_css", savedTheme);
         }
 
         document.documentElement.setAttribute("data-theme", savedMode);
