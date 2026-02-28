@@ -21,7 +21,7 @@ const ThemeManager = {
   currentLogo: "images/logo.webp",
   lastThemeUpdate: 0,
   lastDbCheck: 0,
-  dbCheckInterval: 60000,
+  dbCheckInterval: 15000,
   spaHooksBound: false,
   themeSyncUnsubscribe: null,
   themeLoadingTimer: null,
@@ -134,6 +134,10 @@ const ThemeManager = {
       this.checkForThemeUpdates(true);
     });
 
+    window.addEventListener("pageshow", () => {
+      this.checkForThemeUpdates(true);
+    });
+
     // Listen for theme updates via shared sync bus
     if (
       window.TokeUpdateSync &&
@@ -168,6 +172,15 @@ const ThemeManager = {
           localStorage.setItem(THEME_STORAGE_KEYS.globalUpdated, String(ts));
           localStorage.setItem(THEME_STORAGE_KEYS.localCheck, "0");
           this.checkForThemeUpdates(true);
+          return;
+        }
+
+        if (payload?.type === "DATA_UPDATED" && payload?.itemType === "all") {
+          const isServerDriven =
+            payload?.serverDriven === true || payload?.source === "server";
+          if (isServerDriven) {
+            this.checkForThemeUpdates(true);
+          }
         }
       });
     } else if (typeof BroadcastChannel !== "undefined") {
@@ -750,6 +763,23 @@ const ThemeManager = {
 
     if (!resp.ok) {
       throw new Error(`Theme upsert failed (${resp.status})`);
+    }
+
+    const nowTs = Date.now();
+    if (
+      window.TokeUpdateSync &&
+      typeof window.TokeUpdateSync.publishDataUpdate === "function"
+    ) {
+      window.TokeUpdateSync.publishDataUpdate("update", "theme", {
+        source: "admin-theme",
+        timestamp: nowTs,
+      });
+
+      if (typeof window.TokeUpdateSync.requestServerCheck === "function") {
+        Promise.resolve(
+          window.TokeUpdateSync.requestServerCheck("theme-write", true)
+        ).catch(() => {});
+      }
     }
 
     return true;
