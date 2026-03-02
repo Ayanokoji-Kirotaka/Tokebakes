@@ -1,4 +1,4 @@
-<!-- ================== privacy.html ================== -->
+﻿<!-- ================== privacy.html ================== -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -88,6 +88,8 @@
         }
 
         document.documentElement.setAttribute("data-theme", savedMode);
+        document.documentElement.setAttribute("data-overlay-ready", "0");
+        document.documentElement.classList.add("preload-no-transitions");
         try {
           document.documentElement.style.colorScheme = savedMode;
           document.documentElement.style.backgroundColor =
@@ -112,6 +114,10 @@
           () => {
             link.dataset.loaded = "true";
             document.documentElement.classList.remove("theme-loading");
+            document.documentElement.setAttribute("data-overlay-ready", "1");
+            requestAnimationFrame(() => {
+              document.documentElement.classList.remove("preload-no-transitions");
+            });
             window.dispatchEvent(new CustomEvent("theme:ready"));
           },
           { once: true }
@@ -121,6 +127,10 @@
           () => {
             link.dataset.loaded = "true";
             document.documentElement.classList.remove("theme-loading");
+            document.documentElement.setAttribute("data-overlay-ready", "1");
+            requestAnimationFrame(() => {
+              document.documentElement.classList.remove("preload-no-transitions");
+            });
           },
           { once: true }
         );
@@ -128,9 +138,14 @@
         document.head.appendChild(link);
         setTimeout(() => {
           document.documentElement.classList.remove("theme-loading");
+          document.documentElement.setAttribute("data-overlay-ready", "1");
+          document.documentElement.classList.remove("preload-no-transitions");
         }, 4000);
       })();
     </script>
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#e67a00" />
+    <link rel="apple-touch-icon" href="images/icon-192.png" />
     <link rel="icon" href="images/favicon.webp" type="image/webp" />
     <link
       rel="preload"
@@ -170,7 +185,7 @@
           <ul>
             <li><a href="index.html">Home</a></li>
             <li><a href="menu.html">Menu</a></li>
-            <li><a href="gallery.html">Gallery</a></li>
+            <li><a href="specials.html">Specials</a></li>
           </ul>
           <a href="order.html" class="cart-link">
             <i class="fas fa-shopping-cart"></i>
@@ -250,3 +265,4 @@
     <script src="scripts/sw-register.js" defer></script>
   </body>
 </html>
+

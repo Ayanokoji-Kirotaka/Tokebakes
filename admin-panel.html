@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -68,6 +68,8 @@
         }
 
         document.documentElement.setAttribute("data-theme", savedMode);
+        document.documentElement.setAttribute("data-overlay-ready", "0");
+        document.documentElement.classList.add("preload-no-transitions");
         try {
           document.documentElement.style.colorScheme = savedMode;
           document.documentElement.style.backgroundColor =
@@ -92,6 +94,10 @@
           () => {
             link.dataset.loaded = "true";
             document.documentElement.classList.remove("theme-loading");
+            document.documentElement.setAttribute("data-overlay-ready", "1");
+            requestAnimationFrame(() => {
+              document.documentElement.classList.remove("preload-no-transitions");
+            });
             window.dispatchEvent(new CustomEvent("theme:ready"));
           },
           { once: true }
@@ -101,6 +107,11 @@
           () => {
             link.dataset.loaded = "true";
             document.documentElement.classList.remove("theme-loading");
+            document.documentElement.setAttribute("data-overlay-ready", "1");
+            requestAnimationFrame(() => {
+              document.documentElement.classList.remove("preload-no-transitions");
+            });
+            window.dispatchEvent(new CustomEvent("theme:ready"));
           },
           { once: true }
         );
@@ -108,6 +119,9 @@
         document.head.appendChild(link);
         setTimeout(() => {
           document.documentElement.classList.remove("theme-loading");
+          document.documentElement.setAttribute("data-overlay-ready", "1");
+          document.documentElement.classList.remove("preload-no-transitions");
+          window.dispatchEvent(new CustomEvent("theme:ready"));
         }, 4000);
       })();
     </script>
@@ -380,8 +394,8 @@
           <button class="admin-tab" data-tab="menu">
             <i class="fas fa-utensils"></i> Menu Items
           </button>
-          <button class="admin-tab" data-tab="gallery">
-            <i class="fas fa-images"></i> Gallery
+          <button class="admin-tab" data-tab="specials">
+            <i class="fas fa-tag"></i> Specials
           </button>
           <button class="admin-tab" data-tab="carousel">
             <i class="fas fa-images"></i> Hero Carousel
@@ -707,33 +721,33 @@
             </div>
           </div>
 
-          <!-- Gallery Tab -->
-          <div id="gallery-tab" class="tab-pane">
+          <!-- Specials Tab -->
+          <div id="specials-tab" class="tab-pane">
             <div class="admin-section-header">
-              <h2><i class="fas fa-images"></i> Manage Gallery</h2>
-              <p>Images that appear on the gallery page</p>
-              <button class="btn btn-admin" id="add-gallery-btn">
-                <i class="fas fa-plus"></i> Add Gallery Image
+              <h2><i class="fas fa-tag"></i> Manage Specials</h2>
+              <p>Promotional specials shown on the Specials page</p>
+              <button class="btn btn-admin" id="add-specials-btn">
+                <i class="fas fa-plus"></i> Add Special
               </button>
             </div>
 
             <div
               class="admin-form-container"
-              id="gallery-form-container"
+              id="specials-form-container"
               style="display: none"
             >
-              <form id="gallery-form" class="admin-form">
-                <input type="hidden" id="gallery-id" value="" />
+              <form id="specials-form" class="admin-form">
+                <input type="hidden" id="specials-id" value="" />
 
                 <div class="form-row">
                   <div class="form-group">
-                    <label for="gallery-alt"
-                      ><i class="fas fa-text-width"></i> Alt Text</label
+                    <label for="specials-title"
+                      ><i class="fas fa-heading"></i> Title</label
                     >
                     <input
                       type="text"
-                      id="gallery-alt"
-                      placeholder="Describe the image for accessibility"
+                      id="specials-title"
+                      placeholder="e.g., Assorted Cupcakes (Box of 6)"
                       required
                     />
                   </div>
@@ -741,13 +755,95 @@
 
                 <div class="form-row">
                   <div class="form-group">
-                    <label for="gallery-display-order"
+                    <label for="specials-price"
+                      ><i class="fas fa-tag"></i> Price (NGN)</label
+                    >
+                    <input
+                      type="number"
+                      id="specials-price"
+                      placeholder="4800"
+                      min="0"
+                      step="0.01"
+                      required
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="specials-original-price"
+                      ><i class="fas fa-tags"></i> Original Price (Optional)</label
+                    >
+                    <input
+                      type="number"
+                      id="specials-original-price"
+                      placeholder="6000"
+                      min="0"
+                      step="0.01"
+                    />
+                    <small class="form-help"
+                      >Discount chip auto-computes from original vs current price.</small
+                    >
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="specials-special-flag"
+                      ><i class="fas fa-bolt"></i> Show SPECIAL Badge</label
+                    >
+                    <select id="specials-special-flag">
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="specials-badge-right-text"
+                      ><i class="fas fa-font"></i> Badge Text (Optional)</label
+                    >
+                    <input
+                      type="text"
+                      id="specials-badge-right-text"
+                      placeholder="SPECIAL"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="specials-badge-right-icon"
+                      ><i class="fas fa-fire"></i> Badge Icon (Optional)</label
+                    >
+                    <input
+                      type="text"
+                      id="specials-badge-right-icon"
+                      placeholder="🔥"
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="specials-cta-label"
+                      ><i class="fas fa-bullhorn"></i> CTA Label (Optional)</label
+                    >
+                    <input
+                      type="text"
+                      id="specials-cta-label"
+                      placeholder="Order Now"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="specials-active"
+                      ><i class="fas fa-toggle-on"></i> Status</label
+                    >
+                    <select id="specials-active">
+                      <option value="true">Active</option>
+                      <option value="false">Inactive</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="specials-display-order"
                       ><i class="fas fa-sort-numeric-down"></i> Display
                       Order</label
                     >
                     <input
                       type="number"
-                      id="gallery-display-order"
+                      id="specials-display-order"
                       placeholder="Auto"
                       min="0"
                     />
@@ -756,30 +852,30 @@
 
                 <div class="form-row">
                   <div class="form-group">
-                    <label for="gallery-image"
+                    <label for="specials-image"
                       ><i class="fas fa-image"></i> Image</label
                     >
                     <input
                       type="file"
-                      id="gallery-image"
+                      id="specials-image"
                       accept="image/*"
                       required
                     />
                     <small class="form-help"
                       >Max 500KB. Images are stored in the cloud.</small
                     >
-                    <div class="image-preview" id="gallery-image-preview"></div>
+                    <div class="image-preview" id="specials-image-preview"></div>
                   </div>
                 </div>
 
                 <div class="form-actions">
                   <button type="submit" class="btn btn-admin">
-                    <i class="fas fa-save"></i> Save Image
+                    <i class="fas fa-save"></i> Save Special
                   </button>
                   <button
                     type="button"
                     class="btn btn-secondary"
-                    id="cancel-gallery"
+                    id="cancel-specials"
                   >
                     <i class="fas fa-times"></i> Cancel
                   </button>
@@ -787,11 +883,11 @@
               </form>
             </div>
 
-            <div class="gallery-admin-grid" id="gallery-admin-grid">
-              <!-- Gallery images will be loaded here -->
+            <div class="gallery-admin-grid" id="specials-admin-grid">
+              <!-- Specials will be loaded here -->
               <div class="empty-state">
-                <i class="fas fa-images"></i>
-                <p>No gallery images yet. Add your first image!</p>
+                <i class="fas fa-tag"></i>
+                <p>No specials yet. Add your first special!</p>
               </div>
             </div>
           </div>
@@ -1224,8 +1320,8 @@
                 <div class="value" id="stat-featured-items-total">0</div>
               </div>
               <div class="stats-card">
-                <h3>Gallery Items</h3>
-                <div class="value" id="stat-gallery-items-total">0</div>
+                <h3>Specials Items</h3>
+                <div class="value" id="stat-specials-items-total">0</div>
               </div>
               <div class="stats-card">
                 <h3>Carousel Items</h3>
@@ -1294,6 +1390,115 @@
                   <tbody id="stats-daily-body">
                     <tr>
                       <td colspan="6">No data yet.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="stats-table-card" id="stats-debug-panel">
+              <h3><i class="fas fa-bug"></i> State & Sync Debug</h3>
+              <p class="stats-status" id="debug-status-line">
+                Collecting diagnostics...
+              </p>
+
+              <div class="stats-cards-grid" id="debug-stats-grid">
+                <div class="stats-card">
+                  <h3>Active Theme</h3>
+                  <div class="value" id="debug-active-theme">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Theme CSS Path</h3>
+                  <div class="value" id="debug-theme-path">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Content Version</h3>
+                  <div class="value" id="debug-content-version">0</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Last Change Type</h3>
+                  <div class="value" id="debug-last-change-type">all</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Sync Mode</h3>
+                  <div class="value" id="debug-sync-mode">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Poll Interval</h3>
+                  <div class="value" id="debug-poll-interval">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Last Sync Check</h3>
+                  <div class="value" id="debug-last-sync-check">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>SW Status</h3>
+                  <div class="value" id="debug-sw-status">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>SW Version/Cache</h3>
+                  <div class="value" id="debug-sw-version">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>SW Last Update</h3>
+                  <div class="value" id="debug-sw-update-time">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Local Version</h3>
+                  <div class="value" id="debug-local-version">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Mismatch Flags</h3>
+                  <div class="value" id="debug-mismatch-flags">None</div>
+                </div>
+              </div>
+
+              <div class="stats-toolbar-actions">
+                <button class="btn btn-secondary" id="debug-force-check-btn">
+                  <i class="fas fa-sync"></i> Force Recheck Version
+                </button>
+                <button class="btn btn-secondary" id="debug-force-refetch-btn">
+                  <i class="fas fa-cloud-download-alt"></i> Force Refetch Content
+                </button>
+                <button class="btn btn-secondary" id="debug-clear-theme-cache-btn">
+                  <i class="fas fa-paint-roller"></i> Clear Theme Cache
+                </button>
+                <button class="btn btn-secondary" id="debug-clear-app-cache-btn">
+                  <i class="fas fa-broom"></i> Clear App Caches
+                </button>
+                <button class="btn btn-secondary" id="debug-soft-reload-btn">
+                  <i class="fas fa-redo-alt"></i> Soft Reload Shell
+                </button>
+              </div>
+
+              <div class="stats-table-wrap" style="margin-top: 1rem">
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>Metric</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody id="debug-metrics-body">
+                    <tr>
+                      <td colspan="2">No diagnostics yet.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="stats-table-wrap" style="margin-top: 1rem">
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Type</th>
+                      <th>Message</th>
+                    </tr>
+                  </thead>
+                  <tbody id="debug-errors-body">
+                    <tr>
+                      <td colspan="3">No recent errors.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -1395,7 +1600,7 @@
                   <ul>
                     <li>Featured: <span id="count-featured">0</span></li>
                     <li>Menu: <span id="count-menu">0</span></li>
-                    <li>Gallery: <span id="count-gallery">0</span></li>
+                    <li>Specials: <span id="count-specials">0</span></li>
                     <li>Carousel: <span id="count-carousel">0</span></li>
                   </ul>
                 </div>
@@ -1432,12 +1637,12 @@
                   <i class="fas fa-utensils"></i>
                 </a>
                 <a
-                  href="gallery.html"
+                  href="specials.html"
                   target="_blank"
                   class="social-icon"
-                  aria-label="View Gallery"
+                  aria-label="View Specials"
                 >
-                  <i class="fas fa-images"></i>
+                  <i class="fas fa-tag"></i>
                 </a>
               </div>
             </div>
@@ -1552,3 +1757,4 @@
     <script src="scripts/admin.js" defer></script>
   </body>
 </html>
+

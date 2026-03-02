@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -167,6 +167,8 @@
         }
 
         document.documentElement.setAttribute("data-theme", savedMode);
+        document.documentElement.setAttribute("data-overlay-ready", "0");
+        document.documentElement.classList.add("preload-no-transitions");
         try {
           document.documentElement.style.colorScheme = savedMode;
           document.documentElement.style.backgroundColor =
@@ -193,6 +195,10 @@
           () => {
             link.dataset.loaded = "true";
             document.documentElement.classList.remove("theme-loading");
+            document.documentElement.setAttribute("data-overlay-ready", "1");
+            requestAnimationFrame(() => {
+              document.documentElement.classList.remove("preload-no-transitions");
+            });
             window.dispatchEvent(new CustomEvent("theme:ready"));
           },
           { once: true }
@@ -202,6 +208,10 @@
           () => {
             link.dataset.loaded = "true";
             document.documentElement.classList.remove("theme-loading");
+            document.documentElement.setAttribute("data-overlay-ready", "1");
+            requestAnimationFrame(() => {
+              document.documentElement.classList.remove("preload-no-transitions");
+            });
           },
           { once: true }
         );
@@ -209,6 +219,8 @@
         document.head.appendChild(link);
         setTimeout(() => {
           document.documentElement.classList.remove("theme-loading");
+          document.documentElement.setAttribute("data-overlay-ready", "1");
+          document.documentElement.classList.remove("preload-no-transitions");
         }, 4000);
       })();
     </script>
@@ -297,7 +309,7 @@
               <a href="menu.html">Menu</a>
             </li>
             <li>
-              <a href="gallery.html">Gallery</a>
+              <a href="specials.html">Specials</a>
             </li>
           </ul>
 
@@ -457,3 +469,4 @@
     <script src="scripts/sw-register.js" defer></script>
   </body>
 </html>
+

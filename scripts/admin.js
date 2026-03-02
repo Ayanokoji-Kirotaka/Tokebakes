@@ -1,4 +1,4 @@
-/* ================== admin.js ================== */
+﻿/* ================== admin.js ================== */
 /* Toke Bakes Admin Panel - MODERN CONFIRMATION DIALOG VERSION */
 /* UPDATED WITH CAROUSEL FUNCTIONALITY */
 
@@ -39,10 +39,12 @@ class DataSyncManager {
     if (typeof queueStatsPanelRefresh === "function") {
       queueStatsPanelRefresh(700);
     }
+    const normalizedType = normalizeChangeType(itemType || "all");
 
     if (this.syncBus && typeof this.syncBus.publishDataUpdate === "function") {
-      this.syncBus.publishDataUpdate(operationType, itemType, {
+      this.syncBus.publishDataUpdate(operationType, normalizedType, {
         source: "admin",
+        lastChangeType: normalizedType,
         ...(extra || {}),
       });
 
@@ -62,7 +64,8 @@ class DataSyncManager {
         type: "DATA_UPDATED",
         timestamp: timestamp,
         operation: operationType,
-        itemType: itemType,
+        itemType: normalizedType,
+        lastChangeType: normalizedType,
         ...(extra || {}),
       });
     }
@@ -75,7 +78,8 @@ class DataSyncManager {
             type: "DATA_UPDATED",
             timestamp,
             operation: operationType,
-            itemType,
+            itemType: normalizedType,
+            lastChangeType: normalizedType,
             ...(extra || {}),
           },
         })
@@ -187,6 +191,8 @@ const PRODUCT_OPTION_ENDPOINTS = {
   values:
     window.API_ENDPOINTS?.MENU_OPTION_VALUES || "/rest/v1/product_option_values",
 };
+const SPECIALS_ENDPOINT =
+  window.API_ENDPOINTS?.SPECIALS || "/rest/v1/gallery";
 const STATS_ENDPOINTS = {
   counts: "/rest/v1/rpc/get_site_stats_counts",
   daily: "/rest/v1/rpc/get_site_stats_daily",
@@ -205,6 +211,14 @@ const menuOptionManagerState = {
   loading: false,
 };
 const CONTENT_VERSION_STORAGE_KEY = "toke_bakes_content_version";
+const LAST_CHANGE_TYPE_STORAGE_KEY = "toke_bakes_last_change_type";
+const LAST_SYNC_CHECK_STORAGE_KEY = "toke_bakes_last_sync_check_at";
+const SW_LAST_UPDATE_KEY = "toke_bakes_sw_last_update_detected_at";
+const ADMIN_ERROR_LOG_LIMIT = 30;
+const adminDiagnosticsState = {
+  errors: [],
+  lastCachePurgeAt: 0,
+};
 const adminActionLocks = new Set();
 const adminControlState = new WeakMap();
 const adminCrudProgressState = {
@@ -237,6 +251,44 @@ function parseContentVersion(raw) {
   return null;
 }
 
+function normalizeChangeType(raw) {
+  const value = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (
+    value === "menu_options" ||
+    value === "menu-options" ||
+    value === "menuoptions" ||
+    value === "option" ||
+    value === "options"
+  ) {
+    return "menu";
+  }
+  if (value === "specials") {
+    return "gallery";
+  }
+  if (["menu", "featured", "gallery", "carousel", "theme", "all"].includes(value)) {
+    return value;
+  }
+  return "all";
+}
+
+function parseUpdateSignalPayload(raw) {
+  const row = Array.isArray(raw) ? raw[0] : raw;
+  const version = parseContentVersion(row || raw);
+  if (!Number.isFinite(version)) return null;
+  const updatedAtRaw =
+    row && typeof row === "object" ? row.updated_at || row.updatedAt : null;
+  const parsedTs = updatedAtRaw ? Date.parse(updatedAtRaw) : NaN;
+  return {
+    contentVersion: version,
+    lastChangeType: normalizeChangeType(
+      row?.last_change_type || row?.change_type || row?.item_type || "all"
+    ),
+    updatedAtTs: Number.isNaN(parsedTs) ? 0 : Math.trunc(parsedTs),
+  };
+}
+
 function getStoredContentVersion() {
   try {
     return parseContentVersion(localStorage.getItem(CONTENT_VERSION_STORAGE_KEY)) || 0;
@@ -251,6 +303,41 @@ function setStoredContentVersion(version) {
   try {
     localStorage.setItem(CONTENT_VERSION_STORAGE_KEY, String(normalized));
   } catch {}
+}
+
+function getStoredLastChangeType() {
+  try {
+    return normalizeChangeType(
+      localStorage.getItem(LAST_CHANGE_TYPE_STORAGE_KEY) || "all"
+    );
+  } catch {
+    return "all";
+  }
+}
+
+function setStoredLastChangeType(changeType) {
+  try {
+    localStorage.setItem(
+      LAST_CHANGE_TYPE_STORAGE_KEY,
+      normalizeChangeType(changeType)
+    );
+  } catch {}
+}
+
+function recordAdminError(type, message, details = null) {
+  const entry = {
+    ts: Date.now(),
+    type: toSafeString(type, "error"),
+    message: toSafeString(message, "Unknown error"),
+    details:
+      details && typeof details === "object"
+        ? JSON.stringify(details).slice(0, 500)
+        : toSafeString(details).slice(0, 500),
+  };
+  adminDiagnosticsState.errors.unshift(entry);
+  if (adminDiagnosticsState.errors.length > ADMIN_ERROR_LOG_LIMIT) {
+    adminDiagnosticsState.errors.length = ADMIN_ERROR_LOG_LIMIT;
+  }
 }
 
 function setControlsBusy(controls = [], isBusy = false) {
@@ -559,9 +646,108 @@ function requestAdminDynamicCacheClear() {
     .catch(() => {});
 }
 
-async function fetchServerContentVersion() {
+function requestServiceWorkerMessage(type) {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return Promise.resolve(false);
+  }
+
+  const send = async (worker) => {
+    if (!worker) return false;
+    try {
+      worker.postMessage({ type });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (navigator.serviceWorker.controller) {
+    return send(navigator.serviceWorker.controller);
+  }
+
+  return navigator.serviceWorker
+    .getRegistration()
+    .then((registration) =>
+      send(registration?.active || registration?.waiting || registration?.installing)
+    )
+    .catch(() => false);
+}
+
+async function clearThemeCachesSafely() {
+  try {
+    await requestServiceWorkerMessage("CLEAR_THEME_CACHE");
+    if (typeof caches !== "undefined") {
+      const cacheNames = await caches.keys();
+      for (const cacheName of cacheNames) {
+        const cache = await caches.open(cacheName);
+        const entries = await cache.keys();
+        for (const request of entries) {
+          const url = request.url || "";
+          if (
+            /\/styles\/style\.css/i.test(url) ||
+            /\/styles\/theme-[a-z0-9-]+\.css/i.test(url)
+          ) {
+            await cache.delete(request);
+          }
+        }
+      }
+    }
+    adminDiagnosticsState.lastCachePurgeAt = Date.now();
+    return true;
+  } catch (error) {
+    recordAdminError("cache", "Failed to clear theme caches", {
+      message: error?.message || "",
+    });
+    return false;
+  }
+}
+
+async function clearAppCachesSafely() {
+  try {
+    await requestServiceWorkerMessage("CLEAR_DYNAMIC_CACHES");
+    if (typeof caches !== "undefined") {
+      const names = await caches.keys();
+      for (const name of names) {
+        if (name.startsWith("toke-bakes")) {
+          await caches.delete(name);
+        }
+      }
+    }
+    markPublicContentCacheDirty();
+    clearDataCache();
+    adminDiagnosticsState.lastCachePurgeAt = Date.now();
+    return true;
+  } catch (error) {
+    recordAdminError("cache", "Failed to clear app caches", {
+      message: error?.message || "",
+    });
+    return false;
+  }
+}
+
+async function fetchServerUpdateSignal() {
   try {
     const result = await secureRequest(
+      "/rest/v1/rpc/get_update_signal",
+      "POST",
+      {},
+      {
+        authRequired: true,
+        retries: 2,
+        timeout: 9000,
+        suppressNotifications: true,
+      }
+    );
+    const parsed = parseUpdateSignalPayload(result);
+    if (parsed && Number.isFinite(parsed.contentVersion)) {
+      setStoredContentVersion(parsed.contentVersion);
+      setStoredLastChangeType(parsed.lastChangeType);
+      return parsed;
+    }
+  } catch {}
+
+  try {
+    const legacyResult = await secureRequest(
       "/rest/v1/rpc/get_content_version",
       "POST",
       {},
@@ -572,22 +758,31 @@ async function fetchServerContentVersion() {
         suppressNotifications: true,
       }
     );
-    const parsed = parseContentVersion(result);
-    if (Number.isFinite(parsed) && parsed >= 0) {
-      setStoredContentVersion(parsed);
-      return parsed;
+    const parsedVersion = parseContentVersion(legacyResult);
+    if (Number.isFinite(parsedVersion) && parsedVersion >= 0) {
+      setStoredContentVersion(parsedVersion);
+      return {
+        contentVersion: parsedVersion,
+        lastChangeType: getStoredLastChangeType(),
+        updatedAtTs: 0,
+      };
     }
   } catch {}
 
-  return getStoredContentVersion();
+  return {
+    contentVersion: getStoredContentVersion(),
+    lastChangeType: getStoredLastChangeType(),
+    updatedAtTs: 0,
+  };
 }
 
-async function bumpServerContentVersion() {
+async function bumpServerUpdateSignal(changeType = "all") {
+  const normalizedType = normalizeChangeType(changeType);
   try {
     const result = await secureRequest(
-      "/rest/v1/rpc/bump_content_version",
+      "/rest/v1/rpc/bump_update_signal",
       "POST",
-      {},
+      { p_change_type: normalizedType },
       {
         authRequired: true,
         retries: 2,
@@ -595,11 +790,31 @@ async function bumpServerContentVersion() {
         suppressNotifications: true,
       }
     );
-
     const parsed = parseContentVersion(result);
     if (Number.isFinite(parsed) && parsed >= 0) {
       setStoredContentVersion(parsed);
+      setStoredLastChangeType(normalizedType);
       return parsed;
+    }
+  } catch {}
+
+  try {
+    const legacyBump = await secureRequest(
+      "/rest/v1/rpc/bump_content_version",
+      "POST",
+      {},
+      {
+        authRequired: true,
+        retries: 1,
+        timeout: 9000,
+        suppressNotifications: true,
+      }
+    );
+    const parsedLegacy = parseContentVersion(legacyBump);
+    if (Number.isFinite(parsedLegacy) && parsedLegacy >= 0) {
+      setStoredContentVersion(parsedLegacy);
+      setStoredLastChangeType(normalizedType);
+      return parsedLegacy;
     }
   } catch {}
 
@@ -613,6 +828,8 @@ async function bumpServerContentVersion() {
       {
         key: "content_version",
         value: String(fallback),
+        version: fallback,
+        last_change_type: normalizedType,
         updated_at: new Date().toISOString(),
       },
       {
@@ -624,27 +841,30 @@ async function bumpServerContentVersion() {
   } catch {}
 
   setStoredContentVersion(fallback);
+  setStoredLastChangeType(normalizedType);
   return fallback;
 }
 
-async function ensureContentVersionAfterWrite(previousVersion = null) {
+async function ensureContentVersionAfterWrite(previousVersion = null, changeType = "all") {
   const before =
     Number.isFinite(previousVersion) && previousVersion >= 0
       ? previousVersion
-      : await fetchServerContentVersion();
+      : (await fetchServerUpdateSignal()).contentVersion;
 
-  const current = await fetchServerContentVersion();
+  const currentSignal = await fetchServerUpdateSignal();
+  const current = currentSignal.contentVersion;
   if (Number.isFinite(current) && current > before) {
     return current;
   }
 
-  const bumped = await bumpServerContentVersion();
+  const bumped = await bumpServerUpdateSignal(changeType);
   if (Number.isFinite(bumped) && bumped >= 0) {
     return bumped;
   }
 
   const fallback = Math.max(before || 0, getStoredContentVersion() || 0) + 1;
   setStoredContentVersion(fallback);
+  setStoredLastChangeType(changeType);
   return fallback;
 }
 
@@ -685,7 +905,7 @@ function getEndpointForType(itemType) {
   const endpoints = {
     featured: API_ENDPOINTS.FEATURED,
     menu: API_ENDPOINTS.MENU,
-    gallery: API_ENDPOINTS.GALLERY,
+    gallery: SPECIALS_ENDPOINT,
     carousel: API_ENDPOINTS.CAROUSEL,
   };
   return endpoints[itemType] || null;
@@ -747,8 +967,8 @@ async function loadAdminTabData(tabId, force = false) {
     return;
   }
 
-  if (tabId === "gallery") {
-    await renderGalleryItems();
+  if (tabId === "specials") {
+    await renderSpecialsItems();
     loadedAdminTabs.add(tabId);
     return;
   }
@@ -774,7 +994,7 @@ function preloadAdminTabsInBackground() {
   const run = () => {
     Promise.allSettled([
       loadAdminTabData("menu"),
-      loadAdminTabData("gallery"),
+      loadAdminTabData("specials"),
       loadAdminTabData("carousel"),
     ]).catch(() => {});
   };
@@ -830,7 +1050,7 @@ function renderStatsCountsRow(row = {}) {
     "stat-menu-items-total": "menu_items_total",
     "stat-menu-items-active": "menu_items_active",
     "stat-featured-items-total": "featured_items_total",
-    "stat-gallery-items-total": "gallery_items_total",
+    "stat-specials-items-total": "gallery_items_total",
     "stat-carousel-items-total": "carousel_items_total",
     "stat-option-groups-total": "option_groups_total",
     "stat-option-values-total": "option_values_total",
@@ -956,6 +1176,7 @@ async function loadStatsPanel(force = false) {
 
     renderStatsCountsRow(countsRow);
     renderStatsDailyRows(Array.isArray(dailyResult) ? dailyResult : []);
+    await loadDebugStatePanel(countsRow);
 
     statsPanelState.lastLoadedDays = days;
     statsPanelState.lastRefreshAt = Date.now();
@@ -975,6 +1196,369 @@ async function loadStatsPanel(force = false) {
       refreshBtn.disabled = false;
       refreshBtn.removeAttribute("aria-busy");
     }
+  }
+}
+
+function formatDebugDate(value) {
+  if (!value) return "-";
+  const date = new Date(Number(value) || value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString();
+}
+
+function setDebugValue(elementId, value) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  el.textContent = toSafeString(value, "-");
+}
+
+function setDebugStatusLine(message, isError = false) {
+  const el = document.getElementById("debug-status-line");
+  if (!el) return;
+  el.textContent = message;
+  el.style.color = isError ? "#c62828" : "var(--text-light)";
+}
+
+async function sendMessageToServiceWorker(worker, message, timeoutMs = 1500) {
+  if (!worker || typeof MessageChannel === "undefined") return null;
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    channel.port1.onmessage = (event) => {
+      clearTimeout(timer);
+      finish(event?.data || null);
+    };
+    try {
+      worker.postMessage(message, [channel.port2]);
+    } catch {
+      clearTimeout(timer);
+      finish(null);
+    }
+  });
+}
+
+async function getServiceWorkerDebugSnapshot() {
+  const snapshot = {
+    supported: typeof navigator !== "undefined" && "serviceWorker" in navigator,
+    registered: false,
+    controlling: false,
+    version: "-",
+    cacheNames: [],
+    lastUpdateDetectedAt: 0,
+  };
+  if (!snapshot.supported) return snapshot;
+
+  try {
+    snapshot.controlling = Boolean(navigator.serviceWorker.controller);
+    const registration = await navigator.serviceWorker.getRegistration();
+    snapshot.registered = Boolean(registration);
+    const worker =
+      navigator.serviceWorker.controller ||
+      registration?.active ||
+      registration?.waiting ||
+      registration?.installing ||
+      null;
+
+    const statusResp = await sendMessageToServiceWorker(worker, {
+      type: "GET_SW_STATUS",
+    });
+    if (statusResp?.ok) {
+      snapshot.version = statusResp.version || "-";
+      snapshot.cacheNames = Array.isArray(statusResp.cacheNames)
+        ? statusResp.cacheNames
+        : [];
+    }
+  } catch (error) {
+    recordAdminError("sw", "Failed to inspect service worker", {
+      message: error?.message || "",
+    });
+  }
+
+  try {
+    snapshot.lastUpdateDetectedAt =
+      Number(localStorage.getItem(SW_LAST_UPDATE_KEY) || "0") || 0;
+  } catch {}
+
+  return snapshot;
+}
+
+async function getCacheHealthSnapshot() {
+  const snapshot = {
+    names: [],
+    totalEntries: 0,
+    counts: [],
+  };
+  if (typeof caches === "undefined") return snapshot;
+  try {
+    const names = await caches.keys();
+    snapshot.names = names;
+    for (const name of names) {
+      const cache = await caches.open(name);
+      const entries = await cache.keys();
+      snapshot.counts.push({ name, count: entries.length });
+      snapshot.totalEntries += entries.length;
+    }
+  } catch (error) {
+    recordAdminError("cache", "Failed to inspect cache storage", {
+      message: error?.message || "",
+    });
+  }
+  return snapshot;
+}
+
+async function fetchAdminUpdateSignal() {
+  try {
+    const result = await secureRequest(
+      "/rest/v1/rpc/get_update_signal",
+      "POST",
+      {},
+      { authRequired: true, suppressNotifications: true }
+    );
+    return parseUpdateSignalPayload(result);
+  } catch {
+    return {
+      contentVersion: getStoredContentVersion(),
+      lastChangeType: getStoredLastChangeType(),
+      updatedAtTs: 0,
+    };
+  }
+}
+
+async function fetchAdminStateSnapshot() {
+  try {
+    return await secureRequest(
+      "/rest/v1/rpc/get_site_state_snapshot",
+      "POST",
+      {},
+      { authRequired: true, suppressNotifications: true }
+    );
+  } catch {
+    return null;
+  }
+}
+
+function renderDebugErrorLog() {
+  const body = document.getElementById("debug-errors-body");
+  if (!body) return;
+  const rows = adminDiagnosticsState.errors.slice(0, ADMIN_ERROR_LOG_LIMIT);
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="3">No recent errors.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows
+    .map(
+      (entry) => `
+        <tr>
+          <td>${escapeHtml(formatDebugDate(entry.ts))}</td>
+          <td>${escapeHtml(entry.type)}</td>
+          <td>${escapeHtml(entry.message)}</td>
+        </tr>
+      `
+    )
+    .join("");
+}
+
+function renderDebugMetricsRows(rows = []) {
+  const body = document.getElementById("debug-metrics-body");
+  if (!body) return;
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="2">No diagnostics yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = rows
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeHtml(toSafeString(row.label))}</td>
+          <td>${escapeHtml(toSafeString(row.value))}</td>
+        </tr>
+      `
+    )
+    .join("");
+}
+
+async function loadDebugStatePanel(countsRow = {}) {
+  setDebugStatusLine("Collecting diagnostics...");
+  try {
+    const [signal, rawStateSnapshot, swSnapshot, cacheSnapshot, dbTheme] =
+      await Promise.all([
+        fetchAdminUpdateSignal(),
+        fetchAdminStateSnapshot(),
+        getServiceWorkerDebugSnapshot(),
+        getCacheHealthSnapshot(),
+        window.ThemeManager &&
+        typeof window.ThemeManager.fetchActiveThemeFromDatabase === "function"
+          ? window.ThemeManager.fetchActiveThemeFromDatabase(true).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+    const stateSnapshot = Array.isArray(rawStateSnapshot)
+      ? rawStateSnapshot[0] || null
+      : rawStateSnapshot;
+
+    const syncStatus =
+      window.TokeUpdateSync && typeof window.TokeUpdateSync.getStatus === "function"
+        ? window.TokeUpdateSync.getStatus()
+        : null;
+    const localVersion = getStoredContentVersion();
+    const localChangeType = getStoredLastChangeType();
+    const lastSyncCheck =
+      Number(localStorage.getItem(LAST_SYNC_CHECK_STORAGE_KEY) || "0") || 0;
+    const lastAppliedThemeTs = Math.max(
+      Number(localStorage.getItem("toke_bakes_global_theme_updated_at") || "0") || 0,
+      Number(localStorage.getItem("toke_bakes_theme_last_update") || "0") || 0
+    );
+
+    const localThemePath =
+      window.ThemeManager?.currentTheme ||
+      localStorage.getItem("toke_bakes_global_theme_css") ||
+      localStorage.getItem("toke_bakes_css_theme") ||
+      "styles/style.css";
+    const themePath = dbTheme?.css_file || localThemePath;
+    const themeLabel =
+      dbTheme?.theme_name ||
+      window.ThemeManager?.getThemeName?.(themePath) ||
+      themePath;
+
+    setDebugValue("debug-active-theme", themeLabel);
+    setDebugValue("debug-theme-path", themePath);
+    setDebugValue("debug-content-version", String(signal?.contentVersion || 0));
+    setDebugValue("debug-last-change-type", signal?.lastChangeType || "all");
+    setDebugValue(
+      "debug-sync-mode",
+      syncStatus ? `${syncStatus.mode} (${syncStatus.status})` : "fallback"
+    );
+    setDebugValue(
+      "debug-poll-interval",
+      syncStatus?.pollIntervalMs ? `${syncStatus.pollIntervalMs}ms` : "-"
+    );
+    setDebugValue("debug-last-sync-check", formatDebugDate(lastSyncCheck));
+    setDebugValue(
+      "debug-sw-status",
+      swSnapshot.supported
+        ? `${swSnapshot.registered ? "registered" : "not-registered"} / ${
+            swSnapshot.controlling ? "controlling" : "not-controlling"
+          }`
+        : "unsupported"
+    );
+    setDebugValue(
+      "debug-sw-version",
+      `${swSnapshot.version} | ${swSnapshot.cacheNames.length} caches`
+    );
+    setDebugValue(
+      "debug-sw-update-time",
+      formatDebugDate(swSnapshot.lastUpdateDetectedAt)
+    );
+    setDebugValue("debug-local-version", `${localVersion} (${localChangeType})`);
+
+    const mismatchFlags = [];
+    if (localVersion !== Number(signal?.contentVersion || 0)) {
+      mismatchFlags.push("version");
+    }
+    if (normalizeChangeType(localChangeType) !== normalizeChangeType(signal?.lastChangeType)) {
+      mismatchFlags.push("change-type");
+    }
+    if (dbTheme?.css_file && localThemePath && dbTheme.css_file !== localThemePath) {
+      mismatchFlags.push("theme");
+    }
+    setDebugValue(
+      "debug-mismatch-flags",
+      mismatchFlags.length ? mismatchFlags.join(", ") : "None"
+    );
+
+    const cacheBreakdown = cacheSnapshot.counts.length
+      ? cacheSnapshot.counts
+          .map((entry) => `${entry.name}: ${entry.count}`)
+          .join(" | ")
+      : "None";
+    const signalUpdatedAt =
+      signal?.updatedAtTs && Number(signal.updatedAtTs) > 0
+        ? formatDebugDate(signal.updatedAtTs)
+        : "-";
+    const snapshotLastUpdated =
+      stateSnapshot?.last_updated_at ||
+      stateSnapshot?.site_last_updated_at ||
+      signalUpdatedAt;
+    const metricsRows = [
+      {
+        label: "Menu/Specials/Carousel totals",
+        value: `${countsRow?.menu_items_total || 0} / ${countsRow?.gallery_items_total || 0} / ${
+          countsRow?.carousel_items_total || 0
+        }`,
+      },
+      {
+        label: "Signal updated at",
+        value: signalUpdatedAt,
+      },
+      {
+        label: "Last table update (snapshot)",
+        value: snapshotLastUpdated,
+      },
+      {
+        label: "Menu/Featured table updated",
+        value: `${formatDebugDate(stateSnapshot?.menu_last_updated_at)} / ${formatDebugDate(
+          stateSnapshot?.featured_last_updated_at
+        )}`,
+      },
+      {
+        label: "Specials/Carousel updated",
+        value: `${formatDebugDate(stateSnapshot?.gallery_last_updated_at)} / ${formatDebugDate(
+          stateSnapshot?.carousel_last_updated_at
+        )}`,
+      },
+      {
+        label: "Theme/Options updated",
+        value: `${formatDebugDate(stateSnapshot?.themes_last_updated_at)} / ${formatDebugDate(
+          stateSnapshot?.options_last_updated_at
+        )}`,
+      },
+      {
+        label: "Sync bus leader",
+        value: syncStatus ? String(Boolean(syncStatus.isLeader)) : "-",
+      },
+      {
+        label: "Sync bus last successful check",
+        value: syncStatus?.lastServerCheckOkAt
+          ? formatDebugDate(syncStatus.lastServerCheckOkAt)
+          : "-",
+      },
+      {
+        label: "Cache names",
+        value: cacheSnapshot.names.length
+          ? cacheSnapshot.names.join(", ")
+          : "None",
+      },
+      {
+        label: "Cache entry breakdown",
+        value: cacheBreakdown,
+      },
+      {
+        label: "Approx cache entries",
+        value: `${cacheSnapshot.totalEntries}`,
+      },
+      {
+        label: "Last applied theme snapshot",
+        value: formatDebugDate(lastAppliedThemeTs),
+      },
+      {
+        label: "Last cache purge",
+        value: formatDebugDate(adminDiagnosticsState.lastCachePurgeAt),
+      },
+    ];
+    renderDebugMetricsRows(metricsRows);
+    renderDebugErrorLog();
+    setDebugStatusLine(`Diagnostics refreshed at ${new Date().toLocaleTimeString()}.`);
+  } catch (error) {
+    recordAdminError("debug", "Failed to load diagnostics panel", {
+      message: error?.message || "",
+    });
+    renderDebugErrorLog();
+    setDebugStatusLine("Failed to load diagnostics.", true);
   }
 }
 
@@ -1031,7 +1615,7 @@ class ModernConfirmationDialog {
       let itemType = "Item";
       if (itemDetails.type === "featured") itemType = "Featured Item";
       if (itemDetails.type === "menu") itemType = "Menu Item";
-      if (itemDetails.type === "gallery") itemType = "Gallery Image";
+      if (itemDetails.type === "gallery") itemType = "Special";
       if (itemDetails.type === "carousel") itemType = "Carousel Image"; // Added
 
       titleEl.textContent = `Delete ${itemType}`;
@@ -1047,7 +1631,7 @@ class ModernConfirmationDialog {
           }
           ${
             itemDetails.price
-              ? `<p><strong>Price:</strong> ₦${formatPrice(
+              ? `<p><strong>Price:</strong> \u20A6${formatPrice(
                   itemDetails.price
                 )}</p>`
               : ""
@@ -1245,7 +1829,7 @@ function getAdminListContainer(itemType) {
   const selectors = {
     featured: "featured-items-list",
     menu: "menu-items-list",
-    gallery: "gallery-admin-grid",
+    gallery: "specials-admin-grid",
     carousel: "carousel-admin-grid",
   };
   return document.getElementById(selectors[itemType] || "");
@@ -1293,14 +1877,21 @@ function buildMenuAdminCardElement(item = {}) {
   return card;
 }
 
-function buildGalleryAdminCardElement(item = {}, badgeOrder = null) {
+function buildSpecialsAdminCardElement(item = {}, badgeOrder = null) {
   const id = toSafeString(item.id).trim();
   if (!id) return null;
   const imgSrc = resolveImageForDisplay(
     resolveRecordImage(item),
     ADMIN_IMAGE_PLACEHOLDERS.gallery
   );
-  const alt = toSafeString(item.alt, "Gallery image");
+  const title = toSafeString(item.title || item.alt, "Special Offer");
+  const price = toMoney(item.price, 0);
+  const originalPrice =
+    item.original_price === null || item.original_price === undefined
+      ? null
+      : toMoney(item.original_price, 0);
+  const isActive = parseRecordBoolean(item.is_active, true);
+  const isSpecialBadge = parseRecordBoolean(item.is_special, false);
   const orderValue = parseDisplayOrderValue(item.display_order, 0);
   const badgeValue =
     Number.isFinite(Number(badgeOrder)) && Number(badgeOrder) > 0
@@ -1313,16 +1904,26 @@ function buildGalleryAdminCardElement(item = {}, badgeOrder = null) {
   card.dataset.id = id;
   card.dataset.order = String(orderValue);
   card.innerHTML = `
-    <img src="${imgSrc}" alt="${escapeHtml(alt)}" loading="lazy" decoding="async"
+    <img src="${imgSrc}" alt="${escapeHtml(title)}" loading="lazy" decoding="async"
          onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.gallery}';">
     <div class="gallery-admin-overlay">
-      <p><strong>Alt Text:</strong> ${escapeHtml(alt)}</p>
+      <p><strong>Title:</strong> ${escapeHtml(title)}</p>
+      <p><strong>Price:</strong> \u20A6${escapeHtml(formatPrice(price))}${
+        Number.isFinite(originalPrice) && originalPrice > price
+          ? ` <span style="text-decoration:line-through;opacity:.75;">(Was \u20A6${escapeHtml(
+              formatPrice(originalPrice)
+            )})</span>`
+          : ""
+      }</p>
+      <p><strong>Status:</strong> ${isActive ? "Active" : "Inactive"}${
+        isSpecialBadge ? " | Badge On" : ""
+      }</p>
       <p><strong>Order:</strong> <span data-order-label="true">${badgeValue}</span></p>
       <div class="gallery-admin-actions">
-        <button class="btn-edit" onclick="editGalleryItem('${escapedId}')">
+        <button class="btn-edit" onclick="editSpecialsItem('${escapedId}')">
           <i class="fas fa-edit"></i> Edit
         </button>
-        <button class="btn-delete" onclick="deleteGalleryItem('${escapedId}')">
+        <button class="btn-delete" onclick="deleteSpecialsItem('${escapedId}')">
           <i class="fas fa-trash"></i> Delete
         </button>
       </div>
@@ -1375,7 +1976,7 @@ function buildCarouselAdminCardElement(item = {}, badgeOrder = null) {
 
 function buildAdminCardElement(itemType, item, badgeOrder = null) {
   if (itemType === "menu") return buildMenuAdminCardElement(item);
-  if (itemType === "gallery") return buildGalleryAdminCardElement(item, badgeOrder);
+  if (itemType === "gallery") return buildSpecialsAdminCardElement(item, badgeOrder);
   if (itemType === "carousel") return buildCarouselAdminCardElement(item, badgeOrder);
   return null;
 }
@@ -1580,7 +2181,7 @@ function removeItemFromUi(itemType, id) {
   const selectorMap = {
     featured: `#featured-items-list [data-id="${id}"]`,
     menu: `#menu-items-list [data-id="${id}"]`,
-    gallery: `#gallery-admin-grid [data-id="${id}"]`,
+    gallery: `#specials-admin-grid [data-id="${id}"]`,
     carousel: `#carousel-admin-grid [data-id="${id}"]`,
   };
   const target = document.querySelector(selectorMap[itemType]);
@@ -1605,7 +2206,7 @@ function refreshListAfterDelete(itemType, forceRefresh = false) {
       ]);
     }
     if (itemType === "gallery") {
-      return renderGalleryItems(forceRefresh);
+      return renderSpecialsItems(forceRefresh);
     }
     if (itemType === "carousel") {
       return renderCarouselItems(forceRefresh);
@@ -1628,7 +2229,7 @@ async function deleteItemByType(id, itemType) {
   const labels = {
     featured: "Featured item",
     menu: "Menu item",
-    gallery: "Gallery image",
+    gallery: "Special",
     carousel: "Carousel image",
   };
   const label = labels[itemType] || "Item";
@@ -1650,7 +2251,7 @@ async function deleteItemByType(id, itemType) {
       progressTitle: `Deleting ${label.toLowerCase()}`,
       progressText: "Removing item...",
       task: async (progress) => {
-        const baselineVersion = await fetchServerContentVersion();
+        const baselineVersion = (await fetchServerUpdateSignal()).contentVersion;
         await secureRequest(`${endpoint}?id=eq.${id}`, "DELETE", null, {
           authRequired: true,
         });
@@ -1675,7 +2276,8 @@ async function deleteItemByType(id, itemType) {
         }
 
         const contentVersion = await ensureContentVersionAfterWrite(
-          baselineVersion
+          baselineVersion,
+          itemType
         );
 
         const refreshPromise = refreshListAfterDelete(itemType, true);
@@ -1713,7 +2315,7 @@ async function deleteMenuItem(id) {
   return deleteItemByType(id, "menu");
 }
 
-async function deleteGalleryItem(id) {
+async function deleteSpecialsItem(id) {
   return deleteItemByType(id, "gallery");
 }
 
@@ -2146,7 +2748,7 @@ async function compressImage(file, maxSizeKB = 300) {
     // 1. VALIDATION WITH USER-FRIENDLY ERRORS
     if (!file.type.startsWith("image/")) {
       showNotification(
-        "❌ Please select an image file (JPEG, PNG, WebP, etc.)",
+        "âŒ Please select an image file (JPEG, PNG, WebP, etc.)",
         "error"
       );
       reject(new Error("File is not an image"));
@@ -2162,7 +2764,7 @@ async function compressImage(file, maxSizeKB = 300) {
     ];
     if (unsupportedFormats.includes(file.type.toLowerCase())) {
       showNotification(
-        "❌ Please convert HEIC/TIFF/RAW images to JPEG or PNG first",
+        "âŒ Please convert HEIC/TIFF/RAW images to JPEG or PNG first",
         "error"
       );
       reject(new Error("Unsupported image format"));
@@ -2171,13 +2773,13 @@ async function compressImage(file, maxSizeKB = 300) {
 
     if (file.size > 10 * 1024 * 1024) {
       // Increased to 10MB for food photography
-      showNotification("❌ Image is too large! Maximum size is 10MB", "error");
+      showNotification("âŒ Image is too large! Maximum size is 10MB", "error");
       reject(new Error("Image must be less than 10MB"));
       return;
     }
 
     // Show compression started notification
-    showNotification("🔄 Optimizing your image...", "info");
+    showNotification("ðŸ”„ Optimizing your image...", "info");
 
     const reader = new FileReader();
 
@@ -2220,7 +2822,7 @@ async function compressImage(file, maxSizeKB = 300) {
 
             // 3. WEBP-OPTIMIZED COMPRESSION WITH SMART QUALITY ADJUSTMENT
             showNotification(
-              "🔧 Adjusting quality for optimal file size...",
+              "ðŸ”§ Adjusting quality for optimal file size...",
               "info"
             );
 
@@ -2238,17 +2840,17 @@ async function compressImage(file, maxSizeKB = 300) {
 
             let successMessage;
             if (savings > 75) {
-              successMessage = `✅ Amazing compression! ${originalKB}KB → ${compressedKB}KB (${savings}% saved)`;
+              successMessage = `âœ… Amazing compression! ${originalKB}KB â†’ ${compressedKB}KB (${savings}% saved)`;
             } else if (savings > 50) {
-              successMessage = `✅ Great optimization! ${originalKB}KB → ${compressedKB}KB`;
+              successMessage = `âœ… Great optimization! ${originalKB}KB â†’ ${compressedKB}KB`;
             } else if (savings > 20) {
-              successMessage = `✅ Image optimized to ${compressedKB}KB`;
+              successMessage = `âœ… Image optimized to ${compressedKB}KB`;
             } else {
-              successMessage = `✅ Image ready at ${compressedKB}KB (high quality preserved)`;
+              successMessage = `âœ… Image ready at ${compressedKB}KB (high quality preserved)`;
             }
 
             // Add format info
-            successMessage += ` • ${compressionResult.format.toUpperCase()}`;
+            successMessage += ` â€¢ ${compressionResult.format.toUpperCase()}`;
 
             showNotification(successMessage, "success");
 
@@ -2263,7 +2865,7 @@ async function compressImage(file, maxSizeKB = 300) {
             };
 
             debugLog(
-              `🍰 Food Image Compressed: ${originalKB}KB → ${compressedKB}KB (${savings}% saved) ` +
+              `ðŸ° Food Image Compressed: ${originalKB}KB â†’ ${compressedKB}KB (${savings}% saved) ` +
                 `as ${compressionResult.format.toUpperCase()} at ${(
                   compressionResult.quality * 100
                 ).toFixed(0)}% quality`
@@ -2273,7 +2875,7 @@ async function compressImage(file, maxSizeKB = 300) {
           } catch (error) {
             // 6. PROCESSING ERROR WITH HELPFUL GUIDANCE
             showNotification(
-              "❌ Failed to process image. Try a different format or smaller size.",
+              "âŒ Failed to process image. Try a different format or smaller size.",
               "error"
             );
             console.error("Image processing failed:", error);
@@ -2284,7 +2886,7 @@ async function compressImage(file, maxSizeKB = 300) {
 
       img.onerror = () => {
         showNotification(
-          "❌ Could not load image. The file may be corrupted.",
+          "âŒ Could not load image. The file may be corrupted.",
           "error"
         );
         reject(new Error("Failed to load image"));
@@ -2295,7 +2897,7 @@ async function compressImage(file, maxSizeKB = 300) {
 
     reader.onerror = () => {
       showNotification(
-        "❌ Error reading file. Please try selecting the image again.",
+        "âŒ Error reading file. Please try selecting the image again.",
         "error"
       );
       reject(new Error("Failed to read file"));
@@ -2347,7 +2949,7 @@ function optimizeImage(canvas, maxSizeKB) {
   } catch (error) {
     // Secondary: WebP failed, use JPEG fallback (5% of users)
     showNotification(
-      "ℹ️ Using standard format for maximum compatibility",
+      "â„¹ï¸ Using standard format for maximum compatibility",
       "info"
     );
     quality = 0.82;
@@ -2641,25 +3243,25 @@ function createNotification(notification) {
   const themes = {
     success: {
       background: "linear-gradient(135deg, #4caf50, #2e7d32)",
-      icon: "✅",
+      icon: "âœ…",
       border: "2px solid #2e7d32",
       iconBg: "rgba(76, 175, 80, 0.2)",
     },
     error: {
       background: "linear-gradient(135deg, #e64a4a, #c62828)",
-      icon: "❌",
+      icon: "âŒ",
       border: "2px solid #c62828",
       iconBg: "rgba(230, 74, 74, 0.2)",
     },
     warning: {
       background: "linear-gradient(135deg, #ff9800, #ef6c00)",
-      icon: "⚠️",
+      icon: "âš ï¸",
       border: "2px solid #ef6c00",
       iconBg: "rgba(255, 152, 0, 0.2)",
     },
     info: {
       background: "linear-gradient(135deg, #2196f3, #1565c0)",
-      icon: "ℹ️",
+      icon: "â„¹ï¸",
       border: "2px solid #1565c0",
       iconBg: "rgba(33, 150, 243, 0.2)",
     },
@@ -3148,6 +3750,10 @@ async function secureRequest(
 
       if (!response.ok) {
         const errorData = await response.text();
+        recordAdminError("fetch", `HTTP ${response.status} ${endpoint}`, {
+          method,
+          status: response.status,
+        });
 
         if (response.status === 401) {
           if (!suppressNotifications) {
@@ -3213,10 +3819,14 @@ async function secureRequest(
     } catch (error) {
       clearTimeout(timeoutId);
 
-      if (attempt === retries) {
-        console.error("API request failed after retries:", error);
+        if (attempt === retries) {
+          console.error("API request failed after retries:", error);
+          recordAdminError("fetch", `Request failed: ${endpoint}`, {
+            method,
+            message: error?.message || "Unknown error",
+          });
 
-        if (!suppressNotifications) {
+          if (!suppressNotifications) {
           if (error.name === "AbortError") {
             showNotification("Request timeout. Please try again.", "error");
           } else if (error.message.includes("Failed to fetch")) {
@@ -3250,7 +3860,7 @@ const CACHE_TTL = 60000; // 1 minute
 const ORDERING_MAP = {
   [API_ENDPOINTS.FEATURED]: "display_order.asc,created_at.desc",
   [API_ENDPOINTS.MENU]: "display_order.asc,created_at.desc",
-  [API_ENDPOINTS.GALLERY]: "display_order.asc,created_at.desc",
+  [SPECIALS_ENDPOINT]: "display_order.asc,created_at.desc",
   [API_ENDPOINTS.CAROUSEL]: "display_order.asc,created_at.desc",
   [API_ENDPOINTS.THEMES]: "is_active.desc,updated_at.desc,created_at.desc",
 };
@@ -3321,8 +3931,8 @@ function markPublicContentCacheDirty() {
     if (window.API_ENDPOINTS?.FEATURED) {
       localStorage.removeItem(`${window.API_ENDPOINTS.FEATURED}_data`);
     }
-    if (window.API_ENDPOINTS?.GALLERY) {
-      localStorage.removeItem(`${window.API_ENDPOINTS.GALLERY}_data`);
+    if (SPECIALS_ENDPOINT) {
+      localStorage.removeItem(`${SPECIALS_ENDPOINT}_data`);
     }
     localStorage.removeItem("toke_bakes_menu_cache_v2");
     localStorage.removeItem("toke_bakes_menu_options_cache_v1");
@@ -3426,7 +4036,7 @@ async function checkIsAdmin() {
 
 async function checkLogin(email, password) {
   try {
-    debugLog("🔐 Login attempt for:", email);
+    debugLog("ðŸ” Login attempt for:", email);
 
     const storedAttempts = JSON.parse(
       sessionStorage.getItem("login_attempts") || '{"count":0,"timestamp":0}'
@@ -3478,7 +4088,7 @@ async function checkLogin(email, password) {
     sessionStorage.removeItem("login_attempts");
     startSessionTimeout();
     setupActivityMonitoring();
-    debugLog("✅ Login successful!");
+    debugLog("âœ… Login successful!");
     return true;
   } catch (error) {
     console.error("Login error:", error);
@@ -3563,11 +4173,11 @@ function logoutAdmin() {
   // Clear forms
   resetFeaturedForm();
   resetMenuForm();
-  resetGalleryForm();
+  resetSpecialsForm();
   resetCarouselForm(); // Added
   closeMenuOptionsManager();
 
-  debugLog("✅ Logged out successfully");
+  debugLog("âœ… Logged out successfully");
 }
 
 // Updated password change for Supabase Auth
@@ -3637,7 +4247,7 @@ async function saveItem(itemType, formData, options = {}) {
     const endpoints = {
       featured: API_ENDPOINTS.FEATURED,
       menu: API_ENDPOINTS.MENU,
-      gallery: API_ENDPOINTS.GALLERY,
+      gallery: SPECIALS_ENDPOINT,
       carousel: API_ENDPOINTS.CAROUSEL, // Added
     };
 
@@ -3650,7 +4260,7 @@ async function saveItem(itemType, formData, options = {}) {
     const requiredFields = {
       featured: ["title", "description", "image"],
       menu: ["title", "description", "price", "image"],
-      gallery: ["alt", "image"],
+      gallery: ["title", "image", "price"],
       carousel: ["alt", "image"], // Added
     };
 
@@ -3673,7 +4283,7 @@ async function saveItem(itemType, formData, options = {}) {
 
     const editingId = toSafeString(options.itemId || currentEditId).trim();
     const isUpdate = Boolean(editingId);
-    const baselineVersion = await fetchServerContentVersion();
+    const baselineVersion = (await fetchServerUpdateSignal()).contentVersion;
 
     let writeResult = null;
     if (isUpdate) {
@@ -3700,7 +4310,10 @@ async function saveItem(itemType, formData, options = {}) {
       ? writeResult
       : null;
 
-    const contentVersion = await ensureContentVersionAfterWrite(baselineVersion);
+    const contentVersion = await ensureContentVersionAfterWrite(
+      baselineVersion,
+      itemType
+    );
 
     // Clear cache for this endpoint
     dataCache.forEach((value, key) => {
@@ -4556,10 +5169,10 @@ async function saveOptionGroup(e) {
     controls: [els.saveGroupBtn],
     progressTitle: groupId ? "Updating option group" : "Creating option group",
     progressText: "Saving options...",
-    task: async (progress) => {
-      setMenuOptionLoading(true, "Saving option group...");
-      try {
-        const baselineVersion = await fetchServerContentVersion();
+      task: async (progress) => {
+        setMenuOptionLoading(true, "Saving option group...");
+        try {
+          const baselineVersion = (await fetchServerUpdateSignal()).contentVersion;
         const groupPayload = {
           product_id: menuOptionManagerState.menuItemId,
           name,
@@ -4661,7 +5274,8 @@ async function saveOptionGroup(e) {
         invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.values);
         markPublicContentCacheDirty();
         const contentVersion = await ensureContentVersionAfterWrite(
-          baselineVersion
+          baselineVersion,
+          "menu"
         );
         dataSync.notifyDataChanged(groupId ? "update" : "create", "menu", {
           contentVersion,
@@ -4709,7 +5323,7 @@ async function deleteOptionGroup(groupId) {
     task: async (progress) => {
       setMenuOptionLoading(true, "Deleting option group...");
       try {
-        const baselineVersion = await fetchServerContentVersion();
+        const baselineVersion = (await fetchServerUpdateSignal()).contentVersion;
         await secureRequest(
           `${PRODUCT_OPTION_ENDPOINTS.groups}?id=eq.${encodeURIComponent(id)}`,
           "DELETE",
@@ -4721,7 +5335,8 @@ async function deleteOptionGroup(groupId) {
         invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.values);
         markPublicContentCacheDirty();
         const contentVersion = await ensureContentVersionAfterWrite(
-          baselineVersion
+          baselineVersion,
+          "menu"
         );
         dataSync.notifyDataChanged("delete", "menu", { contentVersion });
         showNotification("Option group deleted.", "success");
@@ -4799,17 +5414,13 @@ async function openMenuOptionsManager(menuItemId) {
   await loadMenuOptionGroups(true);
 }
 
-// Gallery Management
-async function renderGalleryItems(forceRefresh = false) {
-  const container = document.getElementById("gallery-admin-grid");
+// Specials Management (backed by the existing gallery endpoint/table)
+async function renderSpecialsItems(forceRefresh = false) {
+  const container = document.getElementById("specials-admin-grid");
   if (!container) return;
 
   try {
-    const items = await loadDataFromSupabase(
-      API_ENDPOINTS.GALLERY,
-      null,
-      forceRefresh
-    );
+    const items = await loadDataFromSupabase(SPECIALS_ENDPOINT, null, forceRefresh);
     const sortedItems = Array.isArray(items)
       ? items.slice().sort(compareRecordsByDisplayOrder)
       : [];
@@ -4818,8 +5429,8 @@ async function renderGalleryItems(forceRefresh = false) {
       cacheItemsForType("gallery", []);
       container.innerHTML = `
         <div class="empty-state">
-          <i class="fas fa-images"></i>
-          <p>No gallery images yet. Add your first image!</p>
+          <i class="fas fa-tag"></i>
+          <p>No specials yet. Add your first special!</p>
         </div>
       `;
       return;
@@ -4827,7 +5438,7 @@ async function renderGalleryItems(forceRefresh = false) {
 
     const fragment = document.createDocumentFragment();
     sortedItems.forEach((item, index) => {
-      const card = buildGalleryAdminCardElement(item, index + 1);
+      const card = buildSpecialsAdminCardElement(item, index + 1);
       if (card) fragment.appendChild(card);
     });
 
@@ -4835,8 +5446,8 @@ async function renderGalleryItems(forceRefresh = false) {
       cacheItemsForType("gallery", []);
       container.innerHTML = `
         <div class="empty-state">
-          <i class="fas fa-images"></i>
-          <p>No gallery images yet. Add your first image!</p>
+          <i class="fas fa-tag"></i>
+          <p>No specials yet. Add your first special!</p>
         </div>
       `;
       return;
@@ -4846,40 +5457,68 @@ async function renderGalleryItems(forceRefresh = false) {
     refreshOrderBadges("gallery");
     cacheItemsForType("gallery", sortedItems);
   } catch (error) {
-    console.error(`Error rendering gallery items:`, error);
+    console.error(`Error rendering specials:`, error);
     cacheItemsForType("gallery", []);
     container.innerHTML = `
       <div class="empty-state error">
         <i class="fas fa-exclamation-triangle"></i>
-        <p>Failed to load gallery items. Please check your connection.</p>
+        <p>Failed to load specials. Please check your connection.</p>
       </div>
     `;
   }
 }
 
-async function saveGalleryItem(e) {
+async function saveSpecialsItem(e) {
   e.preventDefault();
-  const form = e.currentTarget || document.getElementById("gallery-form");
+  const form = e.currentTarget || document.getElementById("specials-form");
   const submitBtn =
     e.submitter || form?.querySelector('button[type="submit"], .btn-admin');
 
-  const altField = document.getElementById("gallery-alt");
-  const displayOrderField = document.getElementById("gallery-display-order");
-  const imageField = document.getElementById("gallery-image");
-  const idField = document.getElementById("gallery-id");
+  const titleField = document.getElementById("specials-title");
+  const priceField = document.getElementById("specials-price");
+  const originalPriceField = document.getElementById("specials-original-price");
+  const specialFlagField = document.getElementById("specials-special-flag");
+  const badgeTextField = document.getElementById("specials-badge-right-text");
+  const badgeIconField = document.getElementById("specials-badge-right-icon");
+  const ctaLabelField = document.getElementById("specials-cta-label");
+  const activeField = document.getElementById("specials-active");
+  const displayOrderField = document.getElementById("specials-display-order");
+  const imageField = document.getElementById("specials-image");
+  const idField = document.getElementById("specials-id");
 
   clearFormFieldErrors(form);
 
-  const alt = toSafeString(altField?.value).trim();
+  const title = toSafeString(titleField?.value).trim();
+  const priceValue = toMoney(priceField?.value, 0);
+  const originalPriceRaw = toSafeString(originalPriceField?.value).trim();
+  const originalPrice =
+    originalPriceRaw === "" ? null : toMoney(parseFloat(originalPriceRaw), 0);
+  const isSpecial = specialFlagField?.value === "true";
+  const badgeText = toSafeString(badgeTextField?.value, "SPECIAL").trim();
+  const badgeIcon = toSafeString(badgeIconField?.value, "\uD83D\uDD25").trim();
+  const ctaLabel = toSafeString(ctaLabelField?.value, "Order Now").trim();
+  const isActive = activeField?.value !== "false";
   const displayOrderInput = toSafeString(displayOrderField?.value).trim();
   const imageFile = imageField?.files?.[0] || null;
   const itemId = toSafeString(idField?.value).trim();
   const isUpdate = Boolean(itemId);
   const existingUrl = isUpdate ? getExistingImageUrlForItem("gallery", itemId) : "";
 
-  if (!alt || alt.length > 255) {
-    setFieldError(altField, "Alt text must be 1-255 characters.");
-    showNotification("Alt text must be 1-255 characters", "error");
+  if (!title || title.length > 120) {
+    setFieldError(titleField, "Title must be 1-120 characters.");
+    showNotification("Title must be 1-120 characters", "error");
+    return;
+  }
+
+  if (!Number.isFinite(priceValue) || priceValue < 0) {
+    setFieldError(priceField, "Price must be 0 or higher.");
+    showNotification("Price must be 0 or higher", "error");
+    return;
+  }
+
+  if (originalPriceRaw !== "" && (!Number.isFinite(originalPrice) || originalPrice < 0)) {
+    setFieldError(originalPriceField, "Original price must be 0 or higher.");
+    showNotification("Original price must be 0 or higher", "error");
     return;
   }
 
@@ -4890,14 +5529,14 @@ async function saveGalleryItem(e) {
   }
 
   const actionResult = await runAdminAction({
-    actionKey: isUpdate ? `gallery-update-${itemId}` : "gallery-create",
+    actionKey: isUpdate ? `specials-update-${itemId}` : "specials-create",
     controls: [submitBtn],
-    progressTitle: isUpdate ? "Updating gallery image" : "Creating gallery image",
-    progressText: "Preparing gallery data...",
+    progressTitle: isUpdate ? "Updating special" : "Creating special",
+    progressText: "Preparing specials data...",
     task: async (progress) => {
       let displayOrder;
       if (displayOrderInput === "" && !isUpdate) {
-        displayOrder = await getNextDisplayOrder(API_ENDPOINTS.GALLERY);
+        displayOrder = await getNextDisplayOrder(SPECIALS_ENDPOINT);
       } else {
         displayOrder = parseInt(displayOrderInput || "0", 10);
       }
@@ -4910,8 +5549,17 @@ async function saveGalleryItem(e) {
       const upload = await processImageUpload("gallery", imageFile, existingUrl);
 
       const formData = {
-        alt,
+        title,
+        alt: title,
         image: upload.url,
+        image_url: upload.url,
+        price: priceValue,
+        original_price: originalPrice,
+        is_special: isSpecial,
+        badge_right_text: badgeText || "SPECIAL",
+        badge_right_icon: badgeIcon || "\uD83D\uDD25",
+        cta_label: ctaLabel || "Order Now",
+        is_active: isActive,
         display_order: displayOrder,
       };
 
@@ -4925,7 +5573,7 @@ async function saveGalleryItem(e) {
 
       if (!result.success) {
         await rollbackUploadedImage(upload);
-        throw new Error(result.message || "Failed to save gallery image");
+        throw new Error(result.message || "Failed to save special");
       }
 
       const recordCandidate =
@@ -4943,22 +5591,22 @@ async function saveGalleryItem(e) {
       );
 
       await finalizeImageReplacement(upload);
-      resetGalleryForm();
+      resetSpecialsForm();
       const updatedInPlace = savedId
         ? upsertItemCardInUi("gallery", savedRecord)
         : false;
       if (normalization.normalized || !updatedInPlace) {
-        await withPreservedScroll(() => renderGalleryItems(true));
+        await withPreservedScroll(() => renderSpecialsItems(true));
       }
       await updateItemCounts();
-      progress.complete("Gallery image saved");
+      progress.complete("Special saved");
       if (normalization.normalized) {
         showNotification(
-          "Gallery image saved and display order normalized successfully.",
+          "Special saved and display order normalized successfully.",
           "success"
         );
       } else {
-        showNotification("Gallery image saved successfully!", "success");
+        showNotification("Special saved successfully!", "success");
       }
       dataSync.notifyDataChanged(result.operation, "gallery", {
         contentVersion: result.contentVersion,
@@ -4968,47 +5616,79 @@ async function saveGalleryItem(e) {
   });
 
   if (!actionResult.ok && !actionResult.skipped) {
-    console.error("Error saving gallery item:", actionResult.error);
+    console.error("Error saving special:", actionResult.error);
     showNotification(
-      actionResult.error?.message || "Failed to save gallery item",
+      actionResult.error?.message || "Failed to save special",
       "error"
     );
   }
 }
 
-async function editGalleryItem(id) {
+async function editSpecialsItem(id) {
   try {
     const item = await getEditableItem("gallery", id);
 
     if (!item) {
-      showNotification("Gallery item not found", "error");
+      showNotification("Special not found", "error");
       return;
     }
 
-    document.getElementById("gallery-id").value = item.id;
-    document.getElementById("gallery-alt").value = item.alt;
-    document.getElementById("gallery-display-order").value =
+    document.getElementById("specials-id").value = item.id;
+    document.getElementById("specials-title").value = toSafeString(
+      item.title || item.alt
+    );
+    document.getElementById("specials-price").value = toMoney(item.price, 0);
+    document.getElementById("specials-original-price").value =
+      item.original_price === null || item.original_price === undefined
+        ? ""
+        : toMoney(item.original_price, 0);
+    document.getElementById("specials-special-flag").value = parseRecordBoolean(
+      item.is_special,
+      false
+    )
+      ? "true"
+      : "false";
+    document.getElementById("specials-badge-right-text").value = toSafeString(
+      item.badge_right_text,
+      "SPECIAL"
+    );
+    document.getElementById("specials-badge-right-icon").value = toSafeString(
+      item.badge_right_icon,
+      "\uD83D\uDD25"
+    );
+    document.getElementById("specials-cta-label").value = toSafeString(
+      item.cta_label,
+      "Order Now"
+    );
+    document.getElementById("specials-active").value = parseRecordBoolean(
+      item.is_active,
+      true
+    )
+      ? "true"
+      : "false";
+    document.getElementById("specials-display-order").value =
       item.display_order ?? 0;
-    const imageField = document.getElementById("gallery-image");
+
+    const imageField = document.getElementById("specials-image");
     if (imageField) {
       imageField.required = false;
     }
     cacheTempImageForItem(item.id, resolveRecordImage(item));
 
-    const preview = document.getElementById("gallery-image-preview");
+    const preview = document.getElementById("specials-image-preview");
     preview.innerHTML = `<img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.gallery)}" alt="Current image" style="max-height: 150px; border-radius: 8px;" decoding="async"
       onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.gallery}';">`;
 
-    document.getElementById("gallery-form-container").style.display = "block";
+    document.getElementById("specials-form-container").style.display = "block";
     isEditing = true;
     currentEditId = id;
 
     document
-      .getElementById("gallery-form-container")
+      .getElementById("specials-form-container")
       .scrollIntoView({ behavior: "smooth" });
   } catch (error) {
-    console.error("Error loading gallery item for edit:", error);
-    showNotification("Failed to load gallery item for editing", "error");
+    console.error("Error loading special for edit:", error);
+    showNotification("Failed to load special for editing", "error");
   }
 }
 
@@ -5276,7 +5956,7 @@ async function updateStorageUsage() {
     const [featured, menu, gallery, carousel] = await Promise.all([
       loadDataFromSupabase(API_ENDPOINTS.FEATURED),
       loadDataFromSupabase(API_ENDPOINTS.MENU),
-      loadDataFromSupabase(API_ENDPOINTS.GALLERY),
+      loadDataFromSupabase(SPECIALS_ENDPOINT),
       loadDataFromSupabase(API_ENDPOINTS.CAROUSEL), // Added carousel
     ]);
 
@@ -5330,18 +6010,18 @@ async function updateItemCounts() {
     const [featured, menu, gallery, carousel] = await Promise.all([
       loadDataFromSupabase(API_ENDPOINTS.FEATURED),
       loadDataFromSupabase(API_ENDPOINTS.MENU),
-      loadDataFromSupabase(API_ENDPOINTS.GALLERY),
+      loadDataFromSupabase(SPECIALS_ENDPOINT),
       loadDataFromSupabase(API_ENDPOINTS.CAROUSEL), // Added carousel
     ]);
 
     const countFeatured = document.getElementById("count-featured");
     const countMenu = document.getElementById("count-menu");
-    const countGallery = document.getElementById("count-gallery");
+    const countSpecials = document.getElementById("count-specials");
     const countCarousel = document.getElementById("count-carousel");
 
     if (countFeatured) countFeatured.textContent = featured.length || 0;
     if (countMenu) countMenu.textContent = menu.length || 0;
-    if (countGallery) countGallery.textContent = gallery.length || 0;
+    if (countSpecials) countSpecials.textContent = gallery.length || 0;
     if (countCarousel) countCarousel.textContent = carousel.length || 0;
 
     await updateStorageUsage();
@@ -5356,25 +6036,25 @@ async function exportData() {
   try {
     showNotification("Preparing export...", "info");
 
-    const [featured, menu, gallery, carousel] = await Promise.all([
+    const [featured, menu, specials, carousel] = await Promise.all([
       loadDataFromSupabase(API_ENDPOINTS.FEATURED),
       loadDataFromSupabase(API_ENDPOINTS.MENU),
-      loadDataFromSupabase(API_ENDPOINTS.GALLERY),
+      loadDataFromSupabase(SPECIALS_ENDPOINT),
       loadDataFromSupabase(API_ENDPOINTS.CAROUSEL), // Added carousel
     ]);
 
     const data = {
       featured,
       menu,
-      gallery,
+      specials,
       carousel, // Added carousel
       exportDate: new Date().toISOString(),
-      version: "2.1.0", // Updated version
+      version: "2.2.0",
       source: "Toke Bakes CMS",
       itemCount: {
         featured: featured.length,
         menu: menu.length,
-        gallery: gallery.length,
+        specials: specials.length,
         carousel: carousel.length, // Added carousel
       },
     };
@@ -5407,7 +6087,12 @@ async function importData(file) {
     const data = JSON.parse(text);
 
     // Validate backup file - UPDATED WITH CAROUSEL
-    if (!data.featured || !data.menu || !data.gallery || !data.carousel) {
+    if (
+      !Array.isArray(data.featured) ||
+      !Array.isArray(data.menu) ||
+      !Array.isArray(data.specials) ||
+      !Array.isArray(data.carousel)
+    ) {
       showNotification("Invalid backup file format", "error");
       return;
     }
@@ -5433,7 +6118,7 @@ async function importData(file) {
       progressTitle: "Importing data",
       progressText: "Uploading backup payload...",
       task: async (progress) => {
-        const baselineVersion = await fetchServerContentVersion();
+        const baselineVersion = (await fetchServerUpdateSignal()).contentVersion;
 
         await Promise.all([
           secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE", null, {
@@ -5442,7 +6127,7 @@ async function importData(file) {
           secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE", null, {
             authRequired: true,
           }),
-          secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE", null, {
+          secureRequest(`${SPECIALS_ENDPOINT}?id=gt.0`, "DELETE", null, {
             authRequired: true,
           }),
           secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=gt.0`, "DELETE", null, {
@@ -5454,7 +6139,7 @@ async function importData(file) {
         const totalItems =
           data.featured.length +
           data.menu.length +
-          data.gallery.length +
+          data.specials.length +
           data.carousel.length;
         let imported = 0;
 
@@ -5471,19 +6156,20 @@ async function importData(file) {
 
         await importBatch(data.featured, API_ENDPOINTS.FEATURED);
         await importBatch(data.menu, API_ENDPOINTS.MENU);
-        await importBatch(data.gallery, API_ENDPOINTS.GALLERY);
+        await importBatch(data.specials, SPECIALS_ENDPOINT);
         await importBatch(data.carousel, API_ENDPOINTS.CAROUSEL);
 
         clearDataCache();
         markPublicContentCacheDirty();
         const contentVersion = await ensureContentVersionAfterWrite(
-          baselineVersion
+          baselineVersion,
+          "all"
         );
 
         await Promise.all([
           renderFeaturedItems(true),
           renderMenuItems(true),
-          renderGalleryItems(true),
+          renderSpecialsItems(true),
           renderCarouselItems(true),
         ]);
         await populateFeaturedMenuSelect(null, true);
@@ -5534,16 +6220,35 @@ function resetMenuForm() {
   currentEditId = null;
 }
 
-function resetGalleryForm() {
-  const form = document.getElementById("gallery-form");
+function resetSpecialsForm() {
+  const form = document.getElementById("specials-form");
   if (form) form.reset();
-  document.getElementById("gallery-id").value = "";
-  const imageField = document.getElementById("gallery-image");
+  const idField = document.getElementById("specials-id");
+  if (idField) idField.value = "";
+  const imageField = document.getElementById("specials-image");
   if (imageField) {
     imageField.required = true;
   }
-  document.getElementById("gallery-image-preview").innerHTML = "";
-  document.getElementById("gallery-form-container").style.display = "none";
+  const preview = document.getElementById("specials-image-preview");
+  if (preview) preview.innerHTML = "";
+  const formContainer = document.getElementById("specials-form-container");
+  if (formContainer) formContainer.style.display = "none";
+
+  const specialFlagField = document.getElementById("specials-special-flag");
+  if (specialFlagField) specialFlagField.value = "false";
+
+  const badgeTextField = document.getElementById("specials-badge-right-text");
+  if (badgeTextField) badgeTextField.value = "SPECIAL";
+
+  const badgeIconField = document.getElementById("specials-badge-right-icon");
+  if (badgeIconField) badgeIconField.value = "\uD83D\uDD25";
+
+  const ctaField = document.getElementById("specials-cta-label");
+  if (ctaField) ctaField.value = "Order Now";
+
+  const activeField = document.getElementById("specials-active");
+  if (activeField) activeField.value = "true";
+
   isEditing = false;
   currentEditId = null;
 }
@@ -5567,9 +6272,9 @@ function resetCarouselForm() {
 /* ================== FIXED INITIALIZATION ================== */
 
 async function initAdminPanel() {
-  debugLog("🔧 Initializing Admin Panel v2.1 (WITH CAROUSEL)...");
+  debugLog("ðŸ”§ Initializing Admin Panel v2.1 (WITH CAROUSEL)...");
 
-  // 🔒 Admin session will be validated after login
+  // ðŸ”’ Admin session will be validated after login
 
   // Check session
   const session = await ensureValidSession();
@@ -5583,10 +6288,10 @@ async function initAdminPanel() {
       document.getElementById("admin-dashboard").style.display = "block";
       startSessionTimeout();
       setupActivityMonitoring();
-      debugLog("✅ Restored existing session");
+      debugLog("âœ… Restored existing session");
     } else {
       clearSession();
-      debugLog("❌ Session is not authorized");
+      debugLog("âŒ Session is not authorized");
     }
   }
 
@@ -5665,7 +6370,7 @@ function setupEventListeners() {
       // Reset any open forms - ADDED CAROUSEL
       resetFeaturedForm();
       resetMenuForm();
-      resetGalleryForm();
+      resetSpecialsForm();
       resetCarouselForm();
       closeMenuOptionsManager();
     });
@@ -5687,6 +6392,82 @@ function setupEventListeners() {
       Promise.resolve(loadStatsPanel(true)).catch((error) => {
         console.error("Failed to refresh stats manually:", error);
       });
+    });
+  }
+
+  const debugForceCheckBtn = document.getElementById("debug-force-check-btn");
+  if (debugForceCheckBtn) {
+    debugForceCheckBtn.addEventListener("click", async () => {
+      try {
+        if (
+          window.TokeUpdateSync &&
+          typeof window.TokeUpdateSync.requestServerCheck === "function"
+        ) {
+          await window.TokeUpdateSync.requestServerCheck("admin-debug-force", true);
+        }
+        await loadStatsPanel(true);
+        showNotification("Version recheck completed.", "success");
+      } catch (error) {
+        recordAdminError("sync", "Force version recheck failed", {
+          message: error?.message || "",
+        });
+        showNotification("Version recheck failed.", "error");
+      }
+    });
+  }
+
+  const debugForceRefetchBtn = document.getElementById("debug-force-refetch-btn");
+  if (debugForceRefetchBtn) {
+    debugForceRefetchBtn.addEventListener("click", async () => {
+      try {
+        clearDataCache();
+        markPublicContentCacheDirty();
+        await Promise.all([
+          renderFeaturedItems(true),
+          renderMenuItems(true),
+          renderSpecialsItems(true),
+          renderCarouselItems(true),
+          updateItemCounts(),
+        ]);
+        await loadStatsPanel(true);
+        showNotification("Content refetched successfully.", "success");
+      } catch (error) {
+        recordAdminError("sync", "Force refetch failed", {
+          message: error?.message || "",
+        });
+        showNotification("Content refetch failed.", "error");
+      }
+    });
+  }
+
+  const debugClearThemeCacheBtn = document.getElementById("debug-clear-theme-cache-btn");
+  if (debugClearThemeCacheBtn) {
+    debugClearThemeCacheBtn.addEventListener("click", async () => {
+      const ok = await clearThemeCachesSafely();
+      await loadStatsPanel(true);
+      showNotification(
+        ok ? "Theme cache cleared." : "Theme cache clear failed.",
+        ok ? "success" : "error"
+      );
+    });
+  }
+
+  const debugClearAppCacheBtn = document.getElementById("debug-clear-app-cache-btn");
+  if (debugClearAppCacheBtn) {
+    debugClearAppCacheBtn.addEventListener("click", async () => {
+      const ok = await clearAppCachesSafely();
+      await loadStatsPanel(true);
+      showNotification(
+        ok ? "App caches cleared." : "App cache clear failed.",
+        ok ? "success" : "error"
+      );
+    });
+  }
+
+  const debugSoftReloadBtn = document.getElementById("debug-soft-reload-btn");
+  if (debugSoftReloadBtn) {
+    debugSoftReloadBtn.addEventListener("click", () => {
+      window.location.reload();
     });
   }
 
@@ -5733,7 +6514,7 @@ function setupEventListeners() {
   // Form submissions - ADDED CAROUSEL
   const featuredForm = document.getElementById("featured-form");
   const menuForm = document.getElementById("menu-form");
-  const galleryForm = document.getElementById("gallery-form");
+  const specialsForm = document.getElementById("specials-form");
   const carouselForm = document.getElementById("carousel-form"); // Added
   const optionGroupForm = document.getElementById("option-group-form");
   const optionTypeSelect = document.getElementById("option-group-type");
@@ -5749,8 +6530,8 @@ function setupEventListeners() {
   if (menuForm) {
     menuForm.addEventListener("submit", saveMenuItem);
   }
-  if (galleryForm) {
-    galleryForm.addEventListener("submit", saveGalleryItem);
+  if (specialsForm) {
+    specialsForm.addEventListener("submit", saveSpecialsItem);
   }
   if (carouselForm) {
     // Added
@@ -5861,7 +6642,7 @@ function setupEventListeners() {
   // Add buttons - ADDED CAROUSEL
   const addFeaturedBtn = document.getElementById("add-featured-btn");
   const addMenuBtn = document.getElementById("add-menu-btn");
-  const addGalleryBtn = document.getElementById("add-gallery-btn");
+  const addSpecialsBtn = document.getElementById("add-specials-btn");
   const addCarouselBtn = document.getElementById("add-carousel-btn"); // Added
 
   if (addFeaturedBtn) {
@@ -5891,15 +6672,16 @@ function setupEventListeners() {
     });
   }
 
-  if (addGalleryBtn) {
-    addGalleryBtn.addEventListener("click", () => {
-      resetGalleryForm();
-      document.getElementById("gallery-form-container").style.display = "block";
-      document
-        .getElementById("gallery-form-container")
-        .scrollIntoView({ behavior: "smooth" });
+  if (addSpecialsBtn) {
+    addSpecialsBtn.addEventListener("click", () => {
+      resetSpecialsForm();
+      const formContainer = document.getElementById("specials-form-container");
+      if (formContainer) {
+        formContainer.style.display = "block";
+        formContainer.scrollIntoView({ behavior: "smooth" });
+      }
       Promise.resolve(
-        prefillNextDisplayOrder("gallery", "gallery-display-order")
+        prefillNextDisplayOrder("gallery", "specials-display-order")
       ).catch(() => {});
     });
   }
@@ -5922,7 +6704,7 @@ function setupEventListeners() {
   // Cancel buttons - ADDED CAROUSEL
   const cancelFeatured = document.getElementById("cancel-featured");
   const cancelMenu = document.getElementById("cancel-menu");
-  const cancelGallery = document.getElementById("cancel-gallery");
+  const cancelSpecials = document.getElementById("cancel-specials");
   const cancelCarousel = document.getElementById("cancel-carousel"); // Added
 
   if (cancelFeatured) {
@@ -5931,8 +6713,8 @@ function setupEventListeners() {
   if (cancelMenu) {
     cancelMenu.addEventListener("click", resetMenuForm);
   }
-  if (cancelGallery) {
-    cancelGallery.addEventListener("click", resetGalleryForm);
+  if (cancelSpecials) {
+    cancelSpecials.addEventListener("click", resetSpecialsForm);
   }
   if (cancelCarousel) {
     // Added
@@ -6004,7 +6786,7 @@ function setupEventListeners() {
           progressTitle: "Resetting all data",
           progressText: "Deleting existing records...",
           task: async (progress) => {
-            const baselineVersion = await fetchServerContentVersion();
+            const baselineVersion = (await fetchServerUpdateSignal()).contentVersion;
             await Promise.all([
               secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE", null, {
                 authRequired: true,
@@ -6012,7 +6794,7 @@ function setupEventListeners() {
               secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE", null, {
                 authRequired: true,
               }),
-              secureRequest(`${API_ENDPOINTS.GALLERY}?id=gt.0`, "DELETE", null, {
+              secureRequest(`${SPECIALS_ENDPOINT}?id=gt.0`, "DELETE", null, {
                 authRequired: true,
               }),
               secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=gt.0`, "DELETE", null, {
@@ -6024,13 +6806,14 @@ function setupEventListeners() {
             clearDataCache();
             markPublicContentCacheDirty();
             const contentVersion = await ensureContentVersionAfterWrite(
-              baselineVersion
+              baselineVersion,
+              "all"
             );
 
             await Promise.all([
               renderFeaturedItems(true),
               renderMenuItems(true),
-              renderGalleryItems(true),
+              renderSpecialsItems(true),
               renderCarouselItems(true),
             ]);
             await populateFeaturedMenuSelect(null, true);
@@ -6104,8 +6887,8 @@ window.deleteMenuItem = deleteMenuItem;
 window.openMenuOptionsManager = openMenuOptionsManager;
 window.editOptionGroup = editOptionGroup;
 window.deleteOptionGroup = deleteOptionGroup;
-window.editGalleryItem = editGalleryItem;
-window.deleteGalleryItem = deleteGalleryItem;
+window.editSpecialsItem = editSpecialsItem;
+window.deleteSpecialsItem = deleteSpecialsItem;
 window.editCarouselItem = editCarouselItem; // Added
 window.deleteCarouselItem = deleteCarouselItem; // Added
 
@@ -6133,8 +6916,31 @@ function setupConnectionMonitor() {
   });
 }
 
+let adminErrorMonitorBound = false;
+function setupAdminErrorMonitor() {
+  if (adminErrorMonitorBound) return;
+  adminErrorMonitorBound = true;
+
+  window.addEventListener("error", (event) => {
+    recordAdminError("window", event?.message || "Unhandled error", {
+      file: event?.filename || "",
+      line: event?.lineno || 0,
+    });
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event?.reason;
+    recordAdminError(
+      "promise",
+      reason?.message || String(reason || "Unhandled promise rejection")
+    );
+  });
+}
+
 // Add to initAdminPanel
 setupConnectionMonitor();
+setupAdminErrorMonitor();
 
 debugLog("Toke Bakes Admin Panel v2.1 - WITH CAROUSEL SUCCESS");
+
 

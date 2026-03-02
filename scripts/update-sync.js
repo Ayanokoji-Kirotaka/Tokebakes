@@ -7,9 +7,10 @@
   const LEGACY_LAST_UPDATE_KEY = "toke_bakes_last_update";
   const LAST_UPDATE_PAYLOAD_KEY = "toke_bakes_last_update_payload";
   const CONTENT_VERSION_KEY = "toke_bakes_content_version";
+  const LAST_CHANGE_TYPE_KEY = "toke_bakes_last_change_type";
   const SERVER_LOCK_KEY = "toke_bakes_sync_server_lock";
-  const DEFAULT_SERVER_POLL_INTERVAL_MS = 12000;
-  const DEFAULT_SERVER_MIN_GAP_MS = 3000;
+  const DEFAULT_SERVER_POLL_INTERVAL_MS = 30000;
+  const DEFAULT_SERVER_MIN_GAP_MS = 7000;
   const DEFAULT_SERVER_LOCK_LEASE_MS = 25000;
   const DEFAULT_SEEN_EVENT_TTL_MS = 2 * 60 * 1000;
 
@@ -63,6 +64,80 @@
     return null;
   };
 
+  const normalizeChangeType = (raw) => {
+    const value = String(raw || "")
+      .trim()
+      .toLowerCase();
+    if (!value) return "all";
+    const allowed = new Set([
+      "all",
+      "menu",
+      "featured",
+      "specials",
+      "gallery",
+      "carousel",
+      "theme",
+      "menu_options",
+      "menu-options",
+      "menuoptions",
+      "option",
+      "options",
+      "site",
+      "settings",
+    ]);
+    if (allowed.has(value)) return value;
+    return "all";
+  };
+
+  const normalizePayloadItemType = (raw) => {
+    const changeType = normalizeChangeType(raw);
+    if (
+      changeType === "menu_options" ||
+      changeType === "menu-options" ||
+      changeType === "menuoptions" ||
+      changeType === "option" ||
+      changeType === "options"
+    ) {
+      return "menu";
+    }
+    if (changeType === "gallery") return "specials";
+    if (changeType === "site" || changeType === "settings") return "all";
+    return changeType;
+  };
+
+  const parseUpdateSignal = (raw) => {
+    if (!raw) return null;
+    const first = Array.isArray(raw) ? raw[0] : raw;
+    if (!first || typeof first !== "object") {
+      const fallbackVersion = extractContentVersion(raw);
+      if (!Number.isFinite(fallbackVersion)) return null;
+      return {
+        version: fallbackVersion,
+        changeType: "all",
+        updatedAtTs: 0,
+      };
+    }
+
+    const version = extractContentVersion(
+      first.content_version ??
+        first.version ??
+        first.get_content_version ??
+        first.value ??
+        null
+    );
+    if (!Number.isFinite(version)) return null;
+
+    const updatedAtRaw = first.updated_at ?? first.updatedAt ?? null;
+    const parsedDate = updatedAtRaw ? Date.parse(updatedAtRaw) : NaN;
+    return {
+      version,
+      changeType: normalizePayloadItemType(
+        first.last_change_type ?? first.change_type ?? first.item_type ?? "all"
+      ),
+      updatedAtTs: Number.isNaN(parsedDate) ? 0 : Math.trunc(parsedDate),
+    };
+  };
+
   class UpdateSyncBus {
     constructor(options = {}) {
       this.channelName = options.channelName || DEFAULT_CHANNEL;
@@ -70,6 +145,7 @@
       this.lastUpdateKey = options.lastUpdateKey || LEGACY_LAST_UPDATE_KEY;
       this.lastPayloadKey = options.lastPayloadKey || LAST_UPDATE_PAYLOAD_KEY;
       this.contentVersionKey = options.contentVersionKey || CONTENT_VERSION_KEY;
+      this.lastChangeTypeKey = options.lastChangeTypeKey || LAST_CHANGE_TYPE_KEY;
       this.serverLockKey = options.serverLockKey || SERVER_LOCK_KEY;
       this.sourceId = options.sourceId || createSourceId();
 
@@ -99,7 +175,11 @@
       this.serverLockTimer = null;
       this.serverCheckInFlight = null;
       this.lastServerCheckAt = 0;
+      this.lastServerCheckOkAt = 0;
+      this.lastServerCheckReason = "";
       this.isServerLeader = false;
+      this.syncMode = "polling";
+      this.syncStatus = "active";
       this.initialized = false;
 
       this.boundStorageHandler = null;
@@ -190,7 +270,13 @@
       const type = payload.type || "DATA_UPDATED";
       const sourceId = payload.sourceId || this.sourceId;
       const operation = payload.operation || "notify";
-      const itemType = payload.itemType || "all";
+      const inferredItemType = normalizePayloadItemType(
+        payload.itemType ?? payload.lastChangeType ?? payload.changeType ?? "all"
+      );
+      const itemType = inferredItemType || "all";
+      const lastChangeType = normalizePayloadItemType(
+        payload.lastChangeType ?? itemType
+      );
 
       const contentVersion = extractContentVersion(
         payload.contentVersion ?? payload.version
@@ -210,6 +296,7 @@
         sourceId,
         operation,
         itemType,
+        lastChangeType,
         contentVersion: Number.isFinite(contentVersion) ? contentVersion : undefined,
       };
     }
@@ -221,6 +308,7 @@
         payload.type || "",
         payload.timestamp || "",
         payload.itemType || "",
+        payload.lastChangeType || "",
         payload.operation || "",
         payload.sourceId || "",
         payload.contentVersion || "",
@@ -268,6 +356,23 @@
       } catch {}
     }
 
+    getStoredLastChangeType() {
+      try {
+        return normalizePayloadItemType(
+          localStorage.getItem(this.lastChangeTypeKey) || "all"
+        );
+      } catch {
+        return "all";
+      }
+    }
+
+    setStoredLastChangeType(changeType) {
+      const normalized = normalizePayloadItemType(changeType);
+      try {
+        localStorage.setItem(this.lastChangeTypeKey, normalized);
+      } catch {}
+    }
+
     persistPayload(payload) {
       try {
         localStorage.setItem(this.lastUpdateKey, String(payload.timestamp));
@@ -280,6 +385,24 @@
       if (Number.isFinite(payload.contentVersion)) {
         this.setStoredContentVersion(payload.contentVersion);
       }
+      if (payload.lastChangeType) {
+        this.setStoredLastChangeType(payload.lastChangeType);
+      }
+    }
+
+    getStatus() {
+      return {
+        mode: this.syncMode,
+        status: this.syncStatus,
+        isLeader: this.isServerLeader,
+        pollIntervalMs: this.serverPollIntervalMs,
+        minGapMs: this.serverMinGapMs,
+        lastServerCheckAt: this.lastServerCheckAt || 0,
+        lastServerCheckOkAt: this.lastServerCheckOkAt || 0,
+        lastServerCheckReason: this.lastServerCheckReason || "",
+        contentVersion: this.getStoredContentVersion(),
+        lastChangeType: this.getStoredLastChangeType(),
+      };
     }
 
     notifyListeners(payload) {
@@ -393,6 +516,7 @@
     updateLeaderState(isLeader) {
       if (this.isServerLeader === isLeader) return;
       this.isServerLeader = isLeader;
+      this.syncStatus = isLeader ? "active" : "standby";
       if (isLeader) {
         this.startServerPolling();
       } else {
@@ -457,6 +581,8 @@
 
     startServerSync() {
       if (!this.serverSyncEnabled) return;
+      this.syncMode = "polling";
+      this.syncStatus = "starting";
 
       this.acquireServerLock(true);
 
@@ -479,14 +605,14 @@
         this.serverLockTimer = null;
       }
       this.releaseServerLock();
+      this.syncStatus = "disabled";
     }
 
-    async fetchServerContentVersion() {
+    async fetchServerUpdateSignal() {
       if (!window.SUPABASE_CONFIG?.URL || !window.SUPABASE_CONFIG?.ANON_KEY) {
         return null;
       }
 
-      const url = `${window.SUPABASE_CONFIG.URL}/rest/v1/rpc/get_content_version`;
       const controller =
         typeof AbortController !== "undefined" ? new AbortController() : null;
       const timeoutId = controller
@@ -494,26 +620,60 @@
         : null;
 
       try {
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            apikey: window.SUPABASE_CONFIG.ANON_KEY,
-            Authorization: `Bearer ${window.SUPABASE_CONFIG.ANON_KEY}`,
-            "Content-Type": "application/json",
-            Pragma: "no-cache",
-            "Cache-Control": "no-store",
-          },
-          cache: "no-store",
-          signal: controller ? controller.signal : undefined,
-        });
+        const response = await fetch(
+          `${window.SUPABASE_CONFIG.URL}/rest/v1/rpc/get_update_signal`,
+          {
+            method: "POST",
+            headers: {
+              apikey: window.SUPABASE_CONFIG.ANON_KEY,
+              Authorization: `Bearer ${window.SUPABASE_CONFIG.ANON_KEY}`,
+              "Content-Type": "application/json",
+              Pragma: "no-cache",
+              "Cache-Control": "no-store",
+            },
+            cache: "no-store",
+            signal: controller ? controller.signal : undefined,
+          }
+        );
 
         if (!response.ok) {
-          return null;
+          // Backward compatibility with old deployments.
+          const legacyResponse = await fetch(
+            `${window.SUPABASE_CONFIG.URL}/rest/v1/rpc/get_content_version`,
+            {
+              method: "POST",
+              headers: {
+                apikey: window.SUPABASE_CONFIG.ANON_KEY,
+                Authorization: `Bearer ${window.SUPABASE_CONFIG.ANON_KEY}`,
+                "Content-Type": "application/json",
+                Pragma: "no-cache",
+                "Cache-Control": "no-store",
+              },
+              cache: "no-store",
+              signal: controller ? controller.signal : undefined,
+            }
+          );
+          if (!legacyResponse.ok) {
+            return null;
+          }
+          const legacyData = await legacyResponse.json().catch(() => null);
+          const legacyVersion = extractContentVersion(legacyData);
+          if (!Number.isFinite(legacyVersion) || legacyVersion < 0) {
+            return null;
+          }
+          return {
+            version: legacyVersion,
+            changeType: "all",
+            updatedAtTs: 0,
+          };
         }
 
         const data = await response.json().catch(() => null);
-        const version = extractContentVersion(data);
-        return Number.isFinite(version) && version >= 0 ? version : null;
+        const parsed = parseUpdateSignal(data);
+        if (!parsed || !Number.isFinite(parsed.version) || parsed.version < 0) {
+          return null;
+        }
+        return parsed;
       } catch {
         return null;
       } finally {
@@ -538,20 +698,38 @@
       }
 
       this.lastServerCheckAt = Date.now();
+      this.lastServerCheckReason = String(reason || "");
       this.serverCheckInFlight = (async () => {
-        const version = await this.fetchServerContentVersion();
-        if (!Number.isFinite(version)) return false;
+        const signal = await this.fetchServerUpdateSignal();
+        if (!signal || !Number.isFinite(signal.version)) return false;
 
-        const previous = this.getStoredContentVersion();
-        if (version <= previous) return false;
+        const version = Math.max(0, Math.trunc(signal.version));
+        const changeType = normalizePayloadItemType(signal.changeType || "all");
+        const signalTimestamp =
+          Number.isFinite(signal.updatedAtTs) && signal.updatedAtTs > 0
+            ? Math.trunc(signal.updatedAtTs)
+            : Date.now();
+
+        const previousVersion = this.getStoredContentVersion();
+        const previousChangeType = this.getStoredLastChangeType();
+        const hasVersionAdvance = version > previousVersion;
+        const hasTypeAdvance =
+          version === previousVersion &&
+          changeType !== "all" &&
+          changeType !== previousChangeType;
+
+        this.lastServerCheckOkAt = Date.now();
+        if (!hasVersionAdvance && !hasTypeAdvance) return false;
 
         this.setStoredContentVersion(version);
-        this.publishDataUpdate("sync", "all", {
+        this.setStoredLastChangeType(changeType);
+        this.publishDataUpdate("sync", changeType, {
           source: "server",
           syncReason: reason,
           contentVersion: version,
+          lastChangeType: changeType,
           serverDriven: true,
-          timestamp: Date.now(),
+          timestamp: signalTimestamp,
         });
         return true;
       })()

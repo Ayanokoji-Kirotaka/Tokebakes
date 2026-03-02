@@ -1,4 +1,4 @@
-const SW_VERSION = "v11";
+const SW_VERSION = "v14";
 const CACHE_PREFIX = "toke-bakes";
 const CACHE_NAMES = {
   precache: `${CACHE_PREFIX}-precache-${SW_VERSION}`,
@@ -24,7 +24,7 @@ const CACHE_LIMITS = {
 const PRECACHE_URLS = [
   "index.html",
   "menu.html",
-  "gallery.html",
+  "specials.html",
   "order.html",
   "admin-panel.html",
   "privacy.html",
@@ -84,8 +84,9 @@ self.addEventListener("activate", (event) => {
       );
 
       await self.clients.claim();
-      await clearThemeStyleCacheEntries();
-      await pruneAllCaches();
+      // Keep activation fast; heavy cleanup runs asynchronously.
+      clearThemeStyleCacheEntries().catch(() => {});
+      pruneAllCaches().catch(() => {});
     })()
   );
 });
@@ -104,6 +105,37 @@ self.addEventListener("message", (event) => {
 
   if (message.type === "CLEAR_DYNAMIC_CACHES") {
     event.waitUntil(clearDynamicCaches());
+    return;
+  }
+
+  if (message.type === "CLEAR_THEME_CACHE") {
+    event.waitUntil(clearThemeStyleCacheEntries());
+    return;
+  }
+
+  if (message.type === "GET_SW_STATUS") {
+    const port = event.ports && event.ports[0];
+    if (!port) return;
+    event.waitUntil(
+      (async () => {
+        const cacheNames = await caches.keys();
+        port.postMessage({
+          ok: true,
+          version: SW_VERSION,
+          cachePrefix: CACHE_PREFIX,
+          cacheNames,
+        });
+      })().catch(() => {
+        try {
+          port.postMessage({
+            ok: false,
+            version: SW_VERSION,
+            cachePrefix: CACHE_PREFIX,
+            cacheNames: [],
+          });
+        } catch {}
+      })
+    );
   }
 });
 
@@ -604,7 +636,7 @@ async function routeRequest(request, event) {
   }
 
   if (isScriptOrStyleRequest(request, url)) {
-    return networkFirst(
+    return staleWhileRevalidate(
       request,
       {
         cacheName: CACHE_NAMES.assets,

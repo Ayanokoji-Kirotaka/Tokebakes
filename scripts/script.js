@@ -17,6 +17,9 @@ if (typeof initThemeToggle === "undefined") {
     /* Function removed - handled by theme-manager.js */
   };
 }
+if (typeof window !== "undefined" && window.__tbInitialContentReady !== true) {
+  window.__tbInitialContentReady = false;
+}
 /* ================== END PATCH ================== */
 /* ================== script.js - TOKE BAKES WEBSITE ================== */
 
@@ -27,7 +30,9 @@ class WebsiteAutoUpdater {
     this.lastPayloadKey = "toke_bakes_last_update_payload";
     this.dbLastUpdateKey = "toke_bakes_db_last_updated";
     this.contentVersionKey = "toke_bakes_content_version";
+    this.lastChangeTypeKey = "toke_bakes_last_change_type";
     this.myLastCheckKey = "toke_bakes_last_check";
+    this.lastSyncCheckKey = "toke_bakes_last_sync_check_at";
     this.dbCheckInterval = 30000;
     this.lastDbCheck = 0;
     this.broadcastChannel = null;
@@ -40,6 +45,8 @@ class WebsiteAutoUpdater {
     this.isRefreshing = false;
     this.pendingRefresh = false;
     this.pendingTriggerTs = 0;
+    this.pendingChangeType = "all";
+    this.pendingContentVersion = 0;
     this.lastRefreshAt = 0;
     this.minRefreshGapMs = 1200;
     this.syncIndicatorTimer = null;
@@ -54,8 +61,13 @@ class WebsiteAutoUpdater {
       0;
     this.lastRenderedContentVersion =
       Number(localStorage.getItem(this.contentVersionKey) || "0") || 0;
+    this.lastRenderedChangeType = this.normalizeChangeType(
+      localStorage.getItem(this.lastChangeTypeKey) || "all"
+    );
     this.lastCheckMemory =
       Number(localStorage.getItem(this.myLastCheckKey)) || 0;
+    this.lastSyncCheckAt =
+      Number(localStorage.getItem(this.lastSyncCheckKey) || "0") || 0;
     this.init();
   }
 
@@ -98,7 +110,7 @@ class WebsiteAutoUpdater {
             this.syncBus.requestServerCheck("website-visible", true)
           ).catch(() => {});
         }
-        this.checkForUpdates();
+        this.checkForUpdates(true);
       }
     };
     document.addEventListener("visibilitychange", this.boundVisibilityHandler);
@@ -113,7 +125,7 @@ class WebsiteAutoUpdater {
           this.syncBus.requestServerCheck("website-online", true)
         ).catch(() => {});
       }
-      this.checkForUpdates();
+      this.checkForUpdates(true);
     };
     window.addEventListener("online", this.boundOnlineHandler);
 
@@ -127,7 +139,7 @@ class WebsiteAutoUpdater {
           this.syncBus.requestServerCheck("website-init", true)
         ).catch(() => {});
       }
-      this.checkForUpdates();
+      this.checkForUpdates(true);
     }, 800);
 
     window.addEventListener(
@@ -144,7 +156,6 @@ class WebsiteAutoUpdater {
       this.syncBus = window.TokeUpdateSync;
       this.unsubscribeSync = this.syncBus.subscribe((payload) => {
         if (!payload || payload.type !== "DATA_UPDATED") return;
-        if (payload.itemType === "theme") return;
         debugLog("Update received via shared sync bus", payload);
         this.handleExternalUpdate(payload);
       });
@@ -157,7 +168,6 @@ class WebsiteAutoUpdater {
         this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
         this.broadcastChannel.onmessage = (event) => {
           if (event?.data?.type === "DATA_UPDATED") {
-            if (event.data.itemType === "theme") return;
             debugLog("BroadcastChannel update received!", event.data);
             this.handleExternalUpdate(event.data);
           }
@@ -174,7 +184,6 @@ class WebsiteAutoUpdater {
         try {
           const parsed = JSON.parse(event.newValue);
           if (parsed?.type === "DATA_UPDATED") {
-            if (parsed?.itemType === "theme") return;
             this.handleExternalUpdate(parsed);
           }
           return;
@@ -194,7 +203,6 @@ class WebsiteAutoUpdater {
     this.boundCustomFallback = (event) => {
       const detail = event?.detail || {};
       if (detail.type === "DATA_UPDATED") {
-        if (detail.itemType === "theme") return;
         this.handleExternalUpdate(detail);
       }
     };
@@ -271,6 +279,76 @@ class WebsiteAutoUpdater {
     return effective;
   }
 
+  setLastSyncCheck(value = Date.now()) {
+    const next = Number(value) || Date.now();
+    this.lastSyncCheckAt = next;
+    try {
+      localStorage.setItem(this.lastSyncCheckKey, String(next));
+    } catch {}
+  }
+
+  normalizeChangeType(raw) {
+    const value = toSafeString(raw, "all").toLowerCase();
+    if (
+      value === "menu_options" ||
+      value === "menu-options" ||
+      value === "menuoptions" ||
+      value === "options" ||
+      value === "option"
+    ) {
+      return "menu";
+    }
+    if (value === "gallery") {
+      return "specials";
+    }
+    if (
+      value === "menu" ||
+      value === "featured" ||
+      value === "specials" ||
+      value === "carousel" ||
+      value === "theme"
+    ) {
+      return value;
+    }
+    return "all";
+  }
+
+  mergeChangeTypes(a = "all", b = "all") {
+    const first = this.normalizeChangeType(a);
+    const second = this.normalizeChangeType(b);
+    if (first === second) return first;
+    if (first === "all" || second === "all") return "all";
+    return "all";
+  }
+
+  getLatestPayloadSnapshot() {
+    let payload = null;
+    try {
+      const payloadRaw = localStorage.getItem(this.lastPayloadKey);
+      if (payloadRaw) {
+        payload = JSON.parse(payloadRaw);
+      }
+    } catch {}
+
+    const timestamp = Math.max(
+      Number(payload?.timestamp || 0),
+      Number(localStorage.getItem(this.lastUpdateKey) || "0"),
+      Number(localStorage.getItem(this.dbLastUpdateKey) || "0")
+    );
+    const contentVersion = Math.max(
+      Number(payload?.contentVersion || payload?.version || 0),
+      Number(localStorage.getItem(this.contentVersionKey) || "0")
+    );
+    const changeType = this.normalizeChangeType(
+      payload?.itemType ||
+        payload?.lastChangeType ||
+        localStorage.getItem(this.lastChangeTypeKey) ||
+        "all"
+    );
+    const payloadType = payload?.type || "";
+    return { timestamp, contentVersion, changeType, payloadType };
+  }
+
   async fetchSiteLastUpdated() {
     if (!window.SUPABASE_CONFIG?.URL || !window.SUPABASE_CONFIG?.ANON_KEY) {
       return 0;
@@ -319,12 +397,16 @@ class WebsiteAutoUpdater {
     try {
       localStorage.setItem(this.lastUpdateKey, String(baseline));
     } catch {}
+    this.setLastSyncCheck(baseline);
   }
 
   handleExternalUpdate(payload = {}) {
     const tsNumber = Number(payload.timestamp) || Date.now();
     const contentVersion = Number(payload.contentVersion || payload.version) || 0;
     const hasVersion = Number.isFinite(contentVersion) && contentVersion > 0;
+    const changeType = this.normalizeChangeType(
+      payload.itemType || payload.lastChangeType || "all"
+    );
     const myLastCheck = this.getMyLastCheck();
     const isOldTimestamp = tsNumber <= myLastCheck;
     const isOldVersion =
@@ -345,9 +427,13 @@ class WebsiteAutoUpdater {
         );
       } catch {}
     }
+    try {
+      localStorage.setItem(this.lastChangeTypeKey, changeType);
+    } catch {}
 
     this.setMyLastCheck(tsNumber);
-    this.refreshDataWithUI(tsNumber, true);
+    this.setLastSyncCheck();
+    this.refreshDataWithUI(tsNumber, true, changeType, contentVersion);
   }
 
   getAdaptivePollingConfig(syncBusHasServerPolling = false) {
@@ -366,12 +452,12 @@ class WebsiteAutoUpdater {
     }
 
     if (isSlow) {
-      return { dbCheckInterval: 90000, pollingInterval: 22000 };
+      return { dbCheckInterval: 120000, pollingInterval: 45000 };
     }
     if (isStandard) {
-      return { dbCheckInterval: 45000, pollingInterval: 14000 };
+      return { dbCheckInterval: 90000, pollingInterval: 35000 };
     }
-    return { dbCheckInterval: 30000, pollingInterval: 10000 };
+    return { dbCheckInterval: 60000, pollingInterval: 25000 };
   }
 
   applyAdaptiveNetworkConfig(syncBusHasServerPolling = false) {
@@ -392,49 +478,19 @@ class WebsiteAutoUpdater {
       if (document.hidden) {
         return;
       }
-      this.checkForUpdates();
+      this.checkForUpdates(false);
     }, interval);
     debugLog(`Polling started (every ${interval / 1000}s)`);
   }
 
-  getLatestUpdateTimestamp() {
-    const localTs = Number(localStorage.getItem(this.lastUpdateKey) || "0");
-
-    let payloadTs = 0;
-    let payloadType = "";
-    let payloadItemType = "";
-    try {
-      const payloadRaw = localStorage.getItem(this.lastPayloadKey);
-      if (payloadRaw) {
-        const parsed = JSON.parse(payloadRaw);
-        payloadTs = Number(parsed?.timestamp) || 0;
-        payloadType = parsed?.type || "";
-        payloadItemType = parsed?.itemType || "";
-      }
-    } catch {}
-
-    // Ignore non-content events (e.g. theme metadata broadcasts)
-    // so we don't trigger the website content sync indicator repeatedly.
-    if (payloadTs && payloadType && payloadType !== "DATA_UPDATED") {
-      return 0;
-    }
-
-    // Theme updates are handled by theme-manager.js and should not trigger
-    // a full content refresh loop on the public pages.
-    if (payloadTs && payloadItemType === "theme") {
-      return localTs === payloadTs ? 0 : localTs;
-    }
-
-    return Math.max(localTs, payloadTs);
-  }
-
-  async checkForUpdates() {
+  async checkForUpdates(forceServerCheck = false) {
     if (this.isCheckingUpdates) {
       return false;
     }
 
     this.isCheckingUpdates = true;
     try {
+      this.setLastSyncCheck();
       const syncBusHasServerPolling =
         this.syncBus &&
         typeof this.syncBus.isServerSyncEnabled === "function" &&
@@ -444,16 +500,31 @@ class WebsiteAutoUpdater {
         syncBusHasServerPolling &&
         typeof this.syncBus.requestServerCheck === "function"
       ) {
-        await this.syncBus.requestServerCheck("website-check", false);
+        await this.syncBus.requestServerCheck("website-check", forceServerCheck);
       }
 
-      const lastUpdate = this.getLatestUpdateTimestamp();
-      const myLastCheck = this.getMyLastCheck();
+      const snapshot = this.getLatestPayloadSnapshot();
+      const hasNewerVersion =
+        snapshot.contentVersion > (this.lastRenderedContentVersion || 0);
+      const hasNewerTimestamp =
+        snapshot.timestamp > Math.max(this.getMyLastCheck(), this.lastRenderedUpdateTs);
 
-      if (lastUpdate && lastUpdate > myLastCheck) {
-        debugLog("Update detected via localStorage/timestamp");
-        this.setMyLastCheck(lastUpdate);
-        await this.refreshDataWithUI(lastUpdate, true);
+      if (
+        snapshot.payloadType !== "DATA_UPDATED" &&
+        snapshot.payloadType !== ""
+      ) {
+        return false;
+      }
+
+      if (hasNewerVersion || hasNewerTimestamp) {
+        debugLog("Update detected via local update payload");
+        this.setMyLastCheck(snapshot.timestamp);
+        await this.refreshDataWithUI(
+          snapshot.timestamp,
+          true,
+          snapshot.changeType,
+          snapshot.contentVersion
+        );
         return true;
       }
 
@@ -481,7 +552,7 @@ class WebsiteAutoUpdater {
 
     try {
       const response = await fetchWithTimeout(
-        `${SUPABASE_CONFIG.URL}/rest/v1/rpc/site_last_updated`,
+        `${SUPABASE_CONFIG.URL}/rest/v1/rpc/get_update_signal`,
         {
           method: "POST",
           headers: {
@@ -501,19 +572,24 @@ class WebsiteAutoUpdater {
       }
 
       const data = await response.json();
-      const value = Array.isArray(data) ? data[0] : data;
-      if (!value) return false;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row || typeof row !== "object") return false;
 
-      const parsed = Date.parse(value);
-      if (Number.isNaN(parsed)) return false;
+      const version = Number(
+        row.content_version ?? row.version ?? row.get_content_version ?? 0
+      );
+      const changeType = this.normalizeChangeType(row.last_change_type || "all");
+      const parsedTs = Date.parse(row.updated_at || "");
+      const updateTs = Number.isNaN(parsedTs) ? Date.now() : parsedTs;
 
-      const lastKnown = Number(localStorage.getItem(this.dbLastUpdateKey) || "0");
-      const comparisonBaseline = Math.max(lastKnown, this.lastRenderedUpdateTs || 0);
+      const hasVersionAdvance =
+        Number.isFinite(version) && version > (this.lastRenderedContentVersion || 0);
+      const hasTimeAdvance = updateTs > (this.lastRenderedUpdateTs || 0);
 
-      if (parsed > comparisonBaseline) {
-        localStorage.setItem(this.dbLastUpdateKey, parsed.toString());
-        this.setMyLastCheck(parsed);
-        await this.refreshDataWithUI(parsed, true);
+      if (hasVersionAdvance || hasTimeAdvance) {
+        localStorage.setItem(this.dbLastUpdateKey, String(updateTs));
+        this.setMyLastCheck(updateTs);
+        await this.refreshDataWithUI(updateTs, true, changeType, version);
         return true;
       }
     } catch (error) {
@@ -523,12 +599,99 @@ class WebsiteAutoUpdater {
     return false;
   }
 
-  async refreshDataWithUI(triggerTs = 0, announce = true) {
+  async refreshAffectedContent(changeType = "all") {
+    const normalizedChangeType = this.normalizeChangeType(changeType);
+    const shouldForceTheme =
+      normalizedChangeType === "theme" || normalizedChangeType === "all";
+    const shouldRefreshCarousel =
+      normalizedChangeType === "carousel" || normalizedChangeType === "all";
+
+    const runContentRefresh = async (target) => {
+      if (target === "featured" && typeof loadFeaturedItems === "function") {
+        await loadFeaturedItems(true, true);
+        return;
+      }
+      if (target === "menu" && typeof loadMenuItems === "function") {
+        await loadMenuItems(true, true);
+        return;
+      }
+      if (target === "specials" && typeof loadSpecialItems === "function") {
+        await loadSpecialItems(true, true);
+        return;
+      }
+      if (typeof loadDynamicContent === "function") {
+        await loadDynamicContent(true, true);
+      }
+    };
+
+    if (normalizedChangeType === "all") {
+      clearContentCaches();
+      requestDynamicCacheClearFromServiceWorker();
+      await runContentRefresh("all");
+    } else {
+      clearContentCachesForChange(normalizedChangeType);
+      requestDynamicCacheClearFromServiceWorker();
+      await runContentRefresh(normalizedChangeType);
+    }
+
+    if (shouldForceTheme) {
+      if (
+        window.ThemeManager &&
+        typeof window.ThemeManager.checkForThemeUpdates === "function"
+      ) {
+        await window.ThemeManager.checkForThemeUpdates(true);
+      }
+    }
+
+    if (shouldRefreshCarousel) {
+      if (window.heroCarousel) {
+        if (typeof window.heroCarousel.refresh === "function") {
+          await window.heroCarousel.refresh(true, { showLoading: false });
+        } else if (typeof window.heroCarousel.init === "function") {
+          await window.heroCarousel.init();
+        }
+      } else if (
+        document.querySelector(".hero-carousel") &&
+        typeof window.initializeCarousel === "function"
+      ) {
+        window.initializeCarousel();
+      }
+    }
+
+    if (
+      window.location.pathname.includes("order") &&
+      typeof renderCartOnOrderPage === "function" &&
+      (normalizedChangeType === "menu" ||
+        normalizedChangeType === "all" ||
+        normalizedChangeType === "theme")
+    ) {
+      await renderCartOnOrderPage(true);
+      debugLog("Cart refreshed after content sync");
+    }
+  }
+
+  async refreshDataWithUI(
+    triggerTs = 0,
+    announce = true,
+    changeType = "all",
+    contentVersion = 0
+  ) {
     const now = Date.now();
     const updateTs = Number(triggerTs) || 0;
+    const normalizedChangeType = this.normalizeChangeType(changeType);
+    const normalizedVersion = Number(contentVersion) || 0;
+
     if (this.isRefreshing) {
       this.pendingRefresh = true;
       this.pendingTriggerTs = Math.max(this.pendingTriggerTs || 0, updateTs);
+      this.pendingChangeType = this.mergeChangeTypes(
+        this.pendingChangeType,
+        normalizedChangeType
+      );
+      this.pendingContentVersion = Math.max(
+        this.pendingContentVersion || 0,
+        normalizedVersion
+      );
       return;
     }
 
@@ -537,19 +700,33 @@ class WebsiteAutoUpdater {
       if (!this.pendingRefresh) {
         this.pendingRefresh = true;
         this.pendingTriggerTs = Math.max(this.pendingTriggerTs || 0, updateTs);
+        this.pendingChangeType = this.mergeChangeTypes(
+          this.pendingChangeType,
+          normalizedChangeType
+        );
+        this.pendingContentVersion = Math.max(
+          this.pendingContentVersion || 0,
+          normalizedVersion
+        );
         setTimeout(() => {
           if (!this.pendingRefresh) return;
           this.pendingRefresh = false;
           const pendingTs = this.pendingTriggerTs || 0;
+          const pendingType = this.pendingChangeType || "all";
+          const pendingVersion = this.pendingContentVersion || 0;
           this.pendingTriggerTs = 0;
-          this.refreshDataWithUI(pendingTs, announce);
+          this.pendingChangeType = "all";
+          this.pendingContentVersion = 0;
+          this.refreshDataWithUI(pendingTs, announce, pendingType, pendingVersion);
         }, this.minRefreshGapMs - sinceLast);
       }
       return;
     }
 
-    const shouldSignal =
-      announce && updateTs && updateTs > this.lastRenderedUpdateTs;
+    const hasVersionAdvance =
+      normalizedVersion > (this.lastRenderedContentVersion || 0);
+    const hasTimestampAdvance = updateTs > (this.lastRenderedUpdateTs || 0);
+    const shouldSignal = announce && (hasVersionAdvance || hasTimestampAdvance);
 
     this.isRefreshing = true;
     this.lastRefreshAt = now;
@@ -570,45 +747,13 @@ class WebsiteAutoUpdater {
     }
 
     try {
-      debugLog("Refreshing website data...");
+      debugLog("Refreshing website data...", {
+        changeType: normalizedChangeType,
+        updateTs,
+        normalizedVersion,
+      });
 
-      if (typeof clearContentCaches === "function") {
-        clearContentCaches();
-      }
-      requestDynamicCacheClearFromServiceWorker();
-
-      if (typeof loadDynamicContent === "function") {
-        await loadDynamicContent(true, true);
-        debugLog("Dynamic content reloaded");
-      }
-
-      // Always re-check active theme after content refresh (cross-device)
-      if (window.ThemeManager && typeof window.ThemeManager.checkForThemeUpdates === "function") {
-        await window.ThemeManager.checkForThemeUpdates(true);
-      }
-
-      if (window.heroCarousel) {
-        if (typeof window.heroCarousel.refresh === "function") {
-          await window.heroCarousel.refresh(true, { showLoading: false });
-        } else if (typeof window.heroCarousel.init === "function") {
-          await window.heroCarousel.init();
-        }
-      } else if (
-        document.querySelector(".hero-carousel") &&
-        typeof window.initializeCarousel === "function"
-      ) {
-        window.initializeCarousel();
-      }
-
-      if (
-        window.location.pathname.includes("order") &&
-        typeof renderCartOnOrderPage === "function"
-      ) {
-        await renderCartOnOrderPage(true);
-        debugLog("Cart refreshed");
-      }
-
-      requestDynamicCacheClearFromServiceWorker();
+      await this.refreshAffectedContent(normalizedChangeType);
 
       if (shouldSignal) {
         this.showSyncIndicator("updated");
@@ -642,28 +787,40 @@ class WebsiteAutoUpdater {
         this.lastRenderedUpdateTs,
         updateTs || now
       );
-      const latestContentVersion =
-        Number(localStorage.getItem(this.contentVersionKey) || "0") || 0;
+      const latestContentVersion = Math.max(
+        normalizedVersion,
+        Number(localStorage.getItem(this.contentVersionKey) || "0") || 0
+      );
       if (latestContentVersion > 0) {
-        this.lastRenderedContentVersion = Math.max(
-          this.lastRenderedContentVersion || 0,
-          latestContentVersion
-        );
+        this.lastRenderedContentVersion = Math.max(this.lastRenderedContentVersion || 0, latestContentVersion);
       }
+      this.lastRenderedChangeType = normalizedChangeType;
       this.setMyLastCheck(this.lastRenderedUpdateTs);
+      this.setLastSyncCheck();
       try {
         localStorage.setItem(
           this.dbLastUpdateKey,
           String(this.lastRenderedUpdateTs)
         );
         localStorage.setItem(this.lastUpdateKey, String(this.lastRenderedUpdateTs));
+        localStorage.setItem(
+          this.contentVersionKey,
+          String(this.lastRenderedContentVersion || 0)
+        );
+        localStorage.setItem(this.lastChangeTypeKey, normalizedChangeType);
       } catch {}
 
       if (this.pendingRefresh) {
         this.pendingRefresh = false;
         const pendingTs = this.pendingTriggerTs || 0;
+        const pendingType = this.pendingChangeType || "all";
+        const pendingVersion = this.pendingContentVersion || 0;
         this.pendingTriggerTs = 0;
-        queueMicrotask(() => this.refreshDataWithUI(pendingTs, announce));
+        this.pendingChangeType = "all";
+        this.pendingContentVersion = 0;
+        queueMicrotask(() =>
+          this.refreshDataWithUI(pendingTs, announce, pendingType, pendingVersion)
+        );
       }
     }
   }
@@ -690,12 +847,8 @@ class WebsiteAutoUpdater {
     }
 
     indicator.style.display = "";
-
-    // Reset classes
     indicator.className = "";
-    if (state !== "error") {
-      indicator.style.cssText = "";
-    }
+    indicator.classList.add("is-visible");
 
     // Set state
     if (state === "syncing") {
@@ -707,14 +860,8 @@ class WebsiteAutoUpdater {
       indicator.textContent = "\u2713";
       indicator.title = "Content updated!";
     } else if (state === "error") {
-      indicator.style.cssText = `
-        position: fixed; bottom: 20px; right: 20px;
-        width: 40px; height: 40px; border-radius: 50%;
-        background: #dc3545; color: white; display: flex;
-        align-items: center; justify-content: center;
-        font-size: 1.2rem; z-index: 10000;
-      `;
-      indicator.innerHTML = "!";
+      indicator.classList.add("error");
+      indicator.textContent = "!";
       indicator.title = "Update failed";
     }
   }
@@ -734,6 +881,27 @@ class WebsiteAutoUpdater {
   showUpdateNotification() {
     debugLog("Website content updated successfully!");
     showNotification("New updates are now live.", "info");
+  }
+
+  async forceRefetchAll() {
+    return this.refreshDataWithUI(Date.now(), false, "all", 0);
+  }
+
+  getStatus() {
+    const syncBusStatus =
+      this.syncBus && typeof this.syncBus.getStatus === "function"
+        ? this.syncBus.getStatus()
+        : null;
+    return {
+      lastSyncCheckAt: this.lastSyncCheckAt || 0,
+      currentPollingInterval: this.currentPollingInterval || 0,
+      isCheckingUpdates: this.isCheckingUpdates,
+      isRefreshing: this.isRefreshing,
+      lastRenderedUpdateTs: this.lastRenderedUpdateTs || 0,
+      lastRenderedContentVersion: this.lastRenderedContentVersion || 0,
+      lastRenderedChangeType: this.lastRenderedChangeType || "all",
+      syncBus: syncBusStatus,
+    };
   }
 }
 
@@ -834,6 +1002,13 @@ function getAdaptiveFetchTimeoutMs(baseMs = SUPABASE_FETCH_TIMEOUT_MS) {
 }
 
 function getAdaptiveImageHints(index = 0) {
+  if (index === 0) {
+    return {
+      loading: "eager",
+      fetchPriority: "high",
+    };
+  }
+
   const profile = getRuntimePerfProfile();
   let eagerCount = 2;
 
@@ -847,7 +1022,7 @@ function getAdaptiveImageHints(index = 0) {
   const eager = index < eagerCount;
   return {
     loading: eager ? "eager" : "lazy",
-    fetchPriority: index === 0 && eager ? "high" : "auto",
+    fetchPriority: eager ? "high" : "auto",
   };
 }
 
@@ -885,15 +1060,16 @@ const inFlightSupabaseRequests = new Map();
 const SUPABASE_FETCH_TIMEOUT_MS = 12000;
 const CACHE_DURATION_GENERAL = 60 * 1000; // 1 minute
 const MENU_CACHE_KEY = "toke_bakes_menu_cache_v2";
+const SPECIALS_CACHE_KEY = "toke_bakes_specials_cache_v1";
 const MENU_OPTIONS_CACHE_KEY = "toke_bakes_menu_options_cache_v1";
 const MENU_OPTIONS_CACHE_DURATION = 60 * 1000;
 const CONTENT_CONTAINER_IDS = [
   "featured-container",
   "menu-container",
-  "gallery-container",
+  "specials-container",
 ];
 const CONTENT_CACHE_VERSION_KEY = "toke_bakes_content_cache_version";
-const CONTENT_CACHE_VERSION = "4";
+const CONTENT_CACHE_VERSION = "5";
 const CONTENT_LAST_UPDATE_KEY = "toke_bakes_last_update";
 const CONTENT_LAST_PAYLOAD_KEY = "toke_bakes_last_update_payload";
 const CONTENT_DB_LAST_UPDATED_KEY = "toke_bakes_db_last_updated";
@@ -903,6 +1079,8 @@ let cachedMenuOptionMap = new Map();
 let menuOptionsCacheTimestamp = 0;
 let inFlightMenuOptionRequest = null;
 let renderedMenuItemLookup = new Map();
+let renderedFeaturedItemLookup = new Map();
+let renderedSpecialItemLookup = new Map();
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = SUPABASE_FETCH_TIMEOUT_MS) {
   if (typeof AbortController === "undefined") {
@@ -942,8 +1120,8 @@ const PUBLIC_IMAGE_PLACEHOLDERS = {
   featured:
     "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkZlYXR1cmVkPC90ZXh0Pjwvc3ZnPg==",
   menu: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4=",
-  gallery:
-    "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+=",
+  specials:
+    "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlNwZWNpYWw8L3RleHQ+PC9zdmc+=",
 };
 
 function looksLikeImageSrc(value) {
@@ -1191,6 +1369,18 @@ function sortByDisplayAndCreated(items) {
   });
 }
 
+function normalizeOriginalPrice(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = parseNumber(value, null);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return toMoney(parsed, 0);
+}
+
+function normalizeBadgeIcon(value, fallback = "🔥") {
+  const normalized = toSafeString(value, fallback).slice(0, 8);
+  return normalized || fallback;
+}
+
 function normalizeFeaturedItem(rawItem = {}, index = 0) {
   return {
     id: rawItem.id ?? `featured-${index}`,
@@ -1203,6 +1393,14 @@ function normalizeFeaturedItem(rawItem = {}, index = 0) {
       rawItem.image || rawItem.image_url || rawItem.src,
       PUBLIC_IMAGE_PLACEHOLDERS.featured
     ),
+    price: toMoney(parseNumber(rawItem.price ?? rawItem.amount ?? rawItem.cost, 0), 0),
+    original_price: normalizeOriginalPrice(
+      rawItem.original_price ?? rawItem.old_price ?? rawItem.previous_price
+    ),
+    is_special: parseBoolean(rawItem.is_special, false),
+    badge_right_text: toSafeString(rawItem.badge_right_text, "SPECIAL"),
+    badge_right_icon: normalizeBadgeIcon(rawItem.badge_right_icon, "🔥"),
+    cta_label: toSafeString(rawItem.cta_label, "Order Now"),
     display_order: parseNumber(rawItem.display_order, index),
     is_active: parseBoolean(rawItem.is_active ?? rawItem.active, true),
     start_date: normalizeDateOnly(rawItem.start_date || rawItem.startDate),
@@ -1219,11 +1417,18 @@ function normalizeMenuItem(rawItem = {}, index = 0) {
       rawItem.description || rawItem.details || rawItem.subtitle,
       ""
     ),
-    price: parseNumber(rawItem.price ?? rawItem.amount ?? rawItem.cost, 0),
+    price: toMoney(parseNumber(rawItem.price ?? rawItem.amount ?? rawItem.cost, 0), 0),
+    original_price: normalizeOriginalPrice(
+      rawItem.original_price ?? rawItem.old_price ?? rawItem.previous_price
+    ),
     image: resolveImageForDisplay(
       rawItem.image || rawItem.image_url || rawItem.src,
       PUBLIC_IMAGE_PLACEHOLDERS.menu
     ),
+    is_special: parseBoolean(rawItem.is_special, false),
+    badge_right_text: toSafeString(rawItem.badge_right_text, "SPECIAL"),
+    badge_right_icon: normalizeBadgeIcon(rawItem.badge_right_icon, "🔥"),
+    cta_label: toSafeString(rawItem.cta_label, "Preferences"),
     is_available: parseBoolean(
       rawItem.is_available ?? rawItem.available ?? rawItem.is_active,
       true
@@ -1246,20 +1451,35 @@ function normalizeMenuItem(rawItem = {}, index = 0) {
   };
 }
 
-function normalizeGalleryItem(rawItem = {}, index = 0) {
+function normalizeSpecialItem(rawItem = {}, index = 0) {
   const width = parseNumber(rawItem.width, null);
   const height = parseNumber(rawItem.height, null);
   return {
-    id: rawItem.id ?? `gallery-${index}`,
-    alt: toSafeString(rawItem.alt || rawItem.title || rawItem.caption, "Gallery image"),
-    image: resolveImageForDisplay(
-      rawItem.image || rawItem.image_url || rawItem.src,
-      PUBLIC_IMAGE_PLACEHOLDERS.gallery
+    id: rawItem.id ?? `special-${index}`,
+    title: toSafeString(rawItem.title || rawItem.alt || rawItem.name, "Special Offer"),
+    description: toSafeString(
+      rawItem.description || rawItem.summary || rawItem.caption,
+      ""
     ),
+    image: resolveImageForDisplay(
+      rawItem.image_url || rawItem.image || rawItem.src,
+      PUBLIC_IMAGE_PLACEHOLDERS.specials
+    ),
+    image_url: toSafeString(rawItem.image_url || rawItem.image || rawItem.src),
+    price: toMoney(parseNumber(rawItem.price ?? rawItem.amount ?? rawItem.cost, 0), 0),
+    original_price: normalizeOriginalPrice(
+      rawItem.original_price ?? rawItem.old_price ?? rawItem.previous_price
+    ),
+    is_special: parseBoolean(rawItem.is_special, false),
+    badge_right_text: toSafeString(rawItem.badge_right_text, "SPECIAL"),
+    badge_right_icon: normalizeBadgeIcon(rawItem.badge_right_icon, "🔥"),
+    cta_label: toSafeString(rawItem.cta_label, "Order Now"),
+    is_active: parseBoolean(rawItem.is_active ?? rawItem.active, true),
     width: Number.isFinite(width) && width > 0 ? Math.round(width) : null,
     height: Number.isFinite(height) && height > 0 ? Math.round(height) : null,
     display_order: parseNumber(rawItem.display_order, index),
     created_at: rawItem.created_at || rawItem.createdAt || null,
+    updated_at: rawItem.updated_at || rawItem.updatedAt || null,
   };
 }
 
@@ -1273,6 +1493,13 @@ function normalizeFeaturedItems(items) {
 function normalizeMenuItems(items) {
   const normalized = toArray(items).map((item, index) =>
     normalizeMenuItem(item, index)
+  );
+  return sortByDisplayAndCreated(normalized);
+}
+
+function normalizeSpecialItems(items) {
+  const normalized = toArray(items).map((item, index) =>
+    normalizeSpecialItem(item, index)
   );
   return sortByDisplayAndCreated(normalized);
 }
@@ -1480,10 +1707,7 @@ function getOptionsForMenuItem(itemId) {
 }
 
 function normalizeGalleryItems(items) {
-  const normalized = toArray(items).map((item, index) =>
-    normalizeGalleryItem(item, index)
-  );
-  return sortByDisplayAndCreated(normalized);
+  return normalizeSpecialItems(items);
 }
 
 function normalizeQuery(query) {
@@ -1505,8 +1729,12 @@ function buildMenuQuery() {
   return `?select=*&order=display_order.asc,created_at.desc`;
 }
 
-function buildGalleryQuery() {
+function buildSpecialsQuery() {
   return `?select=*&order=display_order.asc,created_at.desc`;
+}
+
+function buildGalleryQuery() {
+  return buildSpecialsQuery();
 }
 
 function isFeaturedActive(item) {
@@ -1526,6 +1754,10 @@ function isFeaturedActive(item) {
   }
 
   return true;
+}
+
+function isSpecialItemActive(item) {
+  return parseBoolean(item?.is_active, true);
 }
 
 // Load from Supabase with caching
@@ -1950,9 +2182,9 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
   }
 }
 
-// ================== LOAD GALLERY IMAGES - FIXED VERSION ==================
-async function loadGalleryImages(forceReload = false, silentRefresh = false) {
-  const container = document.getElementById("gallery-container");
+// ================== LOAD SPECIALS - FIXED VERSION ==================
+async function loadSpecialItems(forceReload = false, silentRefresh = false) {
+  const container = document.getElementById("specials-container");
   if (!container) return;
 
   // Check if we already have content to prevent flash
@@ -1961,12 +2193,25 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
     !container.querySelector(".loading-message") &&
     !forceReload
   ) {
-    debugLog("Gallery images already loaded, skipping");
+    debugLog("Specials already loaded, skipping");
     return;
   }
 
   // Check cache first
-  const dataCacheKey = `${API_ENDPOINTS.GALLERY}_data`;
+  const specialsEndpoint = window.API_ENDPOINTS?.SPECIALS || "/rest/v1/gallery";
+  if (!specialsEndpoint) {
+    container.innerHTML = `
+      <div class="empty-state error">
+        <i class="fas fa-exclamation-triangle"></i>
+        <p>Specials endpoint is not configured.</p>
+      </div>
+    `;
+    return;
+  }
+  const dataCacheKey =
+    specialsEndpoint && specialsEndpoint.length > 0
+      ? `${specialsEndpoint}_data`
+      : SPECIALS_CACHE_KEY;
   let cachedData = null;
 
   const allowCachedView = !forceReload || silentRefresh;
@@ -1976,8 +2221,8 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL) {
-          cachedData = normalizeGalleryItems(parsed.data);
-          debugLog("Using cached gallery images");
+          cachedData = normalizeSpecialItems(parsed.data).filter(isSpecialItemActive);
+          debugLog("Using cached specials");
         }
       }
     } catch (e) {}
@@ -1985,13 +2230,13 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
 
   if (cachedData !== null) {
     if (cachedData.length > 0) {
-      renderGalleryImages(container, cachedData);
+      renderSpecialItems(container, cachedData);
     } else {
       container.innerHTML = `
         <div class="empty-state">
-          <i class="fas fa-images"></i>
-          <p>Gallery coming soon!</p>
-          <p class="small">Beautiful creations will be here shortly</p>
+          <i class="fas fa-tag"></i>
+          <p>No specials right now.</p>
+          <p class="small">Check back soon for fresh offers.</p>
         </div>
       `;
     }
@@ -2007,20 +2252,20 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
     container.innerHTML = `
       <div class="loading-message">
         <div class="loading-spinner"></div>
-        <p>Loading gallery images...</p>
+        <p>Loading specials...</p>
       </div>
     `;
   }
 
   try {
     // Try to load fresh data
-    const items = normalizeGalleryItems(
+    const items = normalizeSpecialItems(
       await loadFromSupabase(
-      API_ENDPOINTS.GALLERY,
-      buildGalleryQuery(),
+      specialsEndpoint,
+      buildSpecialsQuery(),
       { forceRefresh: forceReload }
       )
-    );
+    ).filter(isSpecialItemActive);
 
     // Cache successful response (even if empty) so stale content doesn't linger.
     try {
@@ -2033,28 +2278,28 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
     if (!items || items.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
-          <i class="fas fa-images"></i>
-          <p>Gallery coming soon!</p>
-          <p class="small">Beautiful creations will be here shortly</p>
+          <i class="fas fa-tag"></i>
+          <p>No specials right now.</p>
+          <p class="small">Check back soon for fresh offers.</p>
         </div>
       `;
       return;
     }
 
-    renderGalleryImages(container, items);
+    renderSpecialItems(container, items);
   } catch (error) {
-    console.error("Error loading gallery images:", error);
+    console.error("Error loading specials:", error);
 
     // If error but we have cached data, keep showing it (including empty-state).
     if (cachedData !== null) {
       if (cachedData.length > 0) {
-        renderGalleryImages(container, cachedData);
+        renderSpecialItems(container, cachedData);
       } else {
         container.innerHTML = `
           <div class="empty-state">
-            <i class="fas fa-images"></i>
-            <p>Gallery coming soon!</p>
-            <p class="small">Beautiful creations will be here shortly</p>
+            <i class="fas fa-tag"></i>
+            <p>No specials right now.</p>
+            <p class="small">Check back soon for fresh offers.</p>
           </div>
         `;
       }
@@ -2062,7 +2307,7 @@ async function loadGalleryImages(forceReload = false, silentRefresh = false) {
       container.innerHTML = `
         <div class="empty-state error">
           <i class="fas fa-exclamation-triangle"></i>
-          <p>Unable to load gallery.</p>
+          <p>Unable to load specials.</p>
           <p class="small">Please check your connection</p>
         </div>
       `;
@@ -2117,9 +2362,9 @@ async function loadDynamicContent(forceReload = false, silentRefresh = false) {
         handler: loadMenuItems,
       },
       {
-        matches: (page) => page.includes("gallery"),
-        label: "gallery images",
-        handler: loadGalleryImages,
+        matches: (page) => page.includes("specials"),
+        label: "specials",
+        handler: loadSpecialItems,
       },
     ];
 
@@ -2229,6 +2474,8 @@ function clearContentCaches() {
   menuOptionsCacheTimestamp = 0;
   inFlightMenuOptionRequest = null;
   renderedMenuItemLookup = new Map();
+  renderedFeaturedItemLookup = new Map();
+  renderedSpecialItemLookup = new Map();
 
   if (dataCache && dataCache.clear) {
     dataCache.clear();
@@ -2243,11 +2490,64 @@ function clearContentCaches() {
     if (window.API_ENDPOINTS?.FEATURED) {
       localStorage.removeItem(`${window.API_ENDPOINTS.FEATURED}_data`);
     }
-    if (window.API_ENDPOINTS?.GALLERY) {
-      localStorage.removeItem(`${window.API_ENDPOINTS.GALLERY}_data`);
+    const specialsEndpoint = window.API_ENDPOINTS?.SPECIALS;
+    if (specialsEndpoint) {
+      localStorage.removeItem(`${specialsEndpoint}_data`);
     }
+    localStorage.removeItem(SPECIALS_CACHE_KEY);
     localStorage.removeItem("hero_carousel_data");
   } catch (e) {}
+}
+
+function clearContentCachesForChange(changeType = "all") {
+  const rawType = toSafeString(changeType, "all").toLowerCase();
+  const type = rawType === "gallery" ? "specials" : rawType;
+  if (type === "all") {
+    clearContentCaches();
+    return;
+  }
+
+  if (type === "menu" || type === "featured") {
+    cachedMenuItems = null;
+    cacheTimestamp = null;
+  }
+  if (type === "menu") {
+    cachedMenuOptionMap = new Map();
+    menuOptionsCacheTimestamp = 0;
+    inFlightMenuOptionRequest = null;
+    renderedMenuItemLookup = new Map();
+  }
+
+  if (dataCache && dataCache.forEach) {
+    const specialsEndpoint = API_ENDPOINTS.SPECIALS || "";
+    dataCache.forEach((_value, key) => {
+      if (type === "menu" && (key.includes(API_ENDPOINTS.MENU) || key.includes(getMenuOptionGroupsEndpoint()) || key.includes(getMenuOptionValuesEndpoint()))) {
+        dataCache.delete(key);
+      } else if (type === "featured" && key.includes(API_ENDPOINTS.FEATURED)) {
+        dataCache.delete(key);
+      } else if (type === "specials" && specialsEndpoint && key.includes(specialsEndpoint)) {
+        dataCache.delete(key);
+      }
+    });
+  }
+
+  try {
+    if (type === "menu") {
+      localStorage.removeItem(MENU_CACHE_KEY);
+      localStorage.removeItem(MENU_OPTIONS_CACHE_KEY);
+    }
+    if (type === "featured" && window.API_ENDPOINTS?.FEATURED) {
+      localStorage.removeItem(`${window.API_ENDPOINTS.FEATURED}_data`);
+    }
+    const specialsEndpoint = window.API_ENDPOINTS?.SPECIALS;
+    if (type === "specials" && specialsEndpoint) {
+      localStorage.removeItem(`${specialsEndpoint}_data`);
+      localStorage.removeItem(SPECIALS_CACHE_KEY);
+    }
+    if (type === "carousel") {
+      localStorage.removeItem("hero_carousel_data");
+    }
+  } catch {}
 }
 
 function ensureContentCacheVersion() {
@@ -2275,34 +2575,183 @@ function showConfigError() {
   });
 }
 
+function formatNairaValue(value) {
+  return `₦${formatPrice(Math.max(0, toMoney(value, 0)))}`;
+}
+
+function getComputedDiscount(originalPrice, price) {
+  const baseOriginal = normalizeOriginalPrice(originalPrice);
+  const basePrice = Math.max(0, toMoney(price, 0));
+  if (!Number.isFinite(baseOriginal) || baseOriginal <= basePrice) {
+    return null;
+  }
+  const percent = Math.round(((baseOriginal - basePrice) / baseOriginal) * 100);
+  if (!Number.isFinite(percent) || percent <= 0) return null;
+  return {
+    originalPrice: baseOriginal,
+    currentPrice: basePrice,
+    percent,
+  };
+}
+
+function resolveCardCtaLabel(item, context) {
+  if (context === "menu") {
+    return toSafeString(item?.cta_label, "Preferences");
+  }
+  return toSafeString(item?.cta_label, "Order Now");
+}
+
+function renderProductCard(item, context = "specials", index = 0) {
+  const contextKey = toSafeString(context, "specials").toLowerCase();
+  const isMenuCard = contextKey === "menu";
+  const isDirectOrderCard = contextKey === "featured" || contextKey === "specials";
+  const imageHints = getAdaptiveImageHints(index);
+  const placeholder =
+    PUBLIC_IMAGE_PLACEHOLDERS[contextKey] || PUBLIC_IMAGE_PLACEHOLDERS.specials;
+  const discount = getComputedDiscount(item?.original_price, item?.price);
+  const showRightBadge = parseBoolean(item?.is_special, false);
+  const badgeText = toSafeString(item?.badge_right_text, "SPECIAL").toUpperCase();
+  const badgeIcon = normalizeBadgeIcon(item?.badge_right_icon, "🔥");
+  const ctaLabel = resolveCardCtaLabel(item, contextKey);
+  const titleText = toSafeString(item?.title, "Product");
+  const descriptionText = toSafeString(item?.description, "");
+  const priceValue = Math.max(0, toMoney(item?.price, 0));
+  const itemId = normalizeItemId(item?.id);
+  const width = Number(item?.width) > 0 ? Number(item.width) : 800;
+  const height = Number(item?.height) > 0 ? Number(item.height) : 600;
+
+  const card = document.createElement("article");
+  const contextClass =
+    contextKey === "menu"
+      ? "menu-item"
+      : contextKey === "featured"
+      ? "featured-card"
+      : "specials-card";
+  card.className = `product-card ${contextClass}`;
+  card.dataset.ripple = "true";
+  card.dataset.context = contextKey;
+  card.dataset.id = itemId;
+  card.dataset.item = titleText;
+  card.dataset.description = descriptionText;
+  card.dataset.price = String(priceValue);
+
+  if (isMenuCard) {
+    card.dataset.menuItem = "true";
+    card.setAttribute("role", "button");
+    card.setAttribute("tabindex", "0");
+    card.setAttribute("aria-label", `Preferences for ${titleText}`);
+  } else {
+    card.dataset.orderItem = "true";
+  }
+
+  const frame = document.createElement("div");
+  frame.className = "product-card-frame";
+  const media = document.createElement("div");
+  media.className = "product-card-media";
+
+  const image = document.createElement("img");
+  image.src = item?.image || placeholder;
+  image.alt = titleText;
+  image.loading = imageHints.loading;
+  image.decoding = "async";
+  image.setAttribute("fetchpriority", imageHints.fetchPriority);
+  image.width = width;
+  image.height = height;
+  image.sizes = "(max-width: 640px) 92vw, (max-width: 1024px) 45vw, 360px";
+  image.addEventListener("error", () => {
+    image.src = placeholder;
+  });
+  media.appendChild(image);
+
+  if (discount) {
+    const discountChip = document.createElement("span");
+    discountChip.className = "product-chip product-chip--discount";
+    discountChip.textContent = `-${discount.percent}% OFF`;
+    media.appendChild(discountChip);
+  }
+
+  if (showRightBadge) {
+    const rightBadge = document.createElement("span");
+    rightBadge.className = "product-chip product-chip--special";
+    const iconSpan = document.createElement("span");
+    iconSpan.className = "product-chip-icon";
+    iconSpan.textContent = badgeIcon;
+    const textSpan = document.createElement("span");
+    textSpan.className = "product-chip-text";
+    textSpan.textContent = badgeText;
+    rightBadge.appendChild(iconSpan);
+    rightBadge.appendChild(textSpan);
+    media.appendChild(rightBadge);
+  }
+
+  frame.appendChild(media);
+  card.appendChild(frame);
+
+  const body = document.createElement("div");
+  body.className = "product-card-body";
+
+  const title = document.createElement("h3");
+  title.className = "product-card-title";
+  title.textContent = titleText;
+  body.appendChild(title);
+
+  if (descriptionText) {
+    const description = document.createElement("p");
+    description.className = "product-card-desc";
+    description.textContent = descriptionText;
+    body.appendChild(description);
+  }
+
+  const pricing = document.createElement("div");
+  pricing.className = "product-card-pricing";
+  if (discount) {
+    const wasLine = document.createElement("p");
+    wasLine.className = "product-card-was";
+    wasLine.textContent = `Was ${formatNairaValue(discount.originalPrice)}`;
+    pricing.appendChild(wasLine);
+
+    const nowLine = document.createElement("p");
+    nowLine.className = "product-card-now";
+    nowLine.textContent = `Now ${formatNairaValue(discount.currentPrice)}`;
+    pricing.appendChild(nowLine);
+  } else {
+    const priceLine = document.createElement("p");
+    priceLine.className = "product-card-current";
+    priceLine.textContent =
+      priceValue > 0 ? formatNairaValue(priceValue) : "Price on request";
+    pricing.appendChild(priceLine);
+  }
+  body.appendChild(pricing);
+
+  const cta = document.createElement("button");
+  cta.type = "button";
+  cta.className = "product-card-cta";
+  cta.textContent = ctaLabel;
+  cta.dataset.orderDirect = isDirectOrderCard ? "true" : "false";
+  cta.dataset.context = contextKey;
+  body.appendChild(cta);
+
+  card.appendChild(body);
+  return card;
+}
+
+function renderProductCards(container, items, context) {
+  const fragment = document.createDocumentFragment();
+  items.forEach((item, index) => {
+    const card = renderProductCard(item, context, index);
+    fragment.appendChild(card);
+  });
+  container.replaceChildren(fragment);
+}
+
 function renderFeaturedItems(container, items) {
   const safeItems = normalizeFeaturedItems(items).filter(isFeaturedActive);
-  container.innerHTML = safeItems
-    .map(
-      (item, index) => {
-        const imageHints = getAdaptiveImageHints(index);
-        return `
-          <article class="featured-card" data-ripple="true">
-            <div class="featured-card-media">
-              <img src="${item.image}" alt="${escapeHtml(
-                item.title
-              )}" loading="${imageHints.loading}" decoding="async" fetchpriority="${
-                imageHints.fetchPriority
-              }" width="800" height="600"
-              sizes="(max-width: 640px) 92vw, (max-width: 1024px) 45vw, 360px"
-                   onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkZlYXR1cmVkPC90ZXh0Pjwvc3ZnPg==';">
-              <span class="featured-card-glow" aria-hidden="true"></span>
-            </div>
-            <div class="featured-card-body">
-              <h4>${escapeHtml(item.title)}</h4>
-              <p>${escapeHtml(item.description)}</p>
-            </div>
-          </article>
-        `;
-      }
-    )
-    .join("");
-
+  renderedFeaturedItemLookup = new Map();
+  safeItems.forEach((item) => {
+    const itemId = normalizeItemId(item.id);
+    if (itemId) renderedFeaturedItemLookup.set(itemId, item);
+  });
+  renderProductCards(container, safeItems, "featured");
 }
 
 function renderMenuItems(container, items) {
@@ -2314,70 +2763,17 @@ function renderMenuItems(container, items) {
       renderedMenuItemLookup.set(itemId, item);
     }
   });
-
-  container.innerHTML = safeItems
-    .map(
-      (item, index) => {
-        const imageHints = getAdaptiveImageHints(index);
-        const itemId = normalizeItemId(item.id);
-        const priceLabel = Number(item.price) > 0 ? formatPrice(item.price) : "0";
-        return `
-          <div class="menu-item"
-               data-ripple="true"
-               data-menu-item="true"
-               data-item="${escapeHtml(item.title)}"
-               data-price="${item.price}"
-               data-id="${escapeHtml(itemId)}"
-               role="button"
-               tabindex="0"
-               aria-label="Preferences for ${escapeHtml(item.title)}">
-            <img src="${item.image}" alt="${escapeHtml(
-        item.title
-      )}" loading="${imageHints.loading}" decoding="async" fetchpriority="${
-        imageHints.fetchPriority
-      }" width="800" height="600"
-      sizes="(max-width: 640px) 92vw, (max-width: 1024px) 45vw, 360px"
-      onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4='">
-            <h3>${escapeHtml(item.title)}</h3>
-            <p>${escapeHtml(item.description)}</p>
-            <div class="menu-item-meta">
-              <span class="price">From NGN ${priceLabel}</span>
-              <span class="menu-item-cta">Preferences</span>
-            </div>
-          </div>
-        `;
-      }
-    )
-    .join("");
-
+  renderProductCards(container, safeItems, "menu");
 }
 
-function renderGalleryImages(container, items) {
-  const safeItems = normalizeGalleryItems(items);
-  container.innerHTML = safeItems
-    .map(
-      (item, index) => {
-        const width = Number(item.width) > 0 ? Number(item.width) : 800;
-        const height = Number(item.height) > 0 ? Number(item.height) : 600;
-        const imageHints = getAdaptiveImageHints(index);
-        return `
-            <figure class="gallery-card" data-ripple="true">
-              <div class="gallery-card-media">
-                <img src="${item.image}" alt="${escapeHtml(
-                  item.alt || ""
-                )}" loading="${imageHints.loading}" decoding="async" fetchpriority="${
-                  imageHints.fetchPriority
-                }" width="${width}" height="${height}"
-                sizes="(max-width: 640px) 92vw, (max-width: 1024px) 45vw, 360px"
-                     onerror="this.onerror=null; this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+='">
-              </div>
-              <figcaption>${escapeHtml(item.alt || "Gallery image")}</figcaption>
-            </figure>
-          `;
-      }
-    )
-    .join("");
-
+function renderSpecialItems(container, items) {
+  const safeItems = normalizeSpecialItems(items).filter(isSpecialItemActive);
+  renderedSpecialItemLookup = new Map();
+  safeItems.forEach((item) => {
+    const itemId = normalizeItemId(item.id);
+    if (itemId) renderedSpecialItemLookup.set(itemId, item);
+  });
+  renderProductCards(container, safeItems, "specials");
 }
 
 // ================== ORIGINAL TOKE BAKES CODE ==================
@@ -3035,6 +3431,7 @@ function showNotification(message, type = "success") {
   const LOADER_SESSION_KEY = "toke_bakes_home_loader_seen";
   let hideTimer = null;
   let hidden = false;
+  let hardTimeout = null;
 
   const isHomePage = () => {
     const page = window.location.pathname.split("/").pop() || "";
@@ -3050,23 +3447,47 @@ function showNotification(message, type = "success") {
   };
 
   const isCarouselReady = () => window.__tokeCarouselReady === true;
+  const isThemeReady = () => {
+    const themeLink = document.getElementById("theme-stylesheet");
+    return (
+      !document.documentElement.classList.contains("theme-loading") ||
+      themeLink?.dataset?.loaded === "true"
+    );
+  };
+  const isInitialContentReady = () => window.__tbInitialContentReady === true;
+  const canRevealLoader = () => {
+    if (!isThemeReady()) return false;
+    if (!isInitialContentReady()) return false;
+    if (document.querySelector(".hero-carousel") && !isCarouselReady()) {
+      return false;
+    }
+    return true;
+  };
 
   const markLoaderAsSeen = () => {
     try {
       sessionStorage.setItem(LOADER_SESSION_KEY, "1");
+      document.documentElement.setAttribute("data-loader-seen", "1");
     } catch {}
   };
 
   const clearHideTimer = () => {
     if (!hideTimer) return;
-    clearTimeout(hideTimer);
+    clearInterval(hideTimer);
     hideTimer = null;
+  };
+
+  const clearHardTimeout = () => {
+    if (!hardTimeout) return;
+    clearTimeout(hardTimeout);
+    hardTimeout = null;
   };
 
   const hideLoader = (markSeen = true) => {
     if (hidden) return;
     hidden = true;
     clearHideTimer();
+    clearHardTimeout();
     if (markSeen) {
       markLoaderAsSeen();
     }
@@ -3081,6 +3502,20 @@ function showNotification(message, type = "success") {
     setTimeout(finish, 360);
   };
 
+  const maybeHideLoader = () => {
+    if (!isHomePage()) {
+      hideLoader(false);
+      return;
+    }
+    if (hasSeenLoaderThisSession()) {
+      hideLoader(false);
+      return;
+    }
+    if (canRevealLoader()) {
+      hideLoader(true);
+    }
+  };
+
   const showLoader = () => {
     if (!isHomePage()) {
       hideLoader(false);
@@ -3092,31 +3527,32 @@ function showNotification(message, type = "success") {
       return;
     }
 
-    if (isCarouselReady()) {
-      hideLoader(true);
-      return;
-    }
-
-    markLoaderAsSeen();
     hidden = false;
     clearHideTimer();
+    clearHardTimeout();
     loader.style.display = "flex";
     loader.style.opacity = "1";
     loader.style.pointerEvents = "auto";
     loader.classList.remove("fade-out");
     loader.style.transitionDuration = "260ms";
 
-    // Fallback in case carousel event never fires
-    hideTimer = setTimeout(() => hideLoader(true), 1800);
+    hideTimer = setInterval(() => {
+      maybeHideLoader();
+    }, 120);
+
+    // Hard fail-safe: never keep loader too long on slow networks.
+    hardTimeout = setTimeout(() => hideLoader(true), 4800);
   };
 
   window.addEventListener("carousel:ready", () => {
     window.__tokeCarouselReady = true;
-    hideLoader(true);
+    maybeHideLoader();
   });
+  window.addEventListener("theme:ready", maybeHideLoader);
+  window.addEventListener("tb:initial-content-ready", maybeHideLoader);
   window.addEventListener("spa:navigated", () => {
     if (isHomePage()) {
-      showLoader();
+      maybeHideLoader();
     } else {
       hideLoader(false);
     }
@@ -4139,6 +4575,85 @@ function submitConfiguredProduct(mode = "cart") {
   showOrderOptions(orderData);
 }
 
+function getProductItemFromElement(productCard) {
+  if (!productCard) return null;
+  const context = toSafeString(productCard.dataset.context, "specials").toLowerCase();
+  const itemId = normalizeItemId(productCard.dataset.id);
+
+  if (itemId) {
+    if (context === "featured" && renderedFeaturedItemLookup.has(itemId)) {
+      return renderedFeaturedItemLookup.get(itemId);
+    }
+    if (context === "specials" && renderedSpecialItemLookup.has(itemId)) {
+      return renderedSpecialItemLookup.get(itemId);
+    }
+  }
+
+  const fallbackTitle = toSafeString(
+    productCard.dataset.item || productCard.querySelector("h3")?.textContent,
+    "Special Offer"
+  );
+  return {
+    id: itemId || null,
+    title: fallbackTitle,
+    price: parseNumber(productCard.dataset.price, 0),
+  };
+}
+
+function orderProductCardDirectly(item, context = "specials") {
+  if (!item) return;
+  const unitPrice = Math.max(0, toMoney(item.price, 0));
+  const itemName = toSafeString(item.title, "Special Offer");
+  const itemId = normalizeItemId(item.id) || null;
+  const orderData = {
+    type: "single",
+    items: [{ name: itemName, price: unitPrice, qty: 1 }],
+    subject: `Order Inquiry: ${itemName}`,
+  };
+
+  trackSiteEvent("order_now", {
+    amount: unitPrice,
+    metadata: {
+      item_id: itemId,
+      item_name: itemName,
+      quantity: 1,
+      source_context: toSafeString(context, "specials"),
+    },
+  });
+
+  showOrderOptions(orderData);
+}
+
+function initProductCardOrderInteractions() {
+  if (window.productCardOrderClickHandler) {
+    document.removeEventListener("click", window.productCardOrderClickHandler);
+  }
+
+  const clickHandler = (event) => {
+    const trigger = event.target.closest(
+      ".product-card-cta[data-order-direct='true']"
+    );
+    if (!trigger) return;
+    const productCard = trigger.closest(".product-card[data-order-item='true']");
+    if (!productCard) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const context = toSafeString(productCard.dataset.context, "specials");
+    const item = getProductItemFromElement(productCard);
+    if (!item) {
+      showNotification("No order details available yet.", "warning");
+      return;
+    }
+
+    orderProductCardDirectly(item, context);
+  };
+
+  document.addEventListener("click", clickHandler);
+  window.productCardOrderClickHandler = clickHandler;
+}
+
 function getMenuItemFromElement(menuItem) {
   if (!menuItem) return null;
   const itemId = normalizeItemId(menuItem.dataset.id);
@@ -4153,7 +4668,9 @@ function getMenuItemFromElement(menuItem) {
   return {
     id: itemId || null,
     title: fallbackTitle,
-    description: toSafeString(menuItem.querySelector("p")?.textContent),
+    description: toSafeString(
+      menuItem.dataset.description || menuItem.querySelector(".product-card-desc")?.textContent
+    ),
     price: parseNumber(menuItem.dataset.price, 0),
     image: toSafeString(menuItem.querySelector("img")?.getAttribute("src")),
   };
@@ -4838,7 +5355,8 @@ function initRipple(selector) {
 }
 
 /* ================== MODERN 3D INTERACTIONS ================== */
-const MODERN_3D_SELECTOR = ".feature, .featured-card, .menu-item, .gallery-card";
+const MODERN_3D_SELECTOR =
+  ".feature, .featured-card, .menu-item, .product-card, .specials-card";
 let modern3DResizeListenerBound = false;
 
 function ensureModern3DStyles() {
@@ -4851,7 +5369,8 @@ function ensureModern3DStyles() {
       .feature.interactive-3d,
       .featured-card.interactive-3d,
       .menu-item.interactive-3d,
-      .gallery-card.interactive-3d {
+      .product-card.interactive-3d,
+      .specials-card.interactive-3d {
         --tilt-x: 0deg;
         --tilt-y: 0deg;
         --lift-3d: -6px;
@@ -4863,7 +5382,8 @@ function ensureModern3DStyles() {
       }
 
       .featured-card.interactive-3d,
-      .gallery-card.interactive-3d {
+      .product-card.interactive-3d,
+      .specials-card.interactive-3d {
         --lift-3d: -8px;
       }
 
@@ -4873,8 +5393,10 @@ function ensureModern3DStyles() {
       .featured-card.interactive-3d.is-interacting,
       .menu-item.interactive-3d:hover,
       .menu-item.interactive-3d.is-interacting,
-      .gallery-card.interactive-3d:hover,
-      .gallery-card.interactive-3d.is-interacting {
+      .product-card.interactive-3d:hover,
+      .product-card.interactive-3d.is-interacting,
+      .specials-card.interactive-3d:hover,
+      .specials-card.interactive-3d.is-interacting {
         transform: translateY(var(--lift-3d))
           rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
         box-shadow: 0 20px 42px rgba(20, 14, 10, 0.2);
@@ -4886,7 +5408,8 @@ function ensureModern3DStyles() {
       .feature:hover,
       .featured-card:hover,
       .menu-item:hover,
-      .gallery-card:hover {
+      .product-card:hover,
+      .specials-card:hover {
         transform: none !important;
       }
 
@@ -4894,7 +5417,8 @@ function ensureModern3DStyles() {
       .featured-card:hover::before,
       .featured-card:hover .featured-card-glow,
       .menu-item:hover img,
-      .gallery-card:hover img {
+      .product-card:hover img,
+      .specials-card:hover img {
         transform: none !important;
       }
     }
@@ -5037,22 +5561,25 @@ function ensureHomeEnhancementStyles() {
     .featured-card,
     .menu-item,
     .cms-menu-item,
-    .gallery-card,
+    .product-card,
+    .specials-card,
     .item-card {
       height: 100%;
     }
     #featured-container .featured-card,
     #menu-container .menu-item,
-    #gallery-container .gallery-card {
+    #specials-container .product-card {
       content-visibility: auto;
       contain-intrinsic-size: 360px 420px;
     }
     .menu-item h3,
     .cms-menu-item h3,
-    .featured-card-body h4,
+    .product-card-title,
     .item-card-title,
-    .gallery-card figcaption,
-    .featured-card-body p,
+    .product-card-desc,
+    .product-card-was,
+    .product-card-now,
+    .product-card-current,
     .menu-item p,
     .cms-menu-item p,
     .item-card-desc {
@@ -5060,17 +5587,16 @@ function ensureHomeEnhancementStyles() {
       word-break: break-word;
     }
     @media (max-width: 768px) {
-      .featured-card-body h4,
+      .product-card-title,
       .menu-item h3,
       .cms-menu-item h3,
-      .item-card-title,
-      .gallery-card figcaption {
+      .item-card-title {
         display: -webkit-box !important;
         -webkit-line-clamp: 2 !important;
         -webkit-box-orient: vertical !important;
         overflow: hidden !important;
       }
-      .featured-card-body p,
+      .product-card-desc,
       .menu-item p,
       .cms-menu-item p,
       .item-card-desc {
@@ -5110,7 +5636,9 @@ function setupHomeScrollReveal() {
     document.querySelector(".hero-content"),
     ...Array.from(document.querySelectorAll("#featured-container .featured-card")),
     ...Array.from(document.querySelectorAll("#menu-container .menu-item")),
-    ...Array.from(document.querySelectorAll("#gallery-container .gallery-card")),
+    ...Array.from(
+      document.querySelectorAll("#specials-container .product-card")
+    ),
   ].filter(Boolean);
 
   if (conservativeMode || !("IntersectionObserver" in window)) {
@@ -5204,13 +5732,193 @@ window.addEventListener(TB_PERF_PROFILE_EVENT, () => {
 window.addEventListener("spa:navigated", () => {
   setTimeout(() => {
     schedulePostRenderEnhancements();
+    refreshPwaInstallUi();
   }, 0);
 });
 
 window.addEventListener("spa:reinitialized", () => {
   setTimeout(() => {
     schedulePostRenderEnhancements();
+    refreshPwaInstallUi();
   }, 0);
+});
+
+/* ================== PWA INSTALL UI ================== */
+let deferredInstallPrompt = null;
+let pwaInstallUiBound = false;
+
+function isStandaloneMode() {
+  const displayStandalone =
+    window.matchMedia &&
+    window.matchMedia("(display-mode: standalone)").matches;
+  const iosStandalone = window.navigator?.standalone === true;
+  return Boolean(displayStandalone || iosStandalone);
+}
+
+function isIosDevice() {
+  const ua = String(window.navigator?.userAgent || "").toLowerCase();
+  return /iphone|ipad|ipod/.test(ua);
+}
+
+function isIosSafari() {
+  if (!isIosDevice()) return false;
+  const ua = String(window.navigator?.userAgent || "").toLowerCase();
+  const isSafari = ua.includes("safari");
+  const excluded = /(crios|fxios|edgios|opios|mercury|duckduckgo)/.test(ua);
+  return isSafari && !excluded;
+}
+
+function ensurePwaInstallUi() {
+  let button = document.getElementById("tb-pwa-install-btn");
+  if (!button) {
+    button = document.createElement("button");
+    button.id = "tb-pwa-install-btn";
+    button.className = "tb-pwa-install-btn";
+    button.type = "button";
+    button.setAttribute("aria-label", "Install app");
+    button.innerHTML =
+      '<i class="fas fa-download" aria-hidden="true"></i><span class="tb-install-label">Install</span>';
+    document.body.appendChild(button);
+  }
+
+  let panel = document.getElementById("tb-ios-install-panel");
+  if (!panel) {
+    panel = document.createElement("section");
+    panel.id = "tb-ios-install-panel";
+    panel.className = "tb-ios-install-panel";
+    panel.setAttribute("aria-hidden", "true");
+    panel.innerHTML = `
+      <div class="tb-ios-install-backdrop" data-ios-install-close="true"></div>
+      <div class="tb-ios-install-card" role="dialog" aria-modal="true" aria-labelledby="tb-ios-install-title">
+        <button type="button" class="tb-ios-install-close" aria-label="Close install guide" data-ios-install-close="true">x</button>
+        <h3 id="tb-ios-install-title">Install On iPhone/iPad</h3>
+        <ol>
+          <li>Tap the <strong>Share</strong> icon in Safari.</li>
+          <li>Scroll and tap <strong>Add to Home Screen</strong>.</li>
+          <li>Tap <strong>Add</strong> to finish.</li>
+        </ol>
+      </div>
+    `;
+    document.body.appendChild(panel);
+  }
+
+  return { button, panel };
+}
+
+function setPwaInstallButtonVisible(isVisible) {
+  const button = document.getElementById("tb-pwa-install-btn");
+  if (!button) return;
+  button.hidden = !isVisible;
+  button.setAttribute("aria-hidden", isVisible ? "false" : "true");
+}
+
+function closeIosInstallPanel() {
+  const panel = document.getElementById("tb-ios-install-panel");
+  if (!panel) return;
+  panel.classList.remove("is-open");
+  panel.setAttribute("aria-hidden", "true");
+}
+
+function openIosInstallPanel() {
+  const panel = document.getElementById("tb-ios-install-panel");
+  if (!panel) return;
+  panel.classList.add("is-open");
+  panel.setAttribute("aria-hidden", "false");
+}
+
+function refreshPwaInstallUi() {
+  const standalone = isStandaloneMode();
+  if (standalone) {
+    setPwaInstallButtonVisible(false);
+    closeIosInstallPanel();
+    return;
+  }
+
+  const iosFlow = isIosSafari();
+  const androidFlow = Boolean(deferredInstallPrompt);
+  setPwaInstallButtonVisible(iosFlow || androidFlow);
+
+  const button = document.getElementById("tb-pwa-install-btn");
+  if (!button) return;
+  const label = button.querySelector(".tb-install-label");
+  if (iosFlow) {
+    button.classList.add("ios-install");
+    button.setAttribute("aria-label", "How to install on iOS");
+    if (label) {
+      label.textContent = "Add To Home";
+    }
+  } else {
+    button.classList.remove("ios-install");
+    button.setAttribute("aria-label", "Install app");
+    if (label) {
+      label.textContent = "Install";
+    }
+  }
+}
+
+async function onPwaInstallClick() {
+  if (isStandaloneMode()) {
+    setPwaInstallButtonVisible(false);
+    return;
+  }
+
+  if (isIosSafari()) {
+    openIosInstallPanel();
+    return;
+  }
+
+  if (!deferredInstallPrompt) {
+    setPwaInstallButtonVisible(false);
+    return;
+  }
+
+  try {
+    deferredInstallPrompt.prompt();
+    const result = await deferredInstallPrompt.userChoice;
+    if (result?.outcome === "accepted") {
+      deferredInstallPrompt = null;
+      setPwaInstallButtonVisible(false);
+      return;
+    }
+    // Dismissed: keep hidden until next eligibility event to avoid loops.
+    deferredInstallPrompt = null;
+    setPwaInstallButtonVisible(false);
+  } catch (error) {
+    console.error("Install prompt failed:", error);
+    deferredInstallPrompt = null;
+    setPwaInstallButtonVisible(false);
+  }
+}
+
+function initPwaInstallUi() {
+  const { button, panel } = ensurePwaInstallUi();
+  if (!pwaInstallUiBound) {
+    pwaInstallUiBound = true;
+    button.addEventListener("click", onPwaInstallClick);
+    panel.addEventListener("click", (event) => {
+      if (event.target.closest("[data-ios-install-close='true']")) {
+        closeIosInstallPanel();
+      }
+    });
+
+    window.addEventListener("appinstalled", () => {
+      deferredInstallPrompt = null;
+      setPwaInstallButtonVisible(false);
+      closeIosInstallPanel();
+    });
+    window.addEventListener("visibilitychange", () => {
+      if (!document.hidden) refreshPwaInstallUi();
+    });
+    window.addEventListener("focus", refreshPwaInstallUi);
+  }
+
+  refreshPwaInstallUi();
+}
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  refreshPwaInstallUi();
 });
 
 /* ================== FIXED CART EVENT HANDLING ================== */
@@ -5317,11 +6025,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   // STEP 3: Initialize everything else
   initMobileMenu();
   initMenuInteractions();
+  initProductCardOrderInteractions();
   initOrderFunctionality();
+  initPwaInstallUi();
 
   // Initialize ripple - EXACT WORKING SELECTOR
   initRipple(
-    ".btn, .qty-btn, .order-option-btn, .remove-item, .theme-toggle, .menu-item, .featured-card, .gallery-card, .carousel-dot, .carousel-prev, .carousel-next, .pc-action-btn, .pc-qty-btn, [data-ripple]"
+    ".btn, .qty-btn, .order-option-btn, .remove-item, .theme-toggle, .menu-item, .featured-card, .product-card, .specials-card, .carousel-dot, .carousel-prev, .carousel-next, .pc-action-btn, .pc-qty-btn, [data-ripple]"
   );
 
   // STEP 4: Load dynamic content (this will use cache first)
@@ -5329,6 +6039,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadDynamicContent();
   } catch (error) {
     console.error("Failed to load initial content:", error);
+  } finally {
+    window.__tbInitialContentReady = true;
+    try {
+      window.dispatchEvent(new CustomEvent("tb:initial-content-ready"));
+    } catch {}
   }
 
   schedulePostRenderEnhancements();

@@ -165,7 +165,11 @@ class SPAManager {
 
   primeCmsLoadingState() {
     try {
-      ["featured-container", "menu-container", "gallery-container"].forEach(
+      [
+        "featured-container",
+        "menu-container",
+        "specials-container",
+      ].forEach(
         (id) => {
           const el = document.getElementById(id);
           if (!el) return;
