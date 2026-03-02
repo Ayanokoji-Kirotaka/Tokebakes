@@ -5,8 +5,6 @@
 /* ================== AUTO-UPDATE SYSTEM ================== */
 class DataSyncManager {
   constructor() {
-    this.lastUpdateKey = "toke_bakes_last_update";
-    this.broadcastChannel = null;
     this.syncBus = null;
     this.destroyBound = false;
     this.init();
@@ -15,12 +13,6 @@ class DataSyncManager {
   init() {
     if (window.TokeUpdateSync) {
       this.syncBus = window.TokeUpdateSync;
-    } else if (typeof BroadcastChannel !== "undefined") {
-      try {
-        this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
-      } catch (error) {
-        this.broadcastChannel = null;
-      }
     }
 
     if (!this.destroyBound) {
@@ -55,45 +47,11 @@ class DataSyncManager {
       }
       return;
     }
-
-    const timestamp = Date.now().toString();
-    localStorage.setItem(this.lastUpdateKey, timestamp);
-
-    if (this.broadcastChannel) {
-      this.broadcastChannel.postMessage({
-        type: "DATA_UPDATED",
-        timestamp: timestamp,
-        operation: operationType,
-        itemType: normalizedType,
-        lastChangeType: normalizedType,
-        ...(extra || {}),
-      });
-    }
-
-    // Same-tab fallback (BroadcastChannel does not fire in the same tab).
-    try {
-      window.dispatchEvent(
-        new CustomEvent("toke:data-updated", {
-          detail: {
-            type: "DATA_UPDATED",
-            timestamp,
-            operation: operationType,
-            itemType: normalizedType,
-            lastChangeType: normalizedType,
-            ...(extra || {}),
-          },
-        })
-      );
-    } catch {}
+    debugWarn("TokeUpdateSync unavailable; update notification skipped.");
   }
 
   destroy() {
-    if (this.broadcastChannel) {
-      try {
-        this.broadcastChannel.close();
-      } catch {}
-      this.broadcastChannel = null;
-    }
+    this.syncBus = null;
   }
 }
 

@@ -265,6 +265,9 @@ class HeroCarousel {
     // Touch/swipe support
     this.touchStartX = 0;
     this.touchEndX = 0;
+    this.touchStartY = 0;
+    this.touchEndY = 0;
+    this.swipeBlocked = false;
     this.boundHandlers = {};
     this.connectionChangeHandler = null;
 
@@ -863,6 +866,8 @@ class HeroCarousel {
         this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.saveData;
       const loading = isActive && !conservativeImageLoading ? "eager" : "lazy";
       const fetchPriority = isActive && !conservativeImageLoading ? "high" : "auto";
+      const width = Number(slide?.width) > 0 ? Math.round(Number(slide.width)) : 1920;
+      const height = Number(slide?.height) > 0 ? Math.round(Number(slide.height)) : 1080;
 
       slideEl.innerHTML = `
         <img src="${slide.image}"
@@ -871,6 +876,8 @@ class HeroCarousel {
              loading="${loading}"
              decoding="async"
              fetchpriority="${fetchPriority}"
+             width="${width}"
+             height="${height}"
              onerror="this.onerror=null; this.src='${CAROUSEL_FALLBACK_IMAGE}';">
       `;
 
@@ -976,6 +983,15 @@ class HeroCarousel {
     this.teardownEventListeners();
     if (this.slides.length <= 1) return;
 
+    const isInteractiveTarget = (target) => {
+      if (!(target instanceof Element)) return false;
+      return Boolean(
+        target.closest(
+          ".carousel-nav button, .carousel-dot, .hero-content .btn, .hero-content a, [data-no-swipe]"
+        )
+      );
+    };
+
     // Dots navigation
     this.boundHandlers.dotsClick = (e) => {
       const targetEl =
@@ -1020,10 +1036,11 @@ class HeroCarousel {
       this.navContainer.addEventListener("click", this.boundHandlers.navClick);
     }
 
-    // Hover no longer hard-pauses autoplay. Resume behavior is now inactivity-based.
+    // Pause autoplay while hovered (desktop), then resume shortly on leave.
     this.boundHandlers.mouseEnter = () => {
       this.isHovered = true;
-      this.scheduleAutoPlayResume(220);
+      this.stopAutoPlay();
+      this.clearResumeTimer();
     };
     this.container.addEventListener("mouseenter", this.boundHandlers.mouseEnter);
 
@@ -1044,7 +1061,8 @@ class HeroCarousel {
       passive: true,
     });
 
-    this.boundHandlers.pointerDown = () => {
+    this.boundHandlers.pointerDown = (e) => {
+      if (isInteractiveTarget(e?.target)) return;
       this.pauseAutoPlay(this.pointerIdleResumeDelay);
     };
     this.container.addEventListener("pointerdown", this.boundHandlers.pointerDown, {
@@ -1053,22 +1071,38 @@ class HeroCarousel {
 
     // Touch/swipe support
     this.boundHandlers.touchStart = (e) => {
-      this.touchStartX = e.changedTouches[0].screenX;
+      const touch = e.changedTouches && e.changedTouches[0];
+      if (!touch) return;
+      if (isInteractiveTarget(e.target)) {
+        this.swipeBlocked = true;
+        return;
+      }
+      this.swipeBlocked = false;
+      this.touchStartX = touch.screenX;
+      this.touchStartY = touch.screenY;
       this.stopAutoPlay();
       this.clearResumeTimer();
     };
-    this.track.addEventListener(
+    this.container.addEventListener(
       "touchstart",
       this.boundHandlers.touchStart,
       { passive: true }
     );
 
     this.boundHandlers.touchEnd = (e) => {
-      this.touchEndX = e.changedTouches[0].screenX;
+      if (this.swipeBlocked) {
+        this.swipeBlocked = false;
+        this.scheduleAutoPlayResume(this.resumeDelay);
+        return;
+      }
+      const touch = e.changedTouches && e.changedTouches[0];
+      if (!touch) return;
+      this.touchEndX = touch.screenX;
+      this.touchEndY = touch.screenY;
       this.handleSwipe();
       this.scheduleAutoPlayResume(this.resumeDelay + 1000);
     };
-    this.track.addEventListener(
+    this.container.addEventListener(
       "touchend",
       this.boundHandlers.touchEnd,
       { passive: true }
@@ -1130,11 +1164,11 @@ class HeroCarousel {
     if (this.container && this.boundHandlers.pointerDown) {
       this.container.removeEventListener("pointerdown", this.boundHandlers.pointerDown);
     }
-    if (this.track && this.boundHandlers.touchStart) {
-      this.track.removeEventListener("touchstart", this.boundHandlers.touchStart);
+    if (this.container && this.boundHandlers.touchStart) {
+      this.container.removeEventListener("touchstart", this.boundHandlers.touchStart);
     }
-    if (this.track && this.boundHandlers.touchEnd) {
-      this.track.removeEventListener("touchend", this.boundHandlers.touchEnd);
+    if (this.container && this.boundHandlers.touchEnd) {
+      this.container.removeEventListener("touchend", this.boundHandlers.touchEnd);
     }
     if (this.boundHandlers.keydown) {
       document.removeEventListener("keydown", this.boundHandlers.keydown);
@@ -1151,7 +1185,16 @@ class HeroCarousel {
     if (this.slides.length <= 1) return;
 
     const swipeThreshold = 50;
+    const verticalThreshold = 70;
     const diff = this.touchStartX - this.touchEndX;
+    const diffY = this.touchStartY - this.touchEndY;
+
+    if (
+      Math.abs(diffY) > verticalThreshold &&
+      Math.abs(diffY) > Math.abs(diff)
+    ) {
+      return;
+    }
 
     if (Math.abs(diff) > swipeThreshold) {
       if (diff > 0) {

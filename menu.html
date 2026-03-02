@@ -46,6 +46,36 @@
       name="twitter:image"
       content="https://tokebakes-ten.vercel.app/images/logo.webp"
     />
+    <style id="logo-critical">
+      img.logo-sm,
+      img.hero-logo,
+      img.admin-logo,
+      #loader img {
+        display: block;
+        width: auto;
+        height: auto;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+        border-radius: 50%;
+        background: rgba(230, 122, 0, 0.08);
+      }
+      img.logo-sm {
+        width: 48px;
+        height: 48px;
+      }
+      img.hero-logo {
+        width: 170px;
+        height: 170px;
+      }
+      img.admin-logo {
+        width: 100px;
+        height: 100px;
+      }
+      #loader img {
+        width: 120px;
+        height: 120px;
+      }
+    </style>
     <script>
       (function () {
         const normalizeAssetPath = (value) => {
@@ -161,6 +191,7 @@
     <meta name="theme-color" content="#e67a00" />
     <link rel="apple-touch-icon" href="images/icon-192.png" />
     <link rel="icon" href="images/favicon.webp" type="image/webp" />
+    <link rel="preload" href="styles/style.css" as="style" />
     <link
       rel="preload"
       href="images/logo.webp"
@@ -193,7 +224,14 @@
     <header id="site-header">
       <div class="header-inner">
         <div class="brand">
-          <img src="images/logo.webp" alt="Toke Bakes logo" class="logo-sm" />
+          <img
+            src="images/logo.webp"
+            alt="Toke Bakes logo"
+            class="logo-sm"
+            width="48"
+            height="48"
+            decoding="async"
+          />
           <h1>Toke Bakes</h1>
         </div>
         <nav class="navbar">

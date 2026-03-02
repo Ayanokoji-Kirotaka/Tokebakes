@@ -26,121 +26,42 @@ if (typeof window !== "undefined" && window.__tbInitialContentReady !== true) {
 /* ================== ENHANCED AUTO-UPDATE SYSTEM ================== */
 class WebsiteAutoUpdater {
   constructor() {
-    this.lastUpdateKey = "toke_bakes_last_update";
-    this.lastPayloadKey = "toke_bakes_last_update_payload";
-    this.dbLastUpdateKey = "toke_bakes_db_last_updated";
-    this.contentVersionKey = "toke_bakes_content_version";
-    this.lastChangeTypeKey = "toke_bakes_last_change_type";
-    this.myLastCheckKey = "toke_bakes_last_check";
-    this.lastSyncCheckKey = "toke_bakes_last_sync_check_at";
-    this.dbCheckInterval = 30000;
-    this.lastDbCheck = 0;
-    this.broadcastChannel = null;
     this.syncBus = null;
     this.unsubscribeSync = null;
-    this.boundStorageFallback = null;
-    this.boundCustomFallback = null;
-    this.pollingInterval = null;
-    this.isCheckingUpdates = false;
-    this.isRefreshing = false;
-    this.pendingRefresh = false;
-    this.pendingTriggerTs = 0;
-    this.pendingChangeType = "all";
-    this.pendingContentVersion = 0;
-    this.lastRefreshAt = 0;
-    this.minRefreshGapMs = 1200;
-    this.syncIndicatorTimer = null;
-    this.refreshWatchdogTimer = null;
-    this.boundVisibilityHandler = null;
-    this.boundOnlineHandler = null;
-    this.boundPerfProfileHandler = null;
-    this.currentPollingInterval = 0;
-    this.lastRenderedUpdateTs =
-      Number(localStorage.getItem(this.dbLastUpdateKey)) ||
-      Number(localStorage.getItem(this.lastUpdateKey)) ||
-      0;
-    this.lastRenderedContentVersion =
-      Number(localStorage.getItem(this.contentVersionKey) || "0") || 0;
-    this.lastRenderedChangeType = this.normalizeChangeType(
-      localStorage.getItem(this.lastChangeTypeKey) || "all"
-    );
-    this.lastCheckMemory =
-      Number(localStorage.getItem(this.myLastCheckKey)) || 0;
-    this.lastSyncCheckAt =
-      Number(localStorage.getItem(this.lastSyncCheckKey) || "0") || 0;
+    this.lastAppliedVersion =
+      Number(localStorage.getItem("toke_bakes_content_version") || "0") || 0;
+    this.lastAppliedChangeType =
+      localStorage.getItem("toke_bakes_last_change_type") || "all";
     this.init();
   }
 
-  async init() {
-    debugLog("Initializing Enhanced WebsiteAutoUpdater...");
+  init() {
+    debugLog("Initializing WebsiteAutoUpdater (update-sync consumer)...");
 
-    try {
-      await this.primeBaselineTimestamp();
-    } catch (error) {
-      debugWarn("Baseline timestamp prime failed:", error);
+    if (window.TokeUpdateSync) {
+      this.syncBus = window.TokeUpdateSync;
     }
 
-    this.setupRealtimeSync();
-
-    const syncBusHasServerPolling =
-      this.syncBus &&
-      typeof this.syncBus.isServerSyncEnabled === "function" &&
-      this.syncBus.isServerSyncEnabled();
-
-    this.applyAdaptiveNetworkConfig(syncBusHasServerPolling);
-
-    this.boundPerfProfileHandler = () => {
-      const hasServerPolling =
-        this.syncBus &&
-        typeof this.syncBus.isServerSyncEnabled === "function" &&
-        this.syncBus.isServerSyncEnabled();
-      this.applyAdaptiveNetworkConfig(hasServerPolling);
-    };
-    window.addEventListener(TB_PERF_PROFILE_EVENT, this.boundPerfProfileHandler);
-
-    // 3. Check when user returns to tab
-    this.boundVisibilityHandler = () => {
-      if (!document.hidden) {
-        debugLog("Tab became visible, checking for updates...");
-        if (
-          this.syncBus &&
-          typeof this.syncBus.requestServerCheck === "function"
-        ) {
-          Promise.resolve(
-            this.syncBus.requestServerCheck("website-visible", true)
-          ).catch(() => {});
+    if (this.syncBus && typeof this.syncBus.registerRefreshHandler === "function") {
+      this.unsubscribeSync = this.syncBus.registerRefreshHandler(
+        async (payload) => {
+          const nextType = this.normalizeChangeType(payload?.changeType || "all");
+          await this.refreshAffectedContent(nextType);
+          this.lastAppliedVersion = Math.max(
+            this.lastAppliedVersion,
+            Number(payload?.contentVersion || 0) || 0
+          );
+          this.lastAppliedChangeType = nextType;
+          return true;
+        },
+        {
+          id: "website-content-refresh",
+          showIndicator: true,
+          priority: 20,
+          changeTypes: ["all", "featured", "menu", "specials", "carousel", "theme"],
         }
-        this.checkForUpdates(true);
-      }
-    };
-    document.addEventListener("visibilitychange", this.boundVisibilityHandler);
-
-    // 4. Re-check as soon as connectivity is restored.
-    this.boundOnlineHandler = () => {
-      if (
-        this.syncBus &&
-        typeof this.syncBus.requestServerCheck === "function"
-      ) {
-        Promise.resolve(
-          this.syncBus.requestServerCheck("website-online", true)
-        ).catch(() => {});
-      }
-      this.checkForUpdates(true);
-    };
-    window.addEventListener("online", this.boundOnlineHandler);
-
-    // 5. Initial check on page load (faster so recent admin edits appear sooner)
-    setTimeout(() => {
-      if (
-        this.syncBus &&
-        typeof this.syncBus.requestServerCheck === "function"
-      ) {
-        Promise.resolve(
-          this.syncBus.requestServerCheck("website-init", true)
-        ).catch(() => {});
-      }
-      this.checkForUpdates(true);
-    }, 800);
+      );
+    }
 
     window.addEventListener(
       "beforeunload",
@@ -151,140 +72,13 @@ class WebsiteAutoUpdater {
     );
   }
 
-  setupRealtimeSync() {
-    if (window.TokeUpdateSync && typeof window.TokeUpdateSync.subscribe === "function") {
-      this.syncBus = window.TokeUpdateSync;
-      this.unsubscribeSync = this.syncBus.subscribe((payload) => {
-        if (!payload || payload.type !== "DATA_UPDATED") return;
-        debugLog("Update received via shared sync bus", payload);
-        this.handleExternalUpdate(payload);
-      });
-      return;
-    }
-
-    // Legacy fallback path when shared sync bus is not loaded.
-    if (typeof BroadcastChannel !== "undefined") {
-      try {
-        this.broadcastChannel = new BroadcastChannel("toke_bakes_data_updates");
-        this.broadcastChannel.onmessage = (event) => {
-          if (event?.data?.type === "DATA_UPDATED") {
-            debugLog("BroadcastChannel update received!", event.data);
-            this.handleExternalUpdate(event.data);
-          }
-        };
-        debugLog("BroadcastChannel ready for legacy sync");
-      } catch (error) {
-        debugWarn("BroadcastChannel unavailable; using fallback sync:", error);
-        this.broadcastChannel = null;
-      }
-    }
-
-    this.boundStorageFallback = (event) => {
-      if (event.key === this.lastPayloadKey && event.newValue) {
-        try {
-          const parsed = JSON.parse(event.newValue);
-          if (parsed?.type === "DATA_UPDATED") {
-            this.handleExternalUpdate(parsed);
-          }
-          return;
-        } catch {}
-      }
-
-      if (event.key === this.lastUpdateKey && event.newValue) {
-        this.handleExternalUpdate({
-          type: "DATA_UPDATED",
-          timestamp: event.newValue,
-          itemType: "all",
-        });
-      }
-    };
-    window.addEventListener("storage", this.boundStorageFallback);
-
-    this.boundCustomFallback = (event) => {
-      const detail = event?.detail || {};
-      if (detail.type === "DATA_UPDATED") {
-        this.handleExternalUpdate(detail);
-      }
-    };
-    window.addEventListener("toke:data-updated", this.boundCustomFallback);
-  }
-
   destroy() {
-    if (this.pollingInterval) {
-      clearInterval(this.pollingInterval);
-      this.pollingInterval = null;
-    }
-    if (this.broadcastChannel) {
-      try {
-        this.broadcastChannel.close();
-      } catch {}
-      this.broadcastChannel = null;
-    }
-
     if (this.unsubscribeSync) {
       try {
         this.unsubscribeSync();
       } catch {}
       this.unsubscribeSync = null;
     }
-
-    if (this.boundStorageFallback) {
-      window.removeEventListener("storage", this.boundStorageFallback);
-      this.boundStorageFallback = null;
-    }
-
-    if (this.boundCustomFallback) {
-      window.removeEventListener("toke:data-updated", this.boundCustomFallback);
-      this.boundCustomFallback = null;
-    }
-
-    if (this.boundVisibilityHandler) {
-      document.removeEventListener("visibilitychange", this.boundVisibilityHandler);
-      this.boundVisibilityHandler = null;
-    }
-
-    if (this.boundOnlineHandler) {
-      window.removeEventListener("online", this.boundOnlineHandler);
-      this.boundOnlineHandler = null;
-    }
-
-    if (this.boundPerfProfileHandler) {
-      window.removeEventListener(TB_PERF_PROFILE_EVENT, this.boundPerfProfileHandler);
-      this.boundPerfProfileHandler = null;
-    }
-
-    if (this.syncIndicatorTimer) {
-      clearTimeout(this.syncIndicatorTimer);
-      this.syncIndicatorTimer = null;
-    }
-
-    if (this.refreshWatchdogTimer) {
-      clearTimeout(this.refreshWatchdogTimer);
-      this.refreshWatchdogTimer = null;
-    }
-  }
-
-  setMyLastCheck(value) {
-    const ts = Number(value) || 0;
-    this.lastCheckMemory = Math.max(this.lastCheckMemory || 0, ts);
-    try {
-      localStorage.setItem(this.myLastCheckKey, String(ts));
-    } catch {}
-  }
-
-  getMyLastCheck() {
-    const stored = Number(localStorage.getItem(this.myLastCheckKey) || "0");
-    const effective = Math.max(this.lastCheckMemory || 0, stored || 0);
-    this.lastCheckMemory = effective;
-    return effective;
-  }
-
-  setLastSyncCheck(value = Date.now()) {
-    const next = Number(value) || Date.now();
-    this.lastSyncCheckAt = next;
-    try {
-      localStorage.setItem(this.lastSyncCheckKey, String(next));
-    } catch {}
   }
 
   normalizeChangeType(raw) {
@@ -313,296 +107,8 @@ class WebsiteAutoUpdater {
     return "all";
   }
 
-  mergeChangeTypes(a = "all", b = "all") {
-    const first = this.normalizeChangeType(a);
-    const second = this.normalizeChangeType(b);
-    if (first === second) return first;
-    if (first === "all" || second === "all") return "all";
-    return "all";
-  }
-
-  getLatestPayloadSnapshot() {
-    let payload = null;
-    try {
-      const payloadRaw = localStorage.getItem(this.lastPayloadKey);
-      if (payloadRaw) {
-        payload = JSON.parse(payloadRaw);
-      }
-    } catch {}
-
-    const timestamp = Math.max(
-      Number(payload?.timestamp || 0),
-      Number(localStorage.getItem(this.lastUpdateKey) || "0"),
-      Number(localStorage.getItem(this.dbLastUpdateKey) || "0")
-    );
-    const contentVersion = Math.max(
-      Number(payload?.contentVersion || payload?.version || 0),
-      Number(localStorage.getItem(this.contentVersionKey) || "0")
-    );
-    const changeType = this.normalizeChangeType(
-      payload?.itemType ||
-        payload?.lastChangeType ||
-        localStorage.getItem(this.lastChangeTypeKey) ||
-        "all"
-    );
-    const payloadType = payload?.type || "";
-    return { timestamp, contentVersion, changeType, payloadType };
-  }
-
-  async fetchSiteLastUpdated() {
-    if (!window.SUPABASE_CONFIG?.URL || !window.SUPABASE_CONFIG?.ANON_KEY) {
-      return 0;
-    }
-
-    try {
-      const response = await fetchWithTimeout(
-        `${SUPABASE_CONFIG.URL}/rest/v1/rpc/site_last_updated`,
-        {
-          method: "POST",
-          headers: {
-            apikey: SUPABASE_CONFIG.ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-            "Content-Type": "application/json",
-            Pragma: "no-cache",
-            "Cache-Control": "no-store",
-          },
-          cache: "no-store",
-        },
-        SUPABASE_FETCH_TIMEOUT_MS
-      );
-
-      if (!response.ok) {
-        return 0;
-      }
-
-      const data = await response.json();
-      const value = Array.isArray(data) ? data[0] : data;
-      const parsed = Date.parse(value);
-      return Number.isNaN(parsed) ? 0 : parsed;
-    } catch (error) {
-      debugWarn("Baseline update fetch failed:", error);
-      return 0;
-    }
-  }
-
-  async primeBaselineTimestamp() {
-    const baseline = await this.fetchSiteLastUpdated();
-    if (!baseline) return;
-
-    this.lastRenderedUpdateTs = baseline;
-    this.setMyLastCheck(baseline);
-    try {
-      localStorage.setItem(this.dbLastUpdateKey, String(baseline));
-    } catch {}
-    try {
-      localStorage.setItem(this.lastUpdateKey, String(baseline));
-    } catch {}
-    this.setLastSyncCheck(baseline);
-  }
-
-  handleExternalUpdate(payload = {}) {
-    const tsNumber = Number(payload.timestamp) || Date.now();
-    const contentVersion = Number(payload.contentVersion || payload.version) || 0;
-    const hasVersion = Number.isFinite(contentVersion) && contentVersion > 0;
-    const changeType = this.normalizeChangeType(
-      payload.itemType || payload.lastChangeType || "all"
-    );
-    const myLastCheck = this.getMyLastCheck();
-    const isOldTimestamp = tsNumber <= myLastCheck;
-    const isOldVersion =
-      hasVersion && contentVersion <= (this.lastRenderedContentVersion || 0);
-    if (isOldTimestamp && (!hasVersion || isOldVersion)) {
-      return;
-    }
-
-    if (hasVersion) {
-      this.lastRenderedContentVersion = Math.max(
-        this.lastRenderedContentVersion || 0,
-        contentVersion
-      );
-      try {
-        localStorage.setItem(
-          this.contentVersionKey,
-          String(this.lastRenderedContentVersion)
-        );
-      } catch {}
-    }
-    try {
-      localStorage.setItem(this.lastChangeTypeKey, changeType);
-    } catch {}
-
-    this.setMyLastCheck(tsNumber);
-    this.setLastSyncCheck();
-    this.refreshDataWithUI(tsNumber, true, changeType, contentVersion);
-  }
-
-  getAdaptivePollingConfig(syncBusHasServerPolling = false) {
-    const profile = getRuntimePerfProfile();
-    const isSlow = profile.networkTier === "slow" || profile.saveData;
-    const isStandard = profile.networkTier === "standard";
-
-    if (syncBusHasServerPolling) {
-      if (isSlow) {
-        return { dbCheckInterval: 180000, pollingInterval: 45000 };
-      }
-      if (isStandard) {
-        return { dbCheckInterval: 120000, pollingInterval: 32000 };
-      }
-      return { dbCheckInterval: 90000, pollingInterval: 25000 };
-    }
-
-    if (isSlow) {
-      return { dbCheckInterval: 120000, pollingInterval: 45000 };
-    }
-    if (isStandard) {
-      return { dbCheckInterval: 90000, pollingInterval: 35000 };
-    }
-    return { dbCheckInterval: 60000, pollingInterval: 25000 };
-  }
-
-  applyAdaptiveNetworkConfig(syncBusHasServerPolling = false) {
-    const config = this.getAdaptivePollingConfig(syncBusHasServerPolling);
-    this.dbCheckInterval = config.dbCheckInterval;
-    if (
-      !this.pollingInterval ||
-      this.currentPollingInterval !== config.pollingInterval
-    ) {
-      this.startPolling(config.pollingInterval);
-    }
-  }
-
-  startPolling(interval = 25000) {
-    if (this.pollingInterval) clearInterval(this.pollingInterval);
-    this.currentPollingInterval = interval;
-    this.pollingInterval = setInterval(() => {
-      if (document.hidden) {
-        return;
-      }
-      this.checkForUpdates(false);
-    }, interval);
-    debugLog(`Polling started (every ${interval / 1000}s)`);
-  }
-
-  async checkForUpdates(forceServerCheck = false) {
-    if (this.isCheckingUpdates) {
-      return false;
-    }
-
-    this.isCheckingUpdates = true;
-    try {
-      this.setLastSyncCheck();
-      const syncBusHasServerPolling =
-        this.syncBus &&
-        typeof this.syncBus.isServerSyncEnabled === "function" &&
-        this.syncBus.isServerSyncEnabled();
-
-      if (
-        syncBusHasServerPolling &&
-        typeof this.syncBus.requestServerCheck === "function"
-      ) {
-        await this.syncBus.requestServerCheck("website-check", forceServerCheck);
-      }
-
-      const snapshot = this.getLatestPayloadSnapshot();
-      const hasNewerVersion =
-        snapshot.contentVersion > (this.lastRenderedContentVersion || 0);
-      const hasNewerTimestamp =
-        snapshot.timestamp > Math.max(this.getMyLastCheck(), this.lastRenderedUpdateTs);
-
-      if (
-        snapshot.payloadType !== "DATA_UPDATED" &&
-        snapshot.payloadType !== ""
-      ) {
-        return false;
-      }
-
-      if (hasNewerVersion || hasNewerTimestamp) {
-        debugLog("Update detected via local update payload");
-        this.setMyLastCheck(snapshot.timestamp);
-        await this.refreshDataWithUI(
-          snapshot.timestamp,
-          true,
-          snapshot.changeType,
-          snapshot.contentVersion
-        );
-        return true;
-      }
-
-      if (syncBusHasServerPolling) {
-        return false;
-      }
-
-      const dbUpdated = await this.checkDatabaseForUpdates();
-      return dbUpdated;
-    } finally {
-      this.isCheckingUpdates = false;
-    }
-  }
-
-  async checkDatabaseForUpdates() {
-    if (!window.SUPABASE_CONFIG?.URL || !window.SUPABASE_CONFIG?.ANON_KEY) {
-      return false;
-    }
-
-    const now = Date.now();
-    if (now - this.lastDbCheck < this.dbCheckInterval) {
-      return false;
-    }
-    this.lastDbCheck = now;
-
-    try {
-      const response = await fetchWithTimeout(
-        `${SUPABASE_CONFIG.URL}/rest/v1/rpc/get_update_signal`,
-        {
-          method: "POST",
-          headers: {
-            apikey: SUPABASE_CONFIG.ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-            "Content-Type": "application/json",
-            Pragma: "no-cache",
-            "Cache-Control": "no-store",
-          },
-          cache: "no-store",
-        },
-        SUPABASE_FETCH_TIMEOUT_MS
-      );
-
-      if (!response.ok) {
-        return false;
-      }
-
-      const data = await response.json();
-      const row = Array.isArray(data) ? data[0] : data;
-      if (!row || typeof row !== "object") return false;
-
-      const version = Number(
-        row.content_version ?? row.version ?? row.get_content_version ?? 0
-      );
-      const changeType = this.normalizeChangeType(row.last_change_type || "all");
-      const parsedTs = Date.parse(row.updated_at || "");
-      const updateTs = Number.isNaN(parsedTs) ? Date.now() : parsedTs;
-
-      const hasVersionAdvance =
-        Number.isFinite(version) && version > (this.lastRenderedContentVersion || 0);
-      const hasTimeAdvance = updateTs > (this.lastRenderedUpdateTs || 0);
-
-      if (hasVersionAdvance || hasTimeAdvance) {
-        localStorage.setItem(this.dbLastUpdateKey, String(updateTs));
-        this.setMyLastCheck(updateTs);
-        await this.refreshDataWithUI(updateTs, true, changeType, version);
-        return true;
-      }
-    } catch (error) {
-      debugWarn("Database update check failed:", error);
-    }
-
-    return false;
-  }
-
   async refreshAffectedContent(changeType = "all") {
     const normalizedChangeType = this.normalizeChangeType(changeType);
-    const shouldForceTheme =
-      normalizedChangeType === "theme" || normalizedChangeType === "all";
     const shouldRefreshCarousel =
       normalizedChangeType === "carousel" || normalizedChangeType === "all";
 
@@ -634,15 +140,6 @@ class WebsiteAutoUpdater {
       await runContentRefresh(normalizedChangeType);
     }
 
-    if (shouldForceTheme) {
-      if (
-        window.ThemeManager &&
-        typeof window.ThemeManager.checkForThemeUpdates === "function"
-      ) {
-        await window.ThemeManager.checkForThemeUpdates(true);
-      }
-    }
-
     if (shouldRefreshCarousel) {
       if (window.heroCarousel) {
         if (typeof window.heroCarousel.refresh === "function") {
@@ -668,223 +165,14 @@ class WebsiteAutoUpdater {
       await renderCartOnOrderPage(true);
       debugLog("Cart refreshed after content sync");
     }
-  }
 
-  async refreshDataWithUI(
-    triggerTs = 0,
-    announce = true,
-    changeType = "all",
-    contentVersion = 0
-  ) {
-    const now = Date.now();
-    const updateTs = Number(triggerTs) || 0;
-    const normalizedChangeType = this.normalizeChangeType(changeType);
-    const normalizedVersion = Number(contentVersion) || 0;
-
-    if (this.isRefreshing) {
-      this.pendingRefresh = true;
-      this.pendingTriggerTs = Math.max(this.pendingTriggerTs || 0, updateTs);
-      this.pendingChangeType = this.mergeChangeTypes(
-        this.pendingChangeType,
-        normalizedChangeType
-      );
-      this.pendingContentVersion = Math.max(
-        this.pendingContentVersion || 0,
-        normalizedVersion
-      );
-      return;
+    if (typeof showNotification === "function") {
+      showNotification("New updates are now live.", "info");
     }
-
-    const sinceLast = now - this.lastRefreshAt;
-    if (sinceLast < this.minRefreshGapMs) {
-      if (!this.pendingRefresh) {
-        this.pendingRefresh = true;
-        this.pendingTriggerTs = Math.max(this.pendingTriggerTs || 0, updateTs);
-        this.pendingChangeType = this.mergeChangeTypes(
-          this.pendingChangeType,
-          normalizedChangeType
-        );
-        this.pendingContentVersion = Math.max(
-          this.pendingContentVersion || 0,
-          normalizedVersion
-        );
-        setTimeout(() => {
-          if (!this.pendingRefresh) return;
-          this.pendingRefresh = false;
-          const pendingTs = this.pendingTriggerTs || 0;
-          const pendingType = this.pendingChangeType || "all";
-          const pendingVersion = this.pendingContentVersion || 0;
-          this.pendingTriggerTs = 0;
-          this.pendingChangeType = "all";
-          this.pendingContentVersion = 0;
-          this.refreshDataWithUI(pendingTs, announce, pendingType, pendingVersion);
-        }, this.minRefreshGapMs - sinceLast);
-      }
-      return;
-    }
-
-    const hasVersionAdvance =
-      normalizedVersion > (this.lastRenderedContentVersion || 0);
-    const hasTimestampAdvance = updateTs > (this.lastRenderedUpdateTs || 0);
-    const shouldSignal = announce && (hasVersionAdvance || hasTimestampAdvance);
-
-    this.isRefreshing = true;
-    this.lastRefreshAt = now;
-
-    if (shouldSignal) {
-      this.showSyncIndicator("syncing");
-      this.clearSyncTimers();
-      this.refreshWatchdogTimer = setTimeout(() => {
-        if (!this.isRefreshing) return;
-        this.isRefreshing = false;
-        this.pendingRefresh = false;
-        this.showSyncIndicator("error");
-        this.syncIndicatorTimer = setTimeout(
-          () => this.hideSyncIndicator(),
-          3000
-        );
-      }, 20000);
-    }
-
-    try {
-      debugLog("Refreshing website data...", {
-        changeType: normalizedChangeType,
-        updateTs,
-        normalizedVersion,
-      });
-
-      await this.refreshAffectedContent(normalizedChangeType);
-
-      if (shouldSignal) {
-        this.showSyncIndicator("updated");
-        this.showUpdateNotification();
-        this.syncIndicatorTimer = setTimeout(
-          () => this.hideSyncIndicator(),
-          2000
-        );
-      } else {
-        this.hideSyncIndicator();
-      }
-    } catch (error) {
-      console.error("Sync refresh failed:", error);
-      this.hideSyncIndicator();
-
-      if (shouldSignal) {
-        this.showSyncIndicator("error");
-        this.syncIndicatorTimer = setTimeout(
-          () => this.hideSyncIndicator(),
-          3000
-        );
-      }
-    } finally {
-      this.isRefreshing = false;
-      if (this.refreshWatchdogTimer) {
-        clearTimeout(this.refreshWatchdogTimer);
-        this.refreshWatchdogTimer = null;
-      }
-
-      this.lastRenderedUpdateTs = Math.max(
-        this.lastRenderedUpdateTs,
-        updateTs || now
-      );
-      const latestContentVersion = Math.max(
-        normalizedVersion,
-        Number(localStorage.getItem(this.contentVersionKey) || "0") || 0
-      );
-      if (latestContentVersion > 0) {
-        this.lastRenderedContentVersion = Math.max(this.lastRenderedContentVersion || 0, latestContentVersion);
-      }
-      this.lastRenderedChangeType = normalizedChangeType;
-      this.setMyLastCheck(this.lastRenderedUpdateTs);
-      this.setLastSyncCheck();
-      try {
-        localStorage.setItem(
-          this.dbLastUpdateKey,
-          String(this.lastRenderedUpdateTs)
-        );
-        localStorage.setItem(this.lastUpdateKey, String(this.lastRenderedUpdateTs));
-        localStorage.setItem(
-          this.contentVersionKey,
-          String(this.lastRenderedContentVersion || 0)
-        );
-        localStorage.setItem(this.lastChangeTypeKey, normalizedChangeType);
-      } catch {}
-
-      if (this.pendingRefresh) {
-        this.pendingRefresh = false;
-        const pendingTs = this.pendingTriggerTs || 0;
-        const pendingType = this.pendingChangeType || "all";
-        const pendingVersion = this.pendingContentVersion || 0;
-        this.pendingTriggerTs = 0;
-        this.pendingChangeType = "all";
-        this.pendingContentVersion = 0;
-        queueMicrotask(() =>
-          this.refreshDataWithUI(pendingTs, announce, pendingType, pendingVersion)
-        );
-      }
-    }
-  }
-
-  clearSyncTimers() {
-    if (this.syncIndicatorTimer) {
-      clearTimeout(this.syncIndicatorTimer);
-      this.syncIndicatorTimer = null;
-    }
-    if (this.refreshWatchdogTimer) {
-      clearTimeout(this.refreshWatchdogTimer);
-      this.refreshWatchdogTimer = null;
-    }
-  }
-
-  showSyncIndicator(state) {
-    let indicator = document.getElementById("sync-status-indicator");
-
-    if (!indicator) {
-      // Create indicator if it doesn't exist
-      indicator = document.createElement("div");
-      indicator.id = "sync-status-indicator";
-      document.body.appendChild(indicator);
-    }
-
-    indicator.style.display = "";
-    indicator.className = "";
-    indicator.classList.add("is-visible");
-
-    // Set state
-    if (state === "syncing") {
-      indicator.classList.add("syncing");
-      indicator.textContent = "\u27F3";
-      indicator.title = "Updating content...";
-    } else if (state === "updated") {
-      indicator.classList.add("updated");
-      indicator.textContent = "\u2713";
-      indicator.title = "Content updated!";
-    } else if (state === "error") {
-      indicator.classList.add("error");
-      indicator.textContent = "!";
-      indicator.title = "Update failed";
-    }
-  }
-
-  hideSyncIndicator() {
-    if (this.syncIndicatorTimer) {
-      clearTimeout(this.syncIndicatorTimer);
-      this.syncIndicatorTimer = null;
-    }
-    const indicator = document.getElementById("sync-status-indicator");
-    if (indicator) {
-      indicator.style.display = "none";
-      indicator.className = "";
-    }
-  }
-
-  showUpdateNotification() {
-    debugLog("Website content updated successfully!");
-    showNotification("New updates are now live.", "info");
   }
 
   async forceRefetchAll() {
-    return this.refreshDataWithUI(Date.now(), false, "all", 0);
+    return this.refreshAffectedContent("all");
   }
 
   getStatus() {
@@ -893,13 +181,8 @@ class WebsiteAutoUpdater {
         ? this.syncBus.getStatus()
         : null;
     return {
-      lastSyncCheckAt: this.lastSyncCheckAt || 0,
-      currentPollingInterval: this.currentPollingInterval || 0,
-      isCheckingUpdates: this.isCheckingUpdates,
-      isRefreshing: this.isRefreshing,
-      lastRenderedUpdateTs: this.lastRenderedUpdateTs || 0,
-      lastRenderedContentVersion: this.lastRenderedContentVersion || 0,
-      lastRenderedChangeType: this.lastRenderedChangeType || "all",
+      lastAppliedVersion: this.lastAppliedVersion || 0,
+      lastAppliedChangeType: this.lastAppliedChangeType || "all",
       syncBus: syncBusStatus,
     };
   }
@@ -6061,3 +5344,4 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   debugLog("Toke Bakes fully initialized");
 });
+

@@ -21,7 +21,7 @@ const ThemeManager = {
   currentLogo: "images/logo.webp",
   lastThemeUpdate: 0,
   lastDbCheck: 0,
-  dbCheckInterval: 15000,
+  dbCheckInterval: 30000,
   spaHooksBound: false,
   themeSyncUnsubscribe: null,
   themeLoadingTimer: null,
@@ -116,32 +116,10 @@ const ThemeManager = {
     if (this.themeAutoUpdateBound) return;
     this.themeAutoUpdateBound = true;
 
-    // Check for theme updates periodically without over-polling low-end devices.
-    setInterval(() => this.checkForThemeUpdates(), 15000);
-
-    // Also check when page becomes visible
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) {
-        this.checkForThemeUpdates();
-      }
-    });
-
-    window.addEventListener("focus", () => {
-      this.checkForThemeUpdates(true);
-    });
-
-    window.addEventListener("online", () => {
-      this.checkForThemeUpdates(true);
-    });
-
-    window.addEventListener("pageshow", () => {
-      this.checkForThemeUpdates(true);
-    });
-
-    // Listen for theme updates via shared sync bus
+    // Theme updates are driven only by update-sync.
     if (
       window.TokeUpdateSync &&
-      typeof window.TokeUpdateSync.subscribe === "function"
+      typeof window.TokeUpdateSync.registerRefreshHandler === "function"
     ) {
       if (this.themeSyncUnsubscribe) {
         try {
@@ -150,61 +128,27 @@ const ThemeManager = {
         this.themeSyncUnsubscribe = null;
       }
 
-      this.themeSyncUnsubscribe = window.TokeUpdateSync.subscribe((payload) => {
-        // Direct theme change broadcast
-        if (payload?.type === "THEME_CHANGED") {
-          if (payload.sourceId === window.TokeUpdateSync.sourceId) return;
-          themeDebugLog("?? Theme update received via shared sync bus");
-          this.applyTheme(payload.themeFile, false, false, {
-            logoFile: payload.logoFile || null,
-            persist: true,
-            timestampOverride: payload.timestamp,
-          });
-          return;
-        }
-
-        // Fallback: react to generic data-updated events for theme
-        if (payload?.type === "DATA_UPDATED" && payload?.itemType === "theme") {
-          const ts = Number(payload.timestamp) || Date.now();
-          themeDebugLog("?? Theme data update received", payload);
-          // Force a DB + local re-check so other devices update immediately
-          localStorage.setItem(THEME_STORAGE_KEYS.legacyUpdated, String(ts));
-          localStorage.setItem(THEME_STORAGE_KEYS.globalUpdated, String(ts));
-          localStorage.setItem(THEME_STORAGE_KEYS.localCheck, "0");
-          this.checkForThemeUpdates(true);
-          return;
-        }
-
-        if (payload?.type === "DATA_UPDATED" && payload?.itemType === "all") {
-          const isServerDriven =
-            payload?.serverDriven === true || payload?.source === "server";
-          if (isServerDriven) {
-            this.checkForThemeUpdates(true);
+      this.themeSyncUnsubscribe = window.TokeUpdateSync.registerRefreshHandler(
+        async (payload) => {
+          const changeType = this.normalizeSyncChangeType(
+            payload?.changeType || payload?.lastChangeType || payload?.itemType
+          );
+          if (changeType !== "theme" && changeType !== "all") {
+            return false;
           }
+          return this.checkForThemeUpdates(true);
+        },
+        {
+          id: "theme-manager-refresh",
+          showIndicator: false,
+          priority: 50,
+          changeTypes: ["theme", "all"],
         }
-      });
-    } else if (typeof BroadcastChannel !== "undefined") {
-      // Legacy BroadcastChannel fallback
-      try {
-        this.themeChannel = new BroadcastChannel("toke_bakes_theme_updates");
-        this.themeChannel.onmessage = (event) => {
-          if (event?.data?.type === "THEME_CHANGED") {
-            themeDebugLog("?? Theme update received via BroadcastChannel");
-            this.applyTheme(event.data.themeFile, false, false, {
-              logoFile: event.data.logoFile || null,
-              persist: true,
-              timestampOverride: event.data.timestamp,
-            });
-          }
-        };
-      } catch (error) {
-        themeDebugWarn("Theme BroadcastChannel unavailable:", error);
-        this.themeChannel = null;
-      }
+      );
     }
 
-    // Check localStorage + database for theme updates
-    this.checkForThemeUpdates();
+    // Ensure startup alignment with DB active theme.
+    this.checkForThemeUpdates(true).catch(() => {});
   },
 
   async checkForThemeUpdates(force = false) {
@@ -230,39 +174,46 @@ const ThemeManager = {
       );
     }
 
-    // Local fallback for in-tab/broadcast updates while offline.
-    const lastUpdate = Math.max(
-      Number(localStorage.getItem(THEME_STORAGE_KEYS.globalUpdated) || "0"),
-      Number(localStorage.getItem(THEME_STORAGE_KEYS.legacyUpdated) || "0")
-    );
-    const myLastCheck = Number(
-      localStorage.getItem(THEME_STORAGE_KEYS.localCheck) || "0"
-    );
+    // Local fallback is only allowed when offline.
+    const canUseLocalFallback =
+      !dbCandidate &&
+      typeof navigator !== "undefined" &&
+      navigator.onLine === false;
 
-    if (lastUpdate > myLastCheck) {
-      themeDebugLog("?? Theme snapshot update detected!");
-      const newTheme = this.fixLegacyThemePath(
-        this.normalizeAssetPath(
-          localStorage.getItem(THEME_STORAGE_KEYS.globalCss) ||
-            localStorage.getItem(THEME_STORAGE_KEYS.legacyCss) ||
-            "styles/style.css"
-        ) || "styles/style.css"
+    if (canUseLocalFallback) {
+      const lastUpdate = Math.max(
+        Number(localStorage.getItem(THEME_STORAGE_KEYS.globalUpdated) || "0"),
+        Number(localStorage.getItem(THEME_STORAGE_KEYS.legacyUpdated) || "0")
       );
-      const newLogo =
-        this.normalizeAssetPath(
-          localStorage.getItem(THEME_STORAGE_KEYS.globalLogo) ||
-            localStorage.getItem(THEME_STORAGE_KEYS.legacyLogo)
-        ) || this.getLogoForTheme(newTheme);
+      const myLastCheck = Number(
+        localStorage.getItem(THEME_STORAGE_KEYS.localCheck) || "0"
+      );
 
-      localStorage.setItem(THEME_STORAGE_KEYS.localCheck, String(lastUpdate));
+      if (lastUpdate > myLastCheck) {
+        themeDebugLog("?? Theme snapshot update detected (offline fallback)");
+        const newTheme = this.fixLegacyThemePath(
+          this.normalizeAssetPath(
+            localStorage.getItem(THEME_STORAGE_KEYS.globalCss) ||
+              localStorage.getItem(THEME_STORAGE_KEYS.legacyCss) ||
+              "styles/style.css"
+          ) || "styles/style.css"
+        );
+        const newLogo =
+          this.normalizeAssetPath(
+            localStorage.getItem(THEME_STORAGE_KEYS.globalLogo) ||
+              localStorage.getItem(THEME_STORAGE_KEYS.legacyLogo)
+          ) || this.getLogoForTheme(newTheme);
 
-      if (newTheme !== this.currentTheme || newLogo !== this.currentLogo) {
-        this.applyTheme(newTheme, false, false, {
-          logoFile: newLogo,
-          persist: true,
-          timestampOverride: lastUpdate,
-        });
-        return true;
+        localStorage.setItem(THEME_STORAGE_KEYS.localCheck, String(lastUpdate));
+
+        if (newTheme !== this.currentTheme || newLogo !== this.currentLogo) {
+          this.applyTheme(newTheme, false, false, {
+            logoFile: newLogo,
+            persist: true,
+            timestampOverride: lastUpdate,
+          });
+          return true;
+        }
       }
     }
 
@@ -313,33 +264,7 @@ const ThemeManager = {
       localStorage.setItem(THEME_STORAGE_KEYS.globalUpdated, timestamp);
       localStorage.setItem(THEME_STORAGE_KEYS.localCheck, timestamp);
 
-      // Broadcast to other tabs if admin is making the change
-      if (isAdminChange) {
-        const tsNumber = Number(timestamp) || Date.now();
-        const themeName = this.getThemeName(normalizedCssFile);
-
-        if (
-          window.TokeUpdateSync &&
-          typeof window.TokeUpdateSync.publish === "function"
-        ) {
-          window.TokeUpdateSync.publish({
-            type: "THEME_CHANGED",
-            themeFile: normalizedCssFile,
-            logoFile: resolvedLogo,
-            themeName,
-            timestamp: tsNumber,
-            source: "admin-theme",
-          });
-        } else if (this.themeChannel) {
-          this.themeChannel.postMessage({
-            type: "THEME_CHANGED",
-            themeFile: normalizedCssFile,
-            logoFile: resolvedLogo,
-            themeName,
-            timestamp: tsNumber,
-          });
-        }
-      }
+      // Cross-device propagation is handled by update-sync after content_version bump.
     }
 
     // Apply theme CSS - Use exact path without modification
@@ -534,6 +459,32 @@ const ThemeManager = {
     return logos[cssFile] || "images/logo.webp";
   },
 
+  normalizeSyncChangeType(raw) {
+    const value = this.normalizeAssetPath(raw).toLowerCase();
+    if (!value) return "all";
+    if (
+      value === "menu_options" ||
+      value === "menu-options" ||
+      value === "menuoptions" ||
+      value === "option" ||
+      value === "options"
+    ) {
+      return "menu";
+    }
+    if (value === "gallery") return "specials";
+    if (
+      value === "all" ||
+      value === "menu" ||
+      value === "featured" ||
+      value === "specials" ||
+      value === "carousel" ||
+      value === "theme"
+    ) {
+      return value;
+    }
+    return "all";
+  },
+
   normalizeAssetPath(value) {
     if (value === null || value === undefined) return "";
     return String(value)
@@ -721,6 +672,7 @@ const ThemeManager = {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
     };
+    const baselineVersion = await this.fetchThemeSignalVersion(baseHeaders);
 
     const deactivateUrl = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes`;
     // Force all themes inactive first (avoids unique is_active index conflicts)
@@ -766,23 +718,127 @@ const ThemeManager = {
     }
 
     const nowTs = Date.now();
+    const observedVersion = await this.fetchThemeSignalVersion(baseHeaders);
+    const bumpedVersion =
+      observedVersion > baselineVersion
+        ? observedVersion
+        : await this.bumpThemeUpdateSignal(baseHeaders);
+
     if (
+      Number.isFinite(bumpedVersion) &&
+      bumpedVersion > 0 &&
       window.TokeUpdateSync &&
       typeof window.TokeUpdateSync.publishDataUpdate === "function"
     ) {
       window.TokeUpdateSync.publishDataUpdate("update", "theme", {
         source: "admin-theme",
         timestamp: nowTs,
+        contentVersion: bumpedVersion,
+        lastChangeType: "theme",
       });
+    }
 
-      if (typeof window.TokeUpdateSync.requestServerCheck === "function") {
-        Promise.resolve(
-          window.TokeUpdateSync.requestServerCheck("theme-write", true)
-        ).catch(() => {});
-      }
+    if (
+      window.TokeUpdateSync &&
+      typeof window.TokeUpdateSync.requestServerCheck === "function"
+    ) {
+      Promise.resolve(
+        window.TokeUpdateSync.requestServerCheck("theme-write", true)
+      ).catch(() => {});
     }
 
     return true;
+  },
+
+  async bumpThemeUpdateSignal(baseHeaders) {
+    if (!window.SUPABASE_CONFIG?.URL) return 0;
+
+    const parseVersionPayload = (raw) => {
+      if (typeof raw === "number") return Number.isFinite(raw) ? Math.trunc(raw) : 0;
+      if (typeof raw === "string") {
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) ? Math.trunc(parsed) : 0;
+      }
+      if (Array.isArray(raw)) {
+        if (!raw.length) return 0;
+        return parseVersionPayload(raw[0]);
+      }
+      if (raw && typeof raw === "object") {
+        return parseVersionPayload(
+          raw.content_version ?? raw.version ?? raw.get_content_version ?? raw.value ?? 0
+        );
+      }
+      return 0;
+    };
+
+    const callRpc = async (rpcName, payload = {}) => {
+      const response = await fetch(
+        `${SUPABASE_CONFIG.URL}/rest/v1/rpc/${rpcName}`,
+        {
+          method: "POST",
+          headers: {
+            ...baseHeaders,
+            "Content-Type": "application/json",
+            Prefer: "return=representation",
+          },
+          body: JSON.stringify(payload),
+          cache: "no-store",
+        }
+      );
+      if (!response.ok) return 0;
+      const data = await response.json().catch(() => null);
+      const parsed = parseVersionPayload(data);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    };
+
+    const bumped =
+      (await callRpc("bump_update_signal", { p_change_type: "theme" })) ||
+      (await callRpc("bump_content_version", {}));
+
+    return Number.isFinite(bumped) && bumped > 0 ? Math.trunc(bumped) : 0;
+  },
+
+  async fetchThemeSignalVersion(baseHeaders) {
+    if (!window.SUPABASE_CONFIG?.URL) return 0;
+
+    const parseVersionPayload = (raw) => {
+      if (typeof raw === "number") return Number.isFinite(raw) ? Math.trunc(raw) : 0;
+      if (typeof raw === "string") {
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) ? Math.trunc(parsed) : 0;
+      }
+      if (Array.isArray(raw)) {
+        if (!raw.length) return 0;
+        return parseVersionPayload(raw[0]);
+      }
+      if (raw && typeof raw === "object") {
+        return parseVersionPayload(
+          raw.content_version ?? raw.version ?? raw.get_content_version ?? raw.value ?? 0
+        );
+      }
+      return 0;
+    };
+
+    try {
+      const response = await fetch(
+        `${SUPABASE_CONFIG.URL}/rest/v1/rpc/get_update_signal`,
+        {
+          method: "POST",
+          headers: {
+            ...baseHeaders,
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+          cache: "no-store",
+        }
+      );
+      if (!response.ok) return 0;
+      const payload = await response.json().catch(() => null);
+      const parsed = parseVersionPayload(payload);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    } catch {
+      return 0;
+    }
   },
 
   async fetchActiveThemeFromDatabase(force = false) {

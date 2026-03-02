@@ -1,3 +1,4 @@
+
 /* ================== update-sync.js ================== */
 (function initTokeUpdateSync(global) {
   if (!global || global.TokeUpdateSync) return;
@@ -9,8 +10,9 @@
   const CONTENT_VERSION_KEY = "toke_bakes_content_version";
   const LAST_CHANGE_TYPE_KEY = "toke_bakes_last_change_type";
   const SERVER_LOCK_KEY = "toke_bakes_sync_server_lock";
-  const DEFAULT_SERVER_POLL_INTERVAL_MS = 30000;
-  const DEFAULT_SERVER_MIN_GAP_MS = 7000;
+
+  const DEFAULT_SERVER_POLL_INTERVAL_MS = 35000;
+  const DEFAULT_SERVER_MIN_GAP_MS = 9000;
   const DEFAULT_SERVER_LOCK_LEASE_MS = 25000;
   const DEFAULT_SEEN_EVENT_TTL_MS = 2 * 60 * 1000;
 
@@ -38,12 +40,12 @@
 
   const extractContentVersion = (raw) => {
     if (typeof raw === "number") {
-      return Number.isFinite(raw) ? Math.trunc(raw) : null;
+      return Number.isFinite(raw) ? Math.max(0, Math.trunc(raw)) : null;
     }
 
     if (typeof raw === "string") {
       const parsed = Number(raw);
-      return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+      return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : null;
     }
 
     if (Array.isArray(raw)) {
@@ -69,45 +71,38 @@
       .trim()
       .toLowerCase();
     if (!value) return "all";
-    const allowed = new Set([
-      "all",
-      "menu",
-      "featured",
-      "specials",
-      "gallery",
-      "carousel",
-      "theme",
-      "menu_options",
-      "menu-options",
-      "menuoptions",
-      "option",
-      "options",
-      "site",
-      "settings",
-    ]);
-    if (allowed.has(value)) return value;
-    return "all";
-  };
 
-  const normalizePayloadItemType = (raw) => {
-    const changeType = normalizeChangeType(raw);
     if (
-      changeType === "menu_options" ||
-      changeType === "menu-options" ||
-      changeType === "menuoptions" ||
-      changeType === "option" ||
-      changeType === "options"
+      value === "menu_options" ||
+      value === "menu-options" ||
+      value === "menuoptions" ||
+      value === "option" ||
+      value === "options"
     ) {
       return "menu";
     }
-    if (changeType === "gallery") return "specials";
-    if (changeType === "site" || changeType === "settings") return "all";
-    return changeType;
+
+    if (value === "gallery") return "specials";
+    if (value === "site" || value === "settings") return "all";
+
+    if (
+      value === "all" ||
+      value === "menu" ||
+      value === "featured" ||
+      value === "specials" ||
+      value === "carousel" ||
+      value === "theme"
+    ) {
+      return value;
+    }
+
+    return "all";
   };
 
   const parseUpdateSignal = (raw) => {
     if (!raw) return null;
     const first = Array.isArray(raw) ? raw[0] : raw;
+
     if (!first || typeof first !== "object") {
       const fallbackVersion = extractContentVersion(raw);
       if (!Number.isFinite(fallbackVersion)) return null;
@@ -129,9 +124,10 @@
 
     const updatedAtRaw = first.updated_at ?? first.updatedAt ?? null;
     const parsedDate = updatedAtRaw ? Date.parse(updatedAtRaw) : NaN;
+
     return {
       version,
-      changeType: normalizePayloadItemType(
+      changeType: normalizeChangeType(
         first.last_change_type ?? first.change_type ?? first.item_type ?? "all"
       ),
       updatedAtTs: Number.isNaN(parsedDate) ? 0 : Math.trunc(parsedDate),
@@ -170,13 +166,17 @@
       );
 
       this.listeners = new Set();
+      this.refreshHandlers = new Map();
+      this.nextRefreshHandlerId = 0;
       this.channel = null;
+
       this.serverPollTimer = null;
       this.serverLockTimer = null;
       this.serverCheckInFlight = null;
       this.lastServerCheckAt = 0;
       this.lastServerCheckOkAt = 0;
       this.lastServerCheckReason = "";
+
       this.isServerLeader = false;
       this.syncMode = "polling";
       this.syncStatus = "active";
@@ -185,7 +185,18 @@
       this.boundStorageHandler = null;
       this.boundCustomHandler = null;
       this.boundVisibilityHandler = null;
+      this.boundFocusHandler = null;
       this.boundOnlineHandler = null;
+
+      this.realtimeClient = null;
+      this.realtimeChannel = null;
+      this.realtimeEnabled = false;
+
+      this.appliedVersion = this.getStoredContentVersion();
+      this.appliedChangeType = this.getStoredLastChangeType();
+      this.pendingPayload = null;
+      this.applyInFlight = null;
+      this.indicatorHideTimer = null;
     }
 
     init() {
@@ -218,7 +229,7 @@
               operation: "sync",
               itemType: "all",
               timestamp: Number(event.newValue) || Date.now(),
-              sourceId: "legacy",
+              sourceId: "legacy-storage",
             },
             "storage"
           );
@@ -256,25 +267,29 @@
       };
       document.addEventListener("visibilitychange", this.boundVisibilityHandler);
 
+      this.boundFocusHandler = () => {
+        this.requestServerCheck("focus", true);
+      };
+      window.addEventListener("focus", this.boundFocusHandler);
+
       this.boundOnlineHandler = () => {
         this.requestServerCheck("online", true);
       };
       window.addEventListener("online", this.boundOnlineHandler);
 
       this.startServerSync();
+      this.setupRealtimeSubscription();
       this.requestServerCheck("init", true);
     }
-
     createPayload(payload = {}) {
       const timestamp = Number(payload.timestamp) || Date.now();
       const type = payload.type || "DATA_UPDATED";
       const sourceId = payload.sourceId || this.sourceId;
       const operation = payload.operation || "notify";
-      const inferredItemType = normalizePayloadItemType(
+      const itemType = normalizeChangeType(
         payload.itemType ?? payload.lastChangeType ?? payload.changeType ?? "all"
       );
-      const itemType = inferredItemType || "all";
-      const lastChangeType = normalizePayloadItemType(
+      const lastChangeType = normalizeChangeType(
         payload.lastChangeType ?? itemType
       );
 
@@ -350,7 +365,7 @@
 
     setStoredContentVersion(version) {
       const normalized = extractContentVersion(version);
-      if (!Number.isFinite(normalized) || normalized < 0) return;
+      if (!Number.isFinite(normalized)) return;
       try {
         localStorage.setItem(this.contentVersionKey, String(normalized));
       } catch {}
@@ -358,19 +373,26 @@
 
     getStoredLastChangeType() {
       try {
-        return normalizePayloadItemType(
-          localStorage.getItem(this.lastChangeTypeKey) || "all"
-        );
+        return normalizeChangeType(localStorage.getItem(this.lastChangeTypeKey) || "all");
       } catch {
         return "all";
       }
     }
 
     setStoredLastChangeType(changeType) {
-      const normalized = normalizePayloadItemType(changeType);
       try {
-        localStorage.setItem(this.lastChangeTypeKey, normalized);
+        localStorage.setItem(this.lastChangeTypeKey, normalizeChangeType(changeType));
       } catch {}
+    }
+
+    updateAppliedState(version, changeType = "all") {
+      const normalizedVersion = extractContentVersion(version);
+      if (!Number.isFinite(normalizedVersion)) return;
+
+      this.appliedVersion = Math.max(this.appliedVersion || 0, normalizedVersion);
+      this.appliedChangeType = normalizeChangeType(changeType);
+      this.setStoredContentVersion(this.appliedVersion);
+      this.setStoredLastChangeType(this.appliedChangeType);
     }
 
     persistPayload(payload) {
@@ -395,13 +417,18 @@
         mode: this.syncMode,
         status: this.syncStatus,
         isLeader: this.isServerLeader,
+        realtimeEnabled: this.realtimeEnabled,
         pollIntervalMs: this.serverPollIntervalMs,
         minGapMs: this.serverMinGapMs,
         lastServerCheckAt: this.lastServerCheckAt || 0,
         lastServerCheckOkAt: this.lastServerCheckOkAt || 0,
         lastServerCheckReason: this.lastServerCheckReason || "",
         contentVersion: this.getStoredContentVersion(),
+        appliedVersion: this.appliedVersion || 0,
         lastChangeType: this.getStoredLastChangeType(),
+        applying: Boolean(this.applyInFlight),
+        pendingVersion: this.pendingPayload?.version || 0,
+        refreshHandlerCount: this.refreshHandlers.size,
       };
     }
 
@@ -413,7 +440,7 @@
       });
     }
 
-    handleIncoming(rawPayload, transport = "unknown") {
+    async handleIncoming(rawPayload, transport = "unknown") {
       const payload = this.createPayload(rawPayload || {});
       payload.transport = payload.transport || transport;
 
@@ -421,6 +448,10 @@
       this.markSeen(payload);
       this.persistPayload(payload);
       this.notifyListeners(payload);
+
+      if (payload.type === "DATA_UPDATED") {
+        await this.handleVersionedUpdatePayload(payload);
+      }
     }
 
     emitCustomEvent(payload) {
@@ -467,6 +498,242 @@
       };
     }
 
+    registerRefreshHandler(handler, options = {}) {
+      if (typeof handler !== "function") {
+        return () => {};
+      }
+
+      const providedId = String(options.id || "").trim();
+      const handlerId =
+        providedId || `refresh_handler_${(this.nextRefreshHandlerId += 1)}`;
+      const priority = Number(options.priority) || 0;
+      const showIndicator = options.showIndicator !== false;
+
+      const normalizedTypes = Array.isArray(options.changeTypes)
+        ? new Set(options.changeTypes.map((type) => normalizeChangeType(type)))
+        : null;
+
+      this.refreshHandlers.set(handlerId, {
+        id: handlerId,
+        fn: handler,
+        priority,
+        showIndicator,
+        changeTypes: normalizedTypes,
+      });
+
+      this.requestServerCheck("handler-registered", true);
+
+      return () => {
+        this.refreshHandlers.delete(handlerId);
+      };
+    }
+
+    registerUpdateHandler(handler, options = {}) {
+      return this.registerRefreshHandler(handler, options);
+    }
+    shouldRenderIndicator() {
+      if (!this.refreshHandlers.size) return false;
+      for (const entry of this.refreshHandlers.values()) {
+        if (entry.showIndicator !== false) return true;
+      }
+      return false;
+    }
+
+    ensureIndicatorElement() {
+      if (!this.shouldRenderIndicator()) return null;
+
+      let indicator = document.getElementById("sync-status-indicator");
+      if (!indicator && document.body) {
+        indicator = document.createElement("div");
+        indicator.id = "sync-status-indicator";
+        indicator.setAttribute("aria-live", "polite");
+        indicator.style.display = "none";
+        document.body.appendChild(indicator);
+      }
+      return indicator;
+    }
+
+    clearIndicatorTimers() {
+      if (this.indicatorHideTimer) {
+        clearTimeout(this.indicatorHideTimer);
+        this.indicatorHideTimer = null;
+      }
+    }
+
+    showIndicator(state) {
+      const indicator = this.ensureIndicatorElement();
+      if (!indicator) return;
+
+      this.clearIndicatorTimers();
+      indicator.style.display = "";
+      indicator.className = "";
+      indicator.classList.add("is-visible");
+
+      if (state === "syncing") {
+        indicator.classList.add("syncing");
+        indicator.textContent = "\u27F3";
+        indicator.title = "Updating content...";
+        return;
+      }
+
+      if (state === "error") {
+        indicator.classList.add("error");
+        indicator.textContent = "!";
+        indicator.title = "Update failed";
+        this.indicatorHideTimer = setTimeout(() => this.hideIndicator(), 2500);
+      }
+    }
+
+    hideIndicator() {
+      this.clearIndicatorTimers();
+      const indicator = document.getElementById("sync-status-indicator");
+      if (!indicator) return;
+      indicator.style.display = "none";
+      indicator.className = "";
+      indicator.textContent = "";
+      indicator.title = "";
+    }
+
+    shouldRunHandlerForChangeType(handlerEntry, changeType) {
+      if (!handlerEntry?.changeTypes || handlerEntry.changeTypes.size === 0) {
+        return true;
+      }
+      const normalized = normalizeChangeType(changeType);
+      if (handlerEntry.changeTypes.has("all")) return true;
+      if (normalized === "all") return true;
+      return handlerEntry.changeTypes.has(normalized);
+    }
+
+    async runRefreshHandlers(payload) {
+      if (!this.refreshHandlers.size) return;
+
+      const sortedHandlers = Array.from(this.refreshHandlers.values()).sort(
+        (a, b) => b.priority - a.priority
+      );
+
+      for (const entry of sortedHandlers) {
+        if (!this.shouldRunHandlerForChangeType(entry, payload.changeType)) {
+          continue;
+        }
+        await Promise.resolve(entry.fn(payload));
+      }
+    }
+
+    queuePendingPayload(payload, version) {
+      const nextVersion = extractContentVersion(version);
+      if (!Number.isFinite(nextVersion)) return;
+
+      if (!this.pendingPayload || nextVersion > this.pendingPayload.version) {
+        this.pendingPayload = { payload, version: nextVersion };
+        return;
+      }
+
+      if (nextVersion === this.pendingPayload.version) {
+        const pendingTs = Number(this.pendingPayload.payload?.timestamp || 0);
+        const incomingTs = Number(payload?.timestamp || 0);
+        if (incomingTs > pendingTs) {
+          this.pendingPayload = { payload, version: nextVersion };
+        }
+      }
+    }
+
+    async applyVersionedPayload(payload, version, changeType) {
+      const normalizedVersion = extractContentVersion(version);
+      if (!Number.isFinite(normalizedVersion)) return false;
+
+      if (normalizedVersion <= this.appliedVersion) {
+        return false;
+      }
+
+      if (this.applyInFlight) {
+        this.queuePendingPayload(payload, normalizedVersion);
+        return false;
+      }
+
+      const normalizedChangeType = normalizeChangeType(changeType || "all");
+      const applyPayload = {
+        ...payload,
+        contentVersion: normalizedVersion,
+        changeType: normalizedChangeType,
+      };
+
+      this.applyInFlight = (async () => {
+        try {
+          if (this.shouldRenderIndicator()) {
+            this.showIndicator("syncing");
+          }
+
+          await this.runRefreshHandlers(applyPayload);
+          this.updateAppliedState(normalizedVersion, normalizedChangeType);
+          this.hideIndicator();
+
+          try {
+            window.dispatchEvent(
+              new CustomEvent("tb:update-applied", {
+                detail: {
+                  contentVersion: normalizedVersion,
+                  changeType: normalizedChangeType,
+                  payload: applyPayload,
+                },
+              })
+            );
+          } catch {}
+
+          return true;
+        } catch {
+          if (this.shouldRenderIndicator()) {
+            this.showIndicator("error");
+          }
+          try {
+            window.dispatchEvent(
+              new CustomEvent("tb:update-failed", {
+                detail: {
+                  contentVersion: normalizedVersion,
+                  changeType: normalizedChangeType,
+                  payload: applyPayload,
+                },
+              })
+            );
+          } catch {}
+          return false;
+        } finally {
+          this.applyInFlight = null;
+
+          const queued = this.pendingPayload;
+          this.pendingPayload = null;
+          if (queued && queued.version > this.appliedVersion) {
+            this.applyVersionedPayload(
+              queued.payload,
+              queued.version,
+              queued.payload?.lastChangeType || queued.payload?.itemType || "all"
+            );
+          }
+        }
+      })();
+
+      return this.applyInFlight;
+    }
+
+    async handleVersionedUpdatePayload(payload) {
+      const remoteVersion = extractContentVersion(
+        payload.contentVersion ?? payload.version
+      );
+      const remoteChangeType = normalizeChangeType(
+        payload.lastChangeType ?? payload.itemType ?? "all"
+      );
+
+      if (!Number.isFinite(remoteVersion)) {
+        this.requestServerCheck("payload-missing-version", true);
+        return false;
+      }
+
+      if (remoteVersion <= this.appliedVersion) {
+        this.setStoredLastChangeType(remoteChangeType);
+        return false;
+      }
+
+      return this.applyVersionedPayload(payload, remoteVersion, remoteChangeType);
+    }
     isServerSyncEnabled() {
       return this.serverSyncEnabled;
     }
@@ -581,7 +848,8 @@
 
     startServerSync() {
       if (!this.serverSyncEnabled) return;
-      this.syncMode = "polling";
+
+      this.syncMode = this.realtimeEnabled ? "realtime+polling" : "polling";
       this.syncStatus = "starting";
 
       this.acquireServerLock(true);
@@ -608,6 +876,91 @@
       this.syncStatus = "disabled";
     }
 
+    setupRealtimeSubscription() {
+      if (this.realtimeEnabled) return true;
+
+      const supabaseGlobal =
+        global.supabase ||
+        global.Supabase ||
+        global.supabaseJs ||
+        null;
+      const createClient = supabaseGlobal?.createClient;
+      if (typeof createClient !== "function") {
+        return false;
+      }
+
+      if (!global.SUPABASE_CONFIG?.URL || !global.SUPABASE_CONFIG?.ANON_KEY) {
+        return false;
+      }
+
+      try {
+        this.realtimeClient = createClient(
+          global.SUPABASE_CONFIG.URL,
+          global.SUPABASE_CONFIG.ANON_KEY,
+          {
+            auth: { persistSession: false, autoRefreshToken: false },
+          }
+        );
+
+        const channel = this.realtimeClient
+          .channel("tb-content-version")
+          .on(
+            "postgres_changes",
+            {
+              event: "*",
+              schema: "public",
+              table: "site_metadata",
+              filter: "key=eq.content_version",
+            },
+            (payload) => {
+              try {
+                const next = payload?.new || payload?.record || null;
+                const version = extractContentVersion(
+                  next?.version ?? next?.value ?? null
+                );
+                if (!Number.isFinite(version)) return;
+                const changeType = normalizeChangeType(
+                  next?.last_change_type ?? next?.change_type ?? "all"
+                );
+                const updatedAtRaw = next?.updated_at || null;
+                const parsedUpdatedAt = updatedAtRaw ? Date.parse(updatedAtRaw) : NaN;
+
+                this.publishDataUpdate("sync", changeType, {
+                  source: "realtime",
+                  serverDriven: true,
+                  contentVersion: version,
+                  lastChangeType: changeType,
+                  timestamp: Number.isNaN(parsedUpdatedAt)
+                    ? Date.now()
+                    : Math.trunc(parsedUpdatedAt),
+                });
+              } catch {}
+            }
+          )
+          .subscribe();
+
+        this.realtimeChannel = channel;
+        this.realtimeEnabled = true;
+        this.syncMode = "realtime+polling";
+        return true;
+      } catch {
+        this.realtimeClient = null;
+        this.realtimeChannel = null;
+        this.realtimeEnabled = false;
+        return false;
+      }
+    }
+
+    teardownRealtimeSubscription() {
+      if (this.realtimeClient && this.realtimeChannel) {
+        try {
+          this.realtimeClient.removeChannel(this.realtimeChannel);
+        } catch {}
+      }
+      this.realtimeChannel = null;
+      this.realtimeClient = null;
+      this.realtimeEnabled = false;
+    }
     async fetchServerUpdateSignal() {
       if (!window.SUPABASE_CONFIG?.URL || !window.SUPABASE_CONFIG?.ANON_KEY) {
         return null;
@@ -637,7 +990,6 @@
         );
 
         if (!response.ok) {
-          // Backward compatibility with old deployments.
           const legacyResponse = await fetch(
             `${window.SUPABASE_CONFIG.URL}/rest/v1/rpc/get_content_version`,
             {
@@ -658,7 +1010,7 @@
           }
           const legacyData = await legacyResponse.json().catch(() => null);
           const legacyVersion = extractContentVersion(legacyData);
-          if (!Number.isFinite(legacyVersion) || legacyVersion < 0) {
+          if (!Number.isFinite(legacyVersion)) {
             return null;
           }
           return {
@@ -670,7 +1022,7 @@
 
         const data = await response.json().catch(() => null);
         const parsed = parseUpdateSignal(data);
-        if (!parsed || !Number.isFinite(parsed.version) || parsed.version < 0) {
+        if (!parsed || !Number.isFinite(parsed.version)) {
           return null;
         }
         return parsed;
@@ -699,30 +1051,26 @@
 
       this.lastServerCheckAt = Date.now();
       this.lastServerCheckReason = String(reason || "");
+
       this.serverCheckInFlight = (async () => {
         const signal = await this.fetchServerUpdateSignal();
         if (!signal || !Number.isFinite(signal.version)) return false;
 
         const version = Math.max(0, Math.trunc(signal.version));
-        const changeType = normalizePayloadItemType(signal.changeType || "all");
+        const changeType = normalizeChangeType(signal.changeType || "all");
         const signalTimestamp =
           Number.isFinite(signal.updatedAtTs) && signal.updatedAtTs > 0
             ? Math.trunc(signal.updatedAtTs)
             : Date.now();
 
-        const previousVersion = this.getStoredContentVersion();
-        const previousChangeType = this.getStoredLastChangeType();
-        const hasVersionAdvance = version > previousVersion;
-        const hasTypeAdvance =
-          version === previousVersion &&
-          changeType !== "all" &&
-          changeType !== previousChangeType;
-
         this.lastServerCheckOkAt = Date.now();
-        if (!hasVersionAdvance && !hasTypeAdvance) return false;
 
-        this.setStoredContentVersion(version);
-        this.setStoredLastChangeType(changeType);
+        if (version <= this.appliedVersion) {
+          this.setStoredContentVersion(Math.max(version, this.appliedVersion));
+          this.setStoredLastChangeType(changeType);
+          return false;
+        }
+
         this.publishDataUpdate("sync", changeType, {
           source: "server",
           syncReason: reason,
@@ -743,6 +1091,7 @@
 
     close() {
       this.stopServerSync();
+      this.teardownRealtimeSubscription();
 
       if (this.boundStorageHandler) {
         window.removeEventListener("storage", this.boundStorageHandler);
@@ -756,10 +1105,15 @@
         document.removeEventListener("visibilitychange", this.boundVisibilityHandler);
         this.boundVisibilityHandler = null;
       }
+      if (this.boundFocusHandler) {
+        window.removeEventListener("focus", this.boundFocusHandler);
+        this.boundFocusHandler = null;
+      }
       if (this.boundOnlineHandler) {
         window.removeEventListener("online", this.boundOnlineHandler);
         this.boundOnlineHandler = null;
       }
+
       if (this.channel) {
         try {
           this.channel.close();
@@ -767,8 +1121,12 @@
         this.channel = null;
       }
 
+      this.clearIndicatorTimers();
       this.listeners.clear();
+      this.refreshHandlers.clear();
       this.seenEvents.clear();
+      this.pendingPayload = null;
+      this.applyInFlight = null;
       this.initialized = false;
     }
   }
