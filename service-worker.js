@@ -1,4 +1,4 @@
-const SW_VERSION = "v14";
+const SW_VERSION = "v15";
 const CACHE_PREFIX = "toke-bakes";
 const CACHE_NAMES = {
   precache: `${CACHE_PREFIX}-precache-${SW_VERSION}`,
@@ -208,6 +208,11 @@ function isFontRequest(request, url) {
 function isImageRequest(request, url) {
   if (request.destination === "image") return true;
   return /\.(png|jpe?g|webp|gif|svg|avif|ico)$/i.test(url.pathname);
+}
+
+function isVersionedAssetRequest(url) {
+  if (!url) return false;
+  return url.searchParams.has("cv") || url.searchParams.has("v");
 }
 
 function isDataAssetRequest(url) {
@@ -662,12 +667,28 @@ async function routeRequest(request, event) {
   }
 
   if (isImageRequest(request, url)) {
-    return cacheFirst(
+    // Versioned image URLs are immutable per version token, so cache-first is safe and fast.
+    if (isVersionedAssetRequest(url)) {
+      return cacheFirst(
+        request,
+        {
+          cacheName: CACHE_NAMES.images,
+          timeoutMs: 12000,
+          fetchOptions: { cache: "no-cache" },
+          allowOpaque: true,
+        },
+        event
+      );
+    }
+
+    // Unversioned images can go stale if the origin reuses the same URL.
+    // Prefer network-first with cache fallback to keep visuals fresh.
+    return networkFirst(
       request,
       {
         cacheName: CACHE_NAMES.images,
-        timeoutMs: 12000,
-        fetchOptions: { cache: "no-cache" },
+        timeoutMs: 5000,
+        fetchOptions: { cache: "no-store" },
         allowOpaque: true,
       },
       event

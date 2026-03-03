@@ -6,7 +6,7 @@ const SUPABASE_CONFIG = {
 };
 
 const API_ENDPOINTS = {
-  SPECIALS: "/rest/v1/gallery",
+  SPECIALS: "/rest/v1/specials",
   FEATURED: "/rest/v1/featured_items",
   MENU: "/rest/v1/menu_items",
   MENU_OPTION_GROUPS: "/rest/v1/product_option_groups",

@@ -44,7 +44,7 @@ DROP TABLE IF EXISTS public.site_events CASCADE;
 DROP TABLE IF EXISTS public.site_metadata CASCADE;
 DROP TABLE IF EXISTS public.website_themes CASCADE;
 DROP TABLE IF EXISTS public.hero_carousel CASCADE;
-DROP TABLE IF EXISTS public.gallery CASCADE;
+DROP TABLE IF EXISTS public.specials CASCADE;
 DROP TABLE IF EXISTS public.featured_items CASCADE;
 DROP TABLE IF EXISTS public.menu_items CASCADE;
 DROP TABLE IF EXISTS public.contact_messages CASCADE;
@@ -56,12 +56,11 @@ BEGIN
   IF to_regclass('storage.objects') IS NOT NULL THEN
     EXECUTE 'DROP POLICY IF EXISTS "tb_storage_public_read" ON storage.objects';
     EXECUTE 'DROP POLICY IF EXISTS "tb_storage_admin_write" ON storage.objects';
-    EXECUTE 'DELETE FROM storage.objects WHERE bucket_id IN (''featured-items'', ''menu-items'', ''gallery'', ''hero-carousel'')';
   END IF;
 
-  IF to_regclass('storage.buckets') IS NOT NULL THEN
-    EXECUTE 'DELETE FROM storage.buckets WHERE id IN (''featured-items'', ''menu-items'', ''gallery'', ''hero-carousel'')';
-  END IF;
+  -- Do NOT delete rows from storage.objects/storage.buckets in SQL:
+  -- Supabase protects storage metadata from direct DELETE (storage.protect_delete).
+  -- If you need to purge files, use the Storage API/dashboard.
 END;
 $$;
 
@@ -109,7 +108,7 @@ CREATE TABLE public.featured_items (
   )
 );
 
-CREATE TABLE public.gallery (
+CREATE TABLE public.specials (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title TEXT NOT NULL CHECK (char_length(trim(title)) BETWEEN 1 AND 120),
   alt TEXT NOT NULL CHECK (char_length(alt) BETWEEN 1 AND 255),
@@ -224,8 +223,8 @@ ON CONFLICT (key) DO NOTHING;
 CREATE INDEX idx_menu_items_display_order ON public.menu_items(display_order ASC, created_at DESC);
 CREATE INDEX idx_featured_items_display_order ON public.featured_items(display_order ASC, created_at DESC);
 CREATE INDEX idx_featured_items_active ON public.featured_items(is_active, start_date, end_date);
-CREATE INDEX idx_gallery_display_order ON public.gallery(display_order ASC, created_at DESC);
-CREATE INDEX idx_gallery_specials_active ON public.gallery(is_active, display_order ASC);
+CREATE INDEX idx_specials_display_order ON public.specials(display_order ASC, created_at DESC);
+CREATE INDEX idx_specials_specials_active ON public.specials(is_active, display_order ASC);
 CREATE INDEX idx_hero_carousel_display_order ON public.hero_carousel(display_order ASC, created_at DESC);
 CREATE INDEX idx_hero_carousel_active ON public.hero_carousel(is_active, display_order ASC);
 CREATE INDEX idx_product_option_groups_product ON public.product_option_groups(product_id, created_at ASC);
@@ -250,7 +249,8 @@ IMMUTABLE
 AS $$
   SELECT CASE
     WHEN lower(coalesce(trim(p_raw), '')) IN ('menu_options', 'menu-options', 'menuoptions', 'option', 'options') THEN 'menu'
-    WHEN lower(coalesce(trim(p_raw), '')) IN ('menu', 'featured', 'gallery', 'carousel', 'theme', 'all') THEN lower(trim(p_raw))
+    WHEN lower(coalesce(trim(p_raw), '')) = 'gallery' THEN 'specials'
+    WHEN lower(coalesce(trim(p_raw), '')) IN ('menu', 'featured', 'specials', 'carousel', 'theme', 'all') THEN lower(trim(p_raw))
     ELSE 'all'
   END;
 $$;
@@ -405,7 +405,7 @@ AS $$
   SELECT GREATEST(
     COALESCE((SELECT max(updated_at) FROM public.menu_items), 'epoch'::TIMESTAMPTZ),
     COALESCE((SELECT max(updated_at) FROM public.featured_items), 'epoch'::TIMESTAMPTZ),
-    COALESCE((SELECT max(updated_at) FROM public.gallery), 'epoch'::TIMESTAMPTZ),
+    COALESCE((SELECT max(updated_at) FROM public.specials), 'epoch'::TIMESTAMPTZ),
     COALESCE((SELECT max(updated_at) FROM public.hero_carousel), 'epoch'::TIMESTAMPTZ),
     COALESCE((SELECT max(updated_at) FROM public.website_themes), 'epoch'::TIMESTAMPTZ),
     COALESCE((SELECT max(updated_at) FROM public.product_option_groups), 'epoch'::TIMESTAMPTZ),
@@ -575,7 +575,7 @@ BEGIN
       (SELECT COUNT(*)::BIGINT FROM public.menu_items WHERE is_available = true) AS menu_items_active,
       (SELECT COUNT(*)::BIGINT FROM public.featured_items) AS featured_items_total,
       (SELECT COUNT(*)::BIGINT FROM public.featured_items WHERE is_active = true) AS featured_items_active,
-      (SELECT COUNT(*)::BIGINT FROM public.gallery) AS gallery_items_total,
+      (SELECT COUNT(*)::BIGINT FROM public.specials) AS specials_items_total,
       (SELECT COUNT(*)::BIGINT FROM public.hero_carousel) AS carousel_items_total,
       (SELECT COUNT(*)::BIGINT FROM public.product_option_groups) AS option_groups_total,
       (SELECT COUNT(*)::BIGINT FROM public.product_option_values) AS option_values_total,
@@ -591,7 +591,7 @@ BEGIN
       'menu_items_active', c.menu_items_active,
       'featured_items_total', c.featured_items_total,
       'featured_items_active', c.featured_items_active,
-      'gallery_items_total', c.gallery_items_total,
+      'specials_items_total', c.specials_items_total,
       'carousel_items_total', c.carousel_items_total,
       'option_groups_total', c.option_groups_total,
       'option_values_total', c.option_values_total,
@@ -667,7 +667,7 @@ RETURNS TABLE (
   menu_items_active BIGINT,
   featured_items_total BIGINT,
   featured_items_active BIGINT,
-  gallery_items_total BIGINT,
+  specials_items_total BIGINT,
   carousel_items_total BIGINT,
   option_groups_total BIGINT,
   option_values_total BIGINT,
@@ -701,7 +701,7 @@ BEGIN
     COALESCE((j->'core'->>'menu_items_active')::BIGINT, 0),
     COALESCE((j->'core'->>'featured_items_total')::BIGINT, 0),
     COALESCE((j->'core'->>'featured_items_active')::BIGINT, 0),
-    COALESCE((j->'core'->>'gallery_items_total')::BIGINT, 0),
+    COALESCE((j->'core'->>'specials_items_total')::BIGINT, 0),
     COALESCE((j->'core'->>'carousel_items_total')::BIGINT, 0),
     COALESCE((j->'core'->>'option_groups_total')::BIGINT, 0),
     COALESCE((j->'core'->>'option_values_total')::BIGINT, 0),
@@ -746,7 +746,7 @@ RETURNS TABLE (
   signal_updated_at TIMESTAMPTZ,
   menu_last_updated_at TIMESTAMPTZ,
   featured_last_updated_at TIMESTAMPTZ,
-  gallery_last_updated_at TIMESTAMPTZ,
+  specials_last_updated_at TIMESTAMPTZ,
   carousel_last_updated_at TIMESTAMPTZ,
   themes_last_updated_at TIMESTAMPTZ,
   options_last_updated_at TIMESTAMPTZ,
@@ -791,7 +791,7 @@ BEGIN
     s.signal_updated_at,
     (SELECT max(updated_at) FROM public.menu_items) AS menu_last_updated_at,
     (SELECT max(updated_at) FROM public.featured_items) AS featured_last_updated_at,
-    (SELECT max(updated_at) FROM public.gallery) AS gallery_last_updated_at,
+    (SELECT max(updated_at) FROM public.specials) AS specials_last_updated_at,
     (SELECT max(updated_at) FROM public.hero_carousel) AS carousel_last_updated_at,
     (SELECT max(updated_at) FROM public.website_themes) AS themes_last_updated_at,
     GREATEST(
@@ -822,8 +822,8 @@ CREATE TRIGGER set_updated_at_featured_items
 BEFORE UPDATE ON public.featured_items
 FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
-CREATE TRIGGER set_updated_at_gallery
-BEFORE UPDATE ON public.gallery
+CREATE TRIGGER set_updated_at_specials
+BEFORE UPDATE ON public.specials
 FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 CREATE TRIGGER set_updated_at_hero_carousel
@@ -859,8 +859,8 @@ CREATE TRIGGER set_display_order_default_featured_items
 BEFORE INSERT ON public.featured_items
 FOR EACH ROW EXECUTE FUNCTION public.set_display_order_default();
 
-CREATE TRIGGER set_display_order_default_gallery
-BEFORE INSERT ON public.gallery
+CREATE TRIGGER set_display_order_default_specials
+BEFORE INSERT ON public.specials
 FOR EACH ROW EXECUTE FUNCTION public.set_display_order_default();
 
 CREATE TRIGGER set_display_order_default_hero_carousel
@@ -875,8 +875,8 @@ CREATE TRIGGER normalize_display_order_featured_items
 AFTER INSERT OR UPDATE OR DELETE ON public.featured_items
 FOR EACH STATEMENT EXECUTE FUNCTION public.normalize_display_order_conflicts();
 
-CREATE TRIGGER normalize_display_order_gallery
-AFTER INSERT OR UPDATE OR DELETE ON public.gallery
+CREATE TRIGGER normalize_display_order_specials
+AFTER INSERT OR UPDATE OR DELETE ON public.specials
 FOR EACH STATEMENT EXECUTE FUNCTION public.normalize_display_order_conflicts();
 
 CREATE TRIGGER normalize_display_order_hero_carousel
@@ -892,9 +892,9 @@ CREATE TRIGGER trg_featured_items_update_signal
 AFTER INSERT OR UPDATE OR DELETE ON public.featured_items
 FOR EACH STATEMENT EXECUTE FUNCTION public.touch_update_signal('featured');
 
-CREATE TRIGGER trg_gallery_update_signal
-AFTER INSERT OR UPDATE OR DELETE ON public.gallery
-FOR EACH STATEMENT EXECUTE FUNCTION public.touch_update_signal('gallery');
+CREATE TRIGGER trg_specials_update_signal
+AFTER INSERT OR UPDATE OR DELETE ON public.specials
+FOR EACH STATEMENT EXECUTE FUNCTION public.touch_update_signal('specials');
 
 CREATE TRIGGER trg_hero_carousel_update_signal
 AFTER INSERT OR UPDATE OR DELETE ON public.hero_carousel
@@ -919,7 +919,7 @@ FOR EACH STATEMENT EXECUTE FUNCTION public.touch_update_signal('menu');
 ALTER TABLE public.app_admins ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.menu_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.featured_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.gallery ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.specials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.hero_carousel ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.website_themes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.product_option_groups ENABLE ROW LEVEL SECURITY;
@@ -970,15 +970,15 @@ TO authenticated
 USING (public.is_admin())
 WITH CHECK (public.is_admin());
 
--- gallery
-CREATE POLICY gallery_public_read
-ON public.gallery
+-- specials
+CREATE POLICY specials_public_read
+ON public.specials
 FOR SELECT
 TO anon, authenticated
 USING (true);
 
-CREATE POLICY gallery_admin_all
-ON public.gallery
+CREATE POLICY specials_admin_all
+ON public.specials
 FOR ALL
 TO authenticated
 USING (public.is_admin())
@@ -1100,7 +1100,7 @@ BEGIN
     VALUES
       ('featured-items', 'featured-items', true),
       ('menu-items', 'menu-items', true),
-      ('gallery', 'gallery', true),
+      ('specials', 'specials', true),
       ('hero-carousel', 'hero-carousel', true)
     ON CONFLICT (id) DO UPDATE
     SET public = EXCLUDED.public,
@@ -1117,7 +1117,7 @@ BEGIN
       ON storage.objects
       FOR SELECT
       TO anon, authenticated
-      USING (bucket_id IN ('featured-items', 'menu-items', 'gallery', 'hero-carousel'))
+      USING (bucket_id IN ('featured-items', 'menu-items', 'specials', 'hero-carousel'))
     $policy$;
 
     EXECUTE $policy$
@@ -1126,11 +1126,11 @@ BEGIN
       FOR ALL
       TO authenticated
       USING (
-        bucket_id IN ('featured-items', 'menu-items', 'gallery', 'hero-carousel')
+        bucket_id IN ('featured-items', 'menu-items', 'specials', 'hero-carousel')
         AND public.is_admin()
       )
       WITH CHECK (
-        bucket_id IN ('featured-items', 'menu-items', 'gallery', 'hero-carousel')
+        bucket_id IN ('featured-items', 'menu-items', 'specials', 'hero-carousel')
         AND public.is_admin()
       )
     $policy$;
@@ -1146,7 +1146,7 @@ GRANT USAGE ON SCHEMA public TO anon, authenticated;
 
 GRANT SELECT ON public.menu_items TO anon, authenticated;
 GRANT SELECT ON public.featured_items TO anon, authenticated;
-GRANT SELECT ON public.gallery TO anon, authenticated;
+GRANT SELECT ON public.specials TO anon, authenticated;
 GRANT SELECT ON public.hero_carousel TO anon, authenticated;
 GRANT SELECT ON public.website_themes TO anon, authenticated;
 GRANT SELECT ON public.product_option_groups TO anon, authenticated;
@@ -1156,7 +1156,7 @@ GRANT SELECT ON public.site_metadata TO anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.app_admins TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.menu_items TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.featured_items TO authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.gallery TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.specials TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.hero_carousel TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.website_themes TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.product_option_groups TO authenticated;
@@ -1193,7 +1193,7 @@ WHERE table_schema = 'public'
     'app_admins',
     'menu_items',
     'featured_items',
-    'gallery',
+    'specials',
     'hero_carousel',
     'website_themes',
     'product_option_groups',
@@ -1207,7 +1207,7 @@ ORDER BY table_name;
 SELECT 'app_admins' AS table_name, COUNT(*)::BIGINT AS row_count FROM public.app_admins
 UNION ALL SELECT 'menu_items', COUNT(*)::BIGINT FROM public.menu_items
 UNION ALL SELECT 'featured_items', COUNT(*)::BIGINT FROM public.featured_items
-UNION ALL SELECT 'gallery', COUNT(*)::BIGINT FROM public.gallery
+UNION ALL SELECT 'specials', COUNT(*)::BIGINT FROM public.specials
 UNION ALL SELECT 'hero_carousel', COUNT(*)::BIGINT FROM public.hero_carousel
 UNION ALL SELECT 'website_themes', COUNT(*)::BIGINT FROM public.website_themes
 UNION ALL SELECT 'product_option_groups', COUNT(*)::BIGINT FROM public.product_option_groups
@@ -1225,3 +1225,4 @@ SELECT * FROM public.get_update_signal();
 -- 2) Set an initial active theme:
 -- INSERT INTO public.website_themes (theme_name, css_file, logo_file, is_active)
 -- VALUES ('Default', 'styles/style.css', 'images/logo.webp', true);
+

@@ -1481,7 +1481,7 @@ async function loadSpecialItems(forceReload = false, silentRefresh = false) {
   }
 
   // Check cache first
-  const specialsEndpoint = window.API_ENDPOINTS?.SPECIALS || "/rest/v1/gallery";
+  const specialsEndpoint = window.API_ENDPOINTS?.SPECIALS || "/rest/v1/specials";
   if (!specialsEndpoint) {
     container.innerHTML = `
       <div class="empty-state error">

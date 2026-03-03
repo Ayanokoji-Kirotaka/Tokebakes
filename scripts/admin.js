@@ -120,7 +120,7 @@ function getExistingImageUrlForItem(itemType, id) {
 const STORAGE_BUCKETS = {
   featured: "featured-items",
   menu: "menu-items",
-  gallery: "gallery",
+  gallery: "specials",
   carousel: "hero-carousel",
 };
 
@@ -150,7 +150,7 @@ const PRODUCT_OPTION_ENDPOINTS = {
     window.API_ENDPOINTS?.MENU_OPTION_VALUES || "/rest/v1/product_option_values",
 };
 const SPECIALS_ENDPOINT =
-  window.API_ENDPOINTS?.SPECIALS || "/rest/v1/gallery";
+  window.API_ENDPOINTS?.SPECIALS || "/rest/v1/specials";
 const STATS_ENDPOINTS = {
   counts: "/rest/v1/rpc/get_site_stats_counts",
   daily: "/rest/v1/rpc/get_site_stats_daily",
@@ -222,10 +222,10 @@ function normalizeChangeType(raw) {
   ) {
     return "menu";
   }
-  if (value === "specials") {
-    return "gallery";
+  if (value === "gallery") {
+    return "specials";
   }
-  if (["menu", "featured", "gallery", "carousel", "theme", "all"].includes(value)) {
+  if (["menu", "featured", "specials", "carousel", "theme", "all"].includes(value)) {
     return value;
   }
   return "all";
@@ -1008,7 +1008,7 @@ function renderStatsCountsRow(row = {}) {
     "stat-menu-items-total": "menu_items_total",
     "stat-menu-items-active": "menu_items_active",
     "stat-featured-items-total": "featured_items_total",
-    "stat-specials-items-total": "gallery_items_total",
+    "stat-specials-items-total": "specials_items_total",
     "stat-carousel-items-total": "carousel_items_total",
     "stat-option-groups-total": "option_groups_total",
     "stat-option-values-total": "option_values_total",
@@ -1445,7 +1445,7 @@ async function loadDebugStatePanel(countsRow = {}) {
     const metricsRows = [
       {
         label: "Menu/Specials/Carousel totals",
-        value: `${countsRow?.menu_items_total || 0} / ${countsRow?.gallery_items_total || 0} / ${
+        value: `${countsRow?.menu_items_total || 0} / ${countsRow?.specials_items_total || 0} / ${
           countsRow?.carousel_items_total || 0
         }`,
       },
@@ -1465,7 +1465,7 @@ async function loadDebugStatePanel(countsRow = {}) {
       },
       {
         label: "Specials/Carousel updated",
-        value: `${formatDebugDate(stateSnapshot?.gallery_last_updated_at)} / ${formatDebugDate(
+        value: `${formatDebugDate(stateSnapshot?.specials_last_updated_at)} / ${formatDebugDate(
           stateSnapshot?.carousel_last_updated_at
         )}`,
       },
@@ -2393,6 +2393,50 @@ function looksLikeImageSrc(value) {
   return raw.includes("/");
 }
 
+function getAdminAssetVersionToken() {
+  try {
+    const contentVersion =
+      parseContentVersion(localStorage.getItem(CONTENT_VERSION_STORAGE_KEY)) || 0;
+    const themeUpdateTs =
+      Number(localStorage.getItem("toke_bakes_theme_last_update") || "0") || 0;
+    if (contentVersion <= 0 && themeUpdateTs <= 0) return "";
+    return `${contentVersion}-${themeUpdateTs}`;
+  } catch {
+    return "";
+  }
+}
+
+function appendAdminAssetVersion(src) {
+  const raw = toSafeString(src);
+  if (!raw) return "";
+
+  const lower = raw.toLowerCase();
+  if (lower.startsWith("data:") || lower.startsWith("blob:")) {
+    return raw;
+  }
+
+  const version = getAdminAssetVersionToken();
+  if (!version) return raw;
+
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    parsed.searchParams.set("cv", version);
+
+    if (/^https?:\/\//i.test(raw) || raw.startsWith("//")) {
+      return parsed.toString();
+    }
+
+    const relative = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    return relative || raw;
+  } catch {
+    const encodedVersion = encodeURIComponent(version);
+    if (raw.includes("cv=")) {
+      return raw.replace(/([?&])cv=[^&#]*/i, `$1cv=${encodedVersion}`);
+    }
+    return `${raw}${raw.includes("?") ? "&" : "?"}cv=${encodedVersion}`;
+  }
+}
+
 function resolveImageForDisplay(rawValue, placeholderDataUri) {
   const normalized = normalizeAssetPath(rawValue);
   if (!normalized) return placeholderDataUri;
@@ -2401,7 +2445,7 @@ function resolveImageForDisplay(rawValue, placeholderDataUri) {
     return placeholderDataUri;
   }
   if (!looksLikeImageSrc(normalized)) return placeholderDataUri;
-  return normalized;
+  return appendAdminAssetVersion(normalized);
 }
 
 /* ================== CUSTOM POPUP SYSTEM ================== */
