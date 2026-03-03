@@ -28,6 +28,7 @@ const ThemeManager = {
   systemModeMedia: null,
   systemModeHandler: null,
   themeAutoUpdateBound: false,
+  themeActivationInFlight: false,
 
   /* ================== INITIALIZATION ================== */
   init() {
@@ -334,27 +335,6 @@ const ThemeManager = {
       this.updateAdminUI(normalizedCssFile);
     }
 
-    // Persist theme choice to database when admin activates a theme
-    if (isAdminChange) {
-      this.persistThemeToDatabase(normalizedCssFile, resolvedLogo).catch((error) => {
-        themeDebugWarn("Theme database update failed:", error);
-      });
-    }
-
-    // Show notification ONLY for admin theme changes (not dark/light toggle)
-    if (
-      typeof showNotification === "function" &&
-      normalizedCssFile !== "styles/style.css" &&
-      isAdminChange
-    ) {
-      showNotification(
-        `${this.getThemeName(
-          normalizedCssFile
-        )} theme activated! Visitors will see this change automatically.`,
-        "success"
-      );
-    }
-
     return true;
   },
 
@@ -426,24 +406,110 @@ const ThemeManager = {
 
   /* ================== FIXED: ADMIN THEME ACTIVATION ================== */
   setupAdminListeners() {
-    document.addEventListener("click", (e) => {
+    document.addEventListener("click", async (e) => {
       const btn = e.target.closest(".btn-activate-theme");
-      if (btn) {
-        e.preventDefault();
-        e.stopPropagation();
+      if (!btn) return;
 
-        const card = btn.closest(".theme-card");
-        if (card && card.dataset.themeFile) {
-          // ?? CRITICAL: Use the exact theme file from data attribute
-          // Admin panel cards MUST have correct paths like "styles/style.css"
-          const themeFile = card.dataset.themeFile;
-          const logoFile =
-            card.dataset.themeLogo || this.getLogoForTheme(themeFile);
-          themeDebugLog("Admin theme activation:", themeFile);
-          this.applyTheme(themeFile, true, true, { logoFile });
-        }
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (this.themeActivationInFlight) {
+        return;
       }
+
+      const card = btn.closest(".theme-card");
+      if (!card || !card.dataset.themeFile) {
+        return;
+      }
+
+      const themeFile = this.fixLegacyThemePath(
+        this.normalizeAssetPath(card.dataset.themeFile) || "styles/style.css"
+      );
+      const logoFile = this.resolveLogoFile(
+        themeFile,
+        card.dataset.themeLogo || this.getLogoForTheme(themeFile)
+      );
+      themeDebugLog("Admin theme activation (strict):", themeFile);
+      await this.activateThemeGlobally(themeFile, logoFile);
     });
+  },
+
+  setAdminThemeButtonsBusy(isBusy) {
+    const buttons = document.querySelectorAll(".btn-activate-theme");
+    buttons.forEach((button) => {
+      if (!button) return;
+      button.disabled = Boolean(isBusy);
+      button.setAttribute("aria-busy", isBusy ? "true" : "false");
+    });
+  },
+
+  async activateThemeGlobally(cssFile, logoFile) {
+    const normalizedCssFile = this.fixLegacyThemePath(
+      this.normalizeAssetPath(cssFile) || "styles/style.css"
+    );
+    const resolvedLogo = this.resolveLogoFile(normalizedCssFile, logoFile);
+
+    if (this.themeActivationInFlight) {
+      return false;
+    }
+
+    this.themeActivationInFlight = true;
+    this.setAdminThemeButtonsBusy(true);
+
+    try {
+      const persisted = await this.persistThemeToDatabase(
+        normalizedCssFile,
+        resolvedLogo
+      );
+      if (!persisted) {
+        throw new Error("Theme persistence returned false");
+      }
+
+      const verifiedRow = await this.fetchActiveThemeFromDatabase(true);
+      const verified = this.buildThemeCandidateFromRecord(verifiedRow);
+      const verifiedCss = verified?.cssFile || "";
+      const verifiedLogo = this.resolveLogoFile(
+        verifiedCss || normalizedCssFile,
+        verified?.logoFile || verifiedRow?.logo_file || null
+      );
+      const cssMatch = verifiedCss === normalizedCssFile;
+      const logoMatch = verifiedLogo === resolvedLogo;
+
+      if (!cssMatch || !logoMatch) {
+        throw new Error("Theme verification mismatch after database write");
+      }
+
+      this.applyTheme(normalizedCssFile, true, false, {
+        logoFile: resolvedLogo,
+        persist: true,
+        timestampOverride: verified.timestamp || Date.now(),
+        updatedAt: verifiedRow?.updated_at || null,
+      });
+
+      if (typeof showNotification === "function") {
+        showNotification(
+          `${this.getThemeName(normalizedCssFile)} theme activated globally.`,
+          "success"
+        );
+      }
+
+      return true;
+    } catch (error) {
+      themeDebugWarn("Global theme activation failed:", error);
+      if (typeof showNotification === "function") {
+        showNotification(
+          "Theme activation failed globally. No cross-device change was published.",
+          "error"
+        );
+      }
+      return false;
+    } finally {
+      this.themeActivationInFlight = false;
+      this.setAdminThemeButtonsBusy(false);
+      if (this.isAdminPanel()) {
+        this.updateAdminUI(this.currentTheme);
+      }
+    }
   },
 
   /* ================== THEME LOGOS + DB SYNC ================== */
@@ -676,11 +742,14 @@ const ThemeManager = {
 
     const deactivateUrl = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes`;
     // Force all themes inactive first (avoids unique is_active index conflicts)
-    await fetch(`${deactivateUrl}?is_active=eq.true`, {
+    const deactivateResponse = await fetch(`${deactivateUrl}?is_active=eq.true`, {
       method: "PATCH",
       headers: { ...baseHeaders, Prefer: "return=representation" },
       body: JSON.stringify({ is_active: false }),
     });
+    if (!deactivateResponse.ok) {
+      throw new Error(`Theme deactivate failed (${deactivateResponse.status})`);
+    }
 
     const upsertBody = {
       theme_name: themeName,
@@ -705,11 +774,19 @@ const ThemeManager = {
 
     // If unique constraint (409) still happens, hard-reset actives then retry once.
     if (resp.status === 409) {
-      await fetch(`${deactivateUrl}?is_active=eq.true`, {
-        method: "PATCH",
-        headers: { ...baseHeaders, Prefer: "return=representation" },
-        body: JSON.stringify({ is_active: false }),
-      });
+      const retryDeactivateResponse = await fetch(
+        `${deactivateUrl}?is_active=eq.true`,
+        {
+          method: "PATCH",
+          headers: { ...baseHeaders, Prefer: "return=representation" },
+          body: JSON.stringify({ is_active: false }),
+        }
+      );
+      if (!retryDeactivateResponse.ok) {
+        throw new Error(
+          `Theme retry deactivate failed (${retryDeactivateResponse.status})`
+        );
+      }
       resp = await doUpsert();
     }
 
@@ -724,9 +801,11 @@ const ThemeManager = {
         ? observedVersion
         : await this.bumpThemeUpdateSignal(baseHeaders);
 
+    if (!Number.isFinite(bumpedVersion) || bumpedVersion <= 0) {
+      throw new Error("Theme update signal bump failed");
+    }
+
     if (
-      Number.isFinite(bumpedVersion) &&
-      bumpedVersion > 0 &&
       window.TokeUpdateSync &&
       typeof window.TokeUpdateSync.publishDataUpdate === "function"
     ) {
@@ -1129,7 +1208,10 @@ const ThemeManager = {
   },
 
   resetToDefault() {
-    this.applyTheme("styles/style.css", true, true);
+    return this.activateThemeGlobally(
+      "styles/style.css",
+      this.getLogoForTheme("styles/style.css")
+    );
   },
 
   /* ================== NEW: PATH FIXER FOR LEGACY SUPPORT ================== */
