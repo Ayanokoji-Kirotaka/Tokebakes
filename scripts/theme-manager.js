@@ -30,7 +30,6 @@ const ThemeManager = {
   themeAutoUpdateBound: false,
   themeActivationInFlight: false,
   initialized: false,
-  themeRpcDisabled: false,
 
   /* ================== INITIALIZATION ================== */
   init() {
@@ -968,9 +967,6 @@ const ThemeManager = {
       }
     }
 
-    const rpcRow = await this.fetchActiveThemeViaRpc();
-    if (rpcRow) return rpcRow;
-
     if (lastError) {
       themeDebugWarn("Theme DB fetch failed:", lastError);
     }
@@ -1009,56 +1005,6 @@ const ThemeManager = {
     const data = await response.json();
     if (!Array.isArray(data) || !data.length) return null;
     return this.normalizeThemeRecord(data[0]);
-  },
-
-  async fetchActiveThemeViaRpc() {
-    if (!window.SUPABASE_CONFIG?.URL || !window.SUPABASE_CONFIG?.ANON_KEY) {
-      return null;
-    }
-    if (this.themeRpcDisabled) {
-      return null;
-    }
-
-    const rpcCandidates = ["get_active_theme_public"];
-    for (const rpcName of rpcCandidates) {
-      try {
-        const response = await fetch(
-          `${SUPABASE_CONFIG.URL}/rest/v1/rpc/${rpcName}`,
-          {
-            method: "POST",
-            headers: {
-              apikey: SUPABASE_CONFIG.ANON_KEY,
-              Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
-              "Content-Type": "application/json",
-              Pragma: "no-cache",
-              "Cache-Control": "no-store",
-            },
-            body: "{}",
-            cache: "no-store",
-          }
-        );
-
-        if (!response.ok) {
-          if (response.status === 404 || response.status === 400) {
-            // Endpoint missing/misconfigured in this environment: stop retry spam.
-            this.themeRpcDisabled = true;
-            return null;
-          }
-          continue;
-        }
-
-        const payload = await response.json();
-        const row = Array.isArray(payload) ? payload[0] : payload;
-        const normalized = this.normalizeThemeRecord(row);
-        if (normalized) {
-          return normalized;
-        }
-      } catch (error) {
-        themeDebugWarn(`Theme RPC fetch failed (${rpcName}):`, error);
-      }
-    }
-
-    return null;
   },
 
   /* ================== NEW: SPA REINITIALIZATION SUPPORT ================== */
