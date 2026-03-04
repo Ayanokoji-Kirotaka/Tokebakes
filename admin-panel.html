@@ -115,44 +115,58 @@
         }
         document.documentElement.classList.add("theme-loading");
 
+        const DEFAULT_THEME_CSS = "styles/style.css";
         const link = document.createElement("link");
         link.rel = "stylesheet";
         link.id = "theme-stylesheet";
         link.dataset.loaded = "false";
+        let themeReady = false;
+        let triedDefaultFallback = false;
+
+        const finalizeThemeReady = () => {
+          if (themeReady) return;
+          themeReady = true;
+          link.dataset.loaded = "true";
+          document.documentElement.classList.remove("theme-loading");
+          document.documentElement.setAttribute("data-overlay-ready", "1");
+          requestAnimationFrame(() => {
+            document.documentElement.classList.remove("preload-no-transitions");
+          });
+          window.dispatchEvent(new CustomEvent("theme:ready"));
+        };
+
+        const applyThemeHref = (cssFile, useStoredVersion = true, cacheBust = false) => {
+          const normalized = fixLegacyThemePath(cssFile || DEFAULT_THEME_CSS);
+          const suffix = useStoredVersion && themeVersion
+            ? `?v=${themeVersion}`
+            : cacheBust
+              ? `?v=${Date.now()}`
+              : "";
+          link.href = `${normalized}${suffix}`;
+        };
+
         link.addEventListener(
           "load",
-          () => {
-            link.dataset.loaded = "true";
-            document.documentElement.classList.remove("theme-loading");
-            document.documentElement.setAttribute("data-overlay-ready", "1");
-            requestAnimationFrame(() => {
-              document.documentElement.classList.remove("preload-no-transitions");
-            });
-            window.dispatchEvent(new CustomEvent("theme:ready"));
-          },
+          () => finalizeThemeReady(),
           { once: true }
         );
         link.addEventListener(
           "error",
           () => {
-            link.dataset.loaded = "true";
-            document.documentElement.classList.remove("theme-loading");
-            document.documentElement.setAttribute("data-overlay-ready", "1");
-            requestAnimationFrame(() => {
-              document.documentElement.classList.remove("preload-no-transitions");
-            });
-            window.dispatchEvent(new CustomEvent("theme:ready"));
+            if (!triedDefaultFallback) {
+              triedDefaultFallback = true;
+              applyThemeHref(DEFAULT_THEME_CSS, false, true);
+              return;
+            }
+            finalizeThemeReady();
           },
           { once: true }
         );
-        link.href = `${savedTheme}${themeVersion ? `?v=${themeVersion}` : ""}`;
+        applyThemeHref(savedTheme, true, false);
         document.head.appendChild(link);
         setTimeout(() => {
-          document.documentElement.classList.remove("theme-loading");
-          document.documentElement.setAttribute("data-overlay-ready", "1");
-          document.documentElement.classList.remove("preload-no-transitions");
-          window.dispatchEvent(new CustomEvent("theme:ready"));
-        }, 4000);
+          finalizeThemeReady();
+        }, 5000);
       })();
     </script>
     <link rel="shortcut icon" href="images/favicon.webp" type="image/png" />
