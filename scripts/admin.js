@@ -7,12 +7,35 @@ class DataSyncManager {
   constructor() {
     this.syncBus = null;
     this.destroyBound = false;
+    this.refreshUnsubscribe = null;
     this.init();
   }
 
   init() {
     if (window.TokeUpdateSync) {
       this.syncBus = window.TokeUpdateSync;
+    }
+
+    if (
+      this.syncBus &&
+      typeof this.syncBus.registerRefreshHandler === "function" &&
+      !this.refreshUnsubscribe
+    ) {
+      this.refreshUnsubscribe = this.syncBus.registerRefreshHandler(
+        async (payload) => {
+          const normalizedType = normalizeChangeType(
+            payload?.changeType || payload?.lastChangeType || payload?.itemType || "all"
+          );
+          await refreshAdminUiFromSync(normalizedType, payload || {});
+          return true;
+        },
+        {
+          id: "admin-content-refresh",
+          showIndicator: false,
+          priority: 65,
+          changeTypes: ["all", "menu", "featured", "specials", "carousel", "theme"],
+        }
+      );
     }
 
     if (!this.destroyBound) {
@@ -51,6 +74,12 @@ class DataSyncManager {
   }
 
   destroy() {
+    if (this.refreshUnsubscribe) {
+      try {
+        this.refreshUnsubscribe();
+      } catch {}
+      this.refreshUnsubscribe = null;
+    }
     this.syncBus = null;
   }
 }
@@ -1155,6 +1184,73 @@ async function loadStatsPanel(force = false) {
       refreshBtn.removeAttribute("aria-busy");
     }
   }
+}
+
+function getActiveAdminTabId() {
+  return (
+    document.querySelector(".admin-tab.active")?.dataset?.tab ||
+    "featured"
+  );
+}
+
+async function refreshAdminUiFromSync(changeType = "all", payload = {}) {
+  if (!currentAdmin) return false;
+  const dashboard = document.getElementById("admin-dashboard");
+  if (!dashboard || dashboard.style.display === "none") {
+    return false;
+  }
+
+  const normalizedType = normalizeChangeType(changeType || "all");
+  const activeTab = getActiveAdminTabId();
+
+  clearDataCache();
+  resetLoadedTabs();
+  queueStatsPanelRefresh(320);
+
+  const tasks = [];
+
+  if (normalizedType === "all") {
+    tasks.push(loadAdminTabData(activeTab, true));
+    tasks.push(updateItemCounts());
+    tasks.push(loadStatsPanel(true));
+  } else {
+    if (normalizedType === "featured" && activeTab === "featured") {
+      tasks.push(renderFeaturedItems(true));
+    }
+    if (normalizedType === "menu") {
+      if (activeTab === "menu") tasks.push(renderMenuItems(true));
+      tasks.push(populateFeaturedMenuSelect(null, true));
+    }
+    if (normalizedType === "specials" && activeTab === "specials") {
+      tasks.push(renderSpecialsItems(true));
+    }
+    if (normalizedType === "carousel" && activeTab === "carousel") {
+      tasks.push(renderCarouselItems(true));
+    }
+    if (normalizedType === "theme") {
+      tasks.push(
+        Promise.resolve(
+          window.ThemeManager &&
+            typeof window.ThemeManager.checkForThemeUpdates === "function"
+            ? window.ThemeManager.checkForThemeUpdates(true)
+            : null
+        )
+      );
+    }
+    tasks.push(updateItemCounts());
+    if (activeTab === "stats") tasks.push(loadStatsPanel(true));
+  }
+
+  if (tasks.length) {
+    await Promise.allSettled(tasks);
+  }
+
+  if (normalizedType === "all") {
+    showNotification("Global refresh applied. Sync complete.", "success");
+  } else {
+    showNotification("Admin synced latest changes.", "info");
+  }
+  return true;
 }
 
 async function runGlobalRefreshFromStats() {

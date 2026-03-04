@@ -32,6 +32,13 @@ class WebsiteAutoUpdater {
       Number(localStorage.getItem("toke_bakes_content_version") || "0") || 0;
     this.lastAppliedChangeType =
       localStorage.getItem("toke_bakes_last_change_type") || "all";
+    this.lastForcedReloadVersion = (() => {
+      try {
+        return Number(sessionStorage.getItem("toke_bakes_force_reload_version") || "0") || 0;
+      } catch {
+        return 0;
+      }
+    })();
     this.init();
   }
 
@@ -46,7 +53,7 @@ class WebsiteAutoUpdater {
       this.unsubscribeSync = this.syncBus.registerRefreshHandler(
         async (payload) => {
           const nextType = this.normalizeChangeType(payload?.changeType || "all");
-          await this.refreshAffectedContent(nextType);
+          await this.refreshAffectedContent(nextType, payload || {});
           this.lastAppliedVersion = Math.max(
             this.lastAppliedVersion,
             Number(payload?.contentVersion || 0) || 0
@@ -107,8 +114,51 @@ class WebsiteAutoUpdater {
     return "all";
   }
 
-  async refreshAffectedContent(changeType = "all") {
+  getPayloadVersion(payload = {}) {
+    const parsed = Number(payload?.contentVersion ?? payload?.version ?? 0) || 0;
+    if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+    return Math.trunc(parsed);
+  }
+
+  setForcedReloadVersion(version) {
+    const safe = this.getPayloadVersion({ contentVersion: version });
+    if (!safe) return;
+    this.lastForcedReloadVersion = Math.max(this.lastForcedReloadVersion, safe);
+    try {
+      sessionStorage.setItem(
+        "toke_bakes_force_reload_version",
+        String(this.lastForcedReloadVersion)
+      );
+    } catch {}
+  }
+
+  shouldForceHardReload(changeType = "all", payload = {}) {
+    if (changeType !== "all") return 0;
+    const version = this.getPayloadVersion(payload);
+    if (!version) return 0;
+    if (version <= this.lastForcedReloadVersion) return 0;
+    return version;
+  }
+
+  triggerHardReload(version) {
+    this.setForcedReloadVersion(version);
+    clearContentCaches();
+    requestDynamicCacheClearFromServiceWorker();
+    setTimeout(() => {
+      window.location.reload();
+    }, 180);
+  }
+
+  async refreshAffectedContent(changeType = "all", payload = {}) {
     const normalizedChangeType = this.normalizeChangeType(changeType);
+    const forceReloadVersion = this.shouldForceHardReload(
+      normalizedChangeType,
+      payload
+    );
+    if (forceReloadVersion > 0) {
+      this.triggerHardReload(forceReloadVersion);
+      return;
+    }
     const shouldRefreshCarousel =
       normalizedChangeType === "carousel" || normalizedChangeType === "all";
 
