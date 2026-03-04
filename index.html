@@ -185,11 +185,6 @@
         const savedThemeRaw = lsGet("toke_bakes_global_theme_css") || lsGet("toke_bakes_css_theme") || "styles/style.css";
         const savedTheme = fixLegacyThemePath(savedThemeRaw);
         const themeVersion = lsGet("toke_bakes_global_theme_updated_at") || lsGet("toke_bakes_theme_last_update") || "";
-        let hasSeenLoader = false;
-        try {
-          hasSeenLoader =
-            sessionStorage.getItem("toke_bakes_home_loader_seen") === "1";
-        } catch {}
 
         if (savedThemeRaw !== savedTheme) {
           lsSet("toke_bakes_css_theme", savedTheme);
@@ -213,9 +208,6 @@
           document.head.appendChild(preloadStyle);
         }
         document.documentElement.classList.add("theme-loading");
-        if (hasSeenLoader) {
-          document.documentElement.setAttribute("data-loader-seen", "1");
-        }
         const DEFAULT_THEME_CSS = "styles/style.css";
         const link = document.createElement("link");
         link.rel = "stylesheet";
@@ -331,26 +323,6 @@
         fetchpriority="high"
       />
     </div>
-    <script>
-      (function ensureLoaderFailsafe() {
-        const hideLoaderNow = () => {
-          const loader = document.getElementById("loader");
-          if (!loader) return;
-          loader.style.opacity = "0";
-          loader.style.pointerEvents = "none";
-          loader.style.display = "none";
-        };
-
-        setTimeout(hideLoaderNow, 9000);
-        window.addEventListener("tb:initial-content-ready", hideLoaderNow, {
-          once: true,
-        });
-        window.addEventListener("load", () => {
-          setTimeout(hideLoaderNow, 2000);
-        });
-      })();
-    </script>
-
     <header id="site-header">
       <div class="header-inner">
         <div class="brand">
