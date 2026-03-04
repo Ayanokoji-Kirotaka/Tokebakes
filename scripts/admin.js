@@ -5997,16 +5997,16 @@ async function importData(file) {
         const baselineVersion = (await fetchServerUpdateSignal()).contentVersion;
 
         await Promise.all([
-          secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE", null, {
+          secureRequest(`${API_ENDPOINTS.FEATURED}?id=not.is.null`, "DELETE", null, {
             authRequired: true,
           }),
-          secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE", null, {
+          secureRequest(`${API_ENDPOINTS.MENU}?id=not.is.null`, "DELETE", null, {
             authRequired: true,
           }),
-          secureRequest(`${SPECIALS_ENDPOINT}?id=gt.0`, "DELETE", null, {
+          secureRequest(`${SPECIALS_ENDPOINT}?id=not.is.null`, "DELETE", null, {
             authRequired: true,
           }),
-          secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=gt.0`, "DELETE", null, {
+          secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=not.is.null`, "DELETE", null, {
             authRequired: true,
           }),
         ]);
@@ -6673,16 +6673,16 @@ function setupEventListeners() {
           task: async (progress) => {
             const baselineVersion = (await fetchServerUpdateSignal()).contentVersion;
             await Promise.all([
-              secureRequest(`${API_ENDPOINTS.FEATURED}?id=gt.0`, "DELETE", null, {
+              secureRequest(`${API_ENDPOINTS.FEATURED}?id=not.is.null`, "DELETE", null, {
                 authRequired: true,
               }),
-              secureRequest(`${API_ENDPOINTS.MENU}?id=gt.0`, "DELETE", null, {
+              secureRequest(`${API_ENDPOINTS.MENU}?id=not.is.null`, "DELETE", null, {
                 authRequired: true,
               }),
-              secureRequest(`${SPECIALS_ENDPOINT}?id=gt.0`, "DELETE", null, {
+              secureRequest(`${SPECIALS_ENDPOINT}?id=not.is.null`, "DELETE", null, {
                 authRequired: true,
               }),
-              secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=gt.0`, "DELETE", null, {
+              secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=not.is.null`, "DELETE", null, {
                 authRequired: true,
               }),
             ]);
