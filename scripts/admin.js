@@ -201,6 +201,7 @@ const CONTENT_VERSION_STORAGE_KEY = "toke_bakes_content_version";
 const LAST_CHANGE_TYPE_STORAGE_KEY = "toke_bakes_last_change_type";
 const LAST_SYNC_CHECK_STORAGE_KEY = "toke_bakes_last_sync_check_at";
 const SW_LAST_UPDATE_KEY = "toke_bakes_sw_last_update_detected_at";
+const ADMIN_FORCE_RELOAD_VERSION_KEY = "toke_bakes_admin_force_reload_version";
 const ADMIN_ERROR_LOG_LIMIT = 30;
 const adminDiagnosticsState = {
   errors: [],
@@ -309,6 +310,36 @@ function setStoredLastChangeType(changeType) {
       normalizeChangeType(changeType)
     );
   } catch {}
+}
+
+function getAdminForcedReloadVersion() {
+  try {
+    return (
+      parseContentVersion(sessionStorage.getItem(ADMIN_FORCE_RELOAD_VERSION_KEY)) || 0
+    );
+  } catch {
+    return 0;
+  }
+}
+
+function setAdminForcedReloadVersion(version) {
+  const normalized = parseContentVersion(version);
+  if (!Number.isFinite(normalized) || normalized <= 0) return;
+  try {
+    sessionStorage.setItem(ADMIN_FORCE_RELOAD_VERSION_KEY, String(normalized));
+  } catch {}
+}
+
+function shouldForceAdminReload(normalizedType, payload = {}) {
+  if (normalizedType !== "all") return false;
+  if (payload?.forcedGlobalRefresh !== true) return false;
+
+  const version = parseContentVersion(payload?.contentVersion ?? payload?.version);
+  if (!Number.isFinite(version) || version <= 0) return false;
+  if (version <= getAdminForcedReloadVersion()) return false;
+
+  setAdminForcedReloadVersion(version);
+  return true;
 }
 
 function recordAdminError(type, message, details = null) {
@@ -1243,6 +1274,18 @@ async function refreshAdminUiFromSync(changeType = "all", payload = {}) {
 
   if (tasks.length) {
     await Promise.allSettled(tasks);
+  }
+
+  if (shouldForceAdminReload(normalizedType, payload)) {
+    clearDataCache();
+    markPublicContentCacheDirty();
+    clearThemeCachesSafely().catch(() => {});
+    clearAppCachesSafely().catch(() => {});
+    showNotification("Global refresh received. Reloading admin...", "info");
+    setTimeout(() => {
+      window.location.reload();
+    }, 220);
+    return true;
   }
 
   if (normalizedType === "all") {
@@ -6704,7 +6747,10 @@ function setupEventListeners() {
             await populateFeaturedMenuSelect(null, true);
             await updateItemCounts();
 
-            dataSync.notifyDataChanged("reset", "all", { contentVersion });
+            dataSync.notifyDataChanged("reset", "all", {
+              contentVersion,
+              forcedGlobalRefresh: true,
+            });
             progress.complete("Reset complete");
             showNotification("All data has been reset!", "success");
           },
