@@ -751,13 +751,17 @@ class SPAManager {
   }
 }
 
+const initSpaManager = () => {
+  if (window.__tbSpaManagerBooted) return;
+  window.__tbSpaManagerBooted = true;
+  window.spaManager = new SPAManager();
+};
+
 // Initialize SPA Manager
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => {
-    window.spaManager = new SPAManager();
-  });
+  document.addEventListener("DOMContentLoaded", initSpaManager, { once: true });
 } else {
-  window.spaManager = new SPAManager();
+  initSpaManager();
 }
 
 

@@ -5,6 +5,10 @@
 BEGIN;
 
 SET search_path = public;
+-- Safety rails for manual runs in SQL editor.
+SET LOCAL lock_timeout = '15s';
+SET LOCAL statement_timeout = '6min';
+SET LOCAL idle_in_transaction_session_timeout = '6min';
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -54,8 +58,13 @@ DROP TABLE IF EXISTS public.app_admins CASCADE;
 DO $$
 BEGIN
   IF to_regclass('storage.objects') IS NOT NULL THEN
-    EXECUTE 'DROP POLICY IF EXISTS "tb_storage_public_read" ON storage.objects';
-    EXECUTE 'DROP POLICY IF EXISTS "tb_storage_admin_write" ON storage.objects';
+    BEGIN
+      EXECUTE 'DROP POLICY IF EXISTS "tb_storage_public_read" ON storage.objects';
+      EXECUTE 'DROP POLICY IF EXISTS "tb_storage_admin_write" ON storage.objects';
+    EXCEPTION
+      WHEN insufficient_privilege THEN
+        RAISE NOTICE 'Skipping storage policy drop on storage.objects (insufficient privilege).';
+    END;
   END IF;
 
   -- Do NOT delete rows from storage.objects/storage.buckets in SQL:
@@ -224,7 +233,7 @@ CREATE INDEX idx_menu_items_display_order ON public.menu_items(display_order ASC
 CREATE INDEX idx_featured_items_display_order ON public.featured_items(display_order ASC, created_at DESC);
 CREATE INDEX idx_featured_items_active ON public.featured_items(is_active, start_date, end_date);
 CREATE INDEX idx_specials_display_order ON public.specials(display_order ASC, created_at DESC);
-CREATE INDEX idx_specials_specials_active ON public.specials(is_active, display_order ASC);
+CREATE INDEX idx_specials_active ON public.specials(is_active, display_order ASC);
 CREATE INDEX idx_hero_carousel_display_order ON public.hero_carousel(display_order ASC, created_at DESC);
 CREATE INDEX idx_hero_carousel_active ON public.hero_carousel(is_active, display_order ASC);
 CREATE INDEX idx_product_option_groups_product ON public.product_option_groups(product_id, created_at ASC);
@@ -249,7 +258,8 @@ IMMUTABLE
 AS $$
   SELECT CASE
     WHEN lower(coalesce(trim(p_raw), '')) IN ('menu_options', 'menu-options', 'menuoptions', 'option', 'options') THEN 'menu'
-    WHEN lower(coalesce(trim(p_raw), '')) = 'gallery' THEN 'specials'
+    WHEN lower(coalesce(trim(p_raw), '')) IN ('special', 'specail', 'specials_item', 'specials-items', 'specials_items') THEN 'specials'
+    WHEN lower(coalesce(trim(p_raw), '')) = 'themes' THEN 'theme'
     WHEN lower(coalesce(trim(p_raw), '')) IN ('menu', 'featured', 'specials', 'carousel', 'theme', 'all') THEN lower(trim(p_raw))
     ELSE 'all'
   END;
@@ -975,7 +985,7 @@ CREATE POLICY specials_public_read
 ON public.specials
 FOR SELECT
 TO anon, authenticated
-USING (true);
+USING (is_active = true);
 
 CREATE POLICY specials_admin_all
 ON public.specials
@@ -1108,32 +1118,37 @@ BEGIN
   END IF;
 
   IF to_regclass('storage.objects') IS NOT NULL THEN
-    EXECUTE 'ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY';
-    EXECUTE 'DROP POLICY IF EXISTS "tb_storage_public_read" ON storage.objects';
-    EXECUTE 'DROP POLICY IF EXISTS "tb_storage_admin_write" ON storage.objects';
+    BEGIN
+      -- storage.objects is owned by the storage subsystem; ALTER TABLE can fail for non-owner roles.
+      EXECUTE 'DROP POLICY IF EXISTS "tb_storage_public_read" ON storage.objects';
+      EXECUTE 'DROP POLICY IF EXISTS "tb_storage_admin_write" ON storage.objects';
 
-    EXECUTE $policy$
-      CREATE POLICY "tb_storage_public_read"
-      ON storage.objects
-      FOR SELECT
-      TO anon, authenticated
-      USING (bucket_id IN ('featured-items', 'menu-items', 'specials', 'hero-carousel'))
-    $policy$;
+      EXECUTE $policy$
+        CREATE POLICY "tb_storage_public_read"
+        ON storage.objects
+        FOR SELECT
+        TO anon, authenticated
+        USING (bucket_id IN ('featured-items', 'menu-items', 'specials', 'hero-carousel'))
+      $policy$;
 
-    EXECUTE $policy$
-      CREATE POLICY "tb_storage_admin_write"
-      ON storage.objects
-      FOR ALL
-      TO authenticated
-      USING (
-        bucket_id IN ('featured-items', 'menu-items', 'specials', 'hero-carousel')
-        AND public.is_admin()
-      )
-      WITH CHECK (
-        bucket_id IN ('featured-items', 'menu-items', 'specials', 'hero-carousel')
-        AND public.is_admin()
-      )
-    $policy$;
+      EXECUTE $policy$
+        CREATE POLICY "tb_storage_admin_write"
+        ON storage.objects
+        FOR ALL
+        TO authenticated
+        USING (
+          bucket_id IN ('featured-items', 'menu-items', 'specials', 'hero-carousel')
+          AND public.is_admin()
+        )
+        WITH CHECK (
+          bucket_id IN ('featured-items', 'menu-items', 'specials', 'hero-carousel')
+          AND public.is_admin()
+        )
+      $policy$;
+    EXCEPTION
+      WHEN insufficient_privilege THEN
+        RAISE NOTICE 'Skipping storage.objects policy management (insufficient privilege).';
+    END;
   END IF;
 END;
 $$;
@@ -1217,6 +1232,67 @@ UNION ALL SELECT 'contact_messages', COUNT(*)::BIGINT FROM public.contact_messag
 ORDER BY table_name;
 
 SELECT * FROM public.get_update_signal();
+
+-- Verify key triggers exist (support quick health checks after edits)
+SELECT
+  expected.trigger_name,
+  COALESCE(t.oid IS NOT NULL, false) AS exists
+FROM (
+  VALUES
+    ('trg_menu_items_update_signal'),
+    ('trg_featured_items_update_signal'),
+    ('trg_specials_update_signal'),
+    ('trg_hero_carousel_update_signal'),
+    ('trg_website_themes_update_signal'),
+    ('trg_option_groups_update_signal'),
+    ('trg_option_values_update_signal')
+) AS expected(trigger_name)
+LEFT JOIN pg_trigger t
+  ON t.tgname = expected.trigger_name
+ AND t.tgisinternal = false
+ORDER BY expected.trigger_name;
+
+-- Verify key RLS policies exist
+SELECT
+  expected.policy_name,
+  COALESCE(p.policyname IS NOT NULL, false) AS exists
+FROM (
+  VALUES
+    ('menu_items_public_read'),
+    ('menu_items_admin_all'),
+    ('featured_items_public_read'),
+    ('featured_items_admin_all'),
+    ('specials_public_read'),
+    ('specials_admin_all'),
+    ('hero_carousel_public_read'),
+    ('hero_carousel_admin_all'),
+    ('website_themes_public_active_read'),
+    ('website_themes_admin_all'),
+    ('site_metadata_public_read_signal'),
+    ('site_metadata_admin_all')
+) AS expected(policy_name)
+LEFT JOIN pg_policies p
+  ON p.schemaname = 'public'
+ AND p.policyname = expected.policy_name
+ORDER BY expected.policy_name;
+
+-- Optional: check project + storage policy names at a glance
+SELECT schemaname, tablename, policyname
+FROM pg_policies
+WHERE
+  (schemaname = 'public' AND policyname IN (
+    'menu_items_public_read',
+    'featured_items_public_read',
+    'specials_public_read',
+    'hero_carousel_public_read',
+    'website_themes_public_active_read',
+    'site_metadata_public_read_signal'
+  ))
+  OR (schemaname = 'storage' AND policyname IN (
+    'tb_storage_public_read',
+    'tb_storage_admin_write'
+  ))
+ORDER BY schemaname, tablename, policyname;
 
 -- Optional first-time bootstrap examples (commented out by default):
 -- 1) Add your admin user UUID:

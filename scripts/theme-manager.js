@@ -29,9 +29,12 @@ const ThemeManager = {
   systemModeHandler: null,
   themeAutoUpdateBound: false,
   themeActivationInFlight: false,
+  initialized: false,
 
   /* ================== INITIALIZATION ================== */
   init() {
+    if (this.initialized) return;
+    this.initialized = true;
     themeDebugLog("?? Theme Manager Initialized - FIXED VERSION");
 
     // Load saved preferences
@@ -1236,25 +1239,11 @@ const ThemeManager = {
 // Make globally accessible
 window.ThemeManager = ThemeManager;
 
-// Auto-initialize with legacy path fix
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => {
-    // Fix any legacy saved theme paths before initialization
-    const savedTheme =
-      localStorage.getItem(THEME_STORAGE_KEYS.globalCss) ||
-      localStorage.getItem(THEME_STORAGE_KEYS.legacyCss);
-    if (savedTheme && !savedTheme.includes("styles/")) {
-      const fixedTheme = ThemeManager.fixLegacyThemePath(savedTheme);
-      if (fixedTheme !== savedTheme) {
-        themeDebugLog("?? Fixed legacy theme path:", savedTheme, "?", fixedTheme);
-        localStorage.setItem(THEME_STORAGE_KEYS.legacyCss, fixedTheme);
-        localStorage.setItem(THEME_STORAGE_KEYS.globalCss, fixedTheme);
-      }
-    }
-    ThemeManager.init();
-  });
-} else {
-  // Fix legacy paths immediately
+const bootThemeManager = () => {
+  if (window.__tbThemeManagerBooted) return;
+  window.__tbThemeManagerBooted = true;
+
+  // Fix legacy saved theme paths before initialization.
   const savedTheme =
     localStorage.getItem(THEME_STORAGE_KEYS.globalCss) ||
     localStorage.getItem(THEME_STORAGE_KEYS.legacyCss);
@@ -1266,7 +1255,15 @@ if (document.readyState === "loading") {
       localStorage.setItem(THEME_STORAGE_KEYS.globalCss, fixedTheme);
     }
   }
+
   ThemeManager.init();
+};
+
+// Auto-initialize with legacy path fix
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootThemeManager, { once: true });
+} else {
+  bootThemeManager();
 }
 
 themeDebugLog("? Theme Manager FIXED VERSION loaded!");

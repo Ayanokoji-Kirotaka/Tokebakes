@@ -83,6 +83,12 @@ self.addEventListener("activate", (event) => {
         })
       );
 
+      if (self.registration?.navigationPreload) {
+        try {
+          await self.registration.navigationPreload.enable();
+        } catch {}
+      }
+
       await self.clients.claim();
       // Keep activation fast; heavy cleanup runs asynchronously.
       clearThemeStyleCacheEntries().catch(() => {});
@@ -471,7 +477,25 @@ async function networkFirst(request, options = {}, event) {
     allowCacheBustFallback = false,
     errorResponseFactory = null,
     cacheWrites = true,
+    preloadResponse = false,
   } = options;
+
+  try {
+    if (preloadResponse && event?.preloadResponse) {
+      const preloaded = await event.preloadResponse;
+      if (preloaded) {
+        if (cacheWrites && isCacheableResponse(preloaded, allowOpaque)) {
+          const writeTask = cachePut(cacheName, request, preloaded.clone())
+            .then(() => pruneCache(cacheName))
+            .catch(() => {});
+          if (event) {
+            event.waitUntil(writeTask);
+          }
+        }
+        return preloaded;
+      }
+    }
+  } catch {}
 
   try {
     const networkResponse = await dedupedFetch(request, fetchOptions, timeoutMs);
@@ -621,6 +645,7 @@ async function routeRequest(request, event) {
         fetchOptions: { cache: "no-store" },
         fallbackUrl: OFFLINE_FALLBACK_URL,
         allowOpaque: false,
+        preloadResponse: true,
       },
       event
     );

@@ -989,10 +989,6 @@ function getOptionsForMenuItem(itemId) {
   return cachedMenuOptionMap.get(key) || [];
 }
 
-function normalizeGalleryItems(items) {
-  return normalizeSpecialItems(items);
-}
-
 function normalizeQuery(query) {
   if (!query) {
     return "?select=*&order=created_at.desc";
@@ -1014,10 +1010,6 @@ function buildMenuQuery() {
 
 function buildSpecialsQuery() {
   return `?select=*&order=display_order.asc,created_at.desc`;
-}
-
-function buildGalleryQuery() {
-  return buildSpecialsQuery();
 }
 
 function isFeaturedActive(item) {
@@ -2708,13 +2700,19 @@ function showNotification(message, type = "success") {
 })();
 
 (function initHomeLoader() {
+  if (window.__tbHomeLoaderInitialized) return;
+  window.__tbHomeLoaderInitialized = true;
+
   const loader = document.getElementById("loader");
   if (!loader) return;
 
   const LOADER_SESSION_KEY = "toke_bakes_home_loader_seen";
-  let hideTimer = null;
   let hidden = false;
   let hardTimeout = null;
+  let revealCheckRaf = 0;
+  let revealFallbackTimer = null;
+  let revealFallbackAttempts = 0;
+  const MAX_REVEAL_FALLBACK_ATTEMPTS = 4;
 
   const isHomePage = () => {
     const page = window.location.pathname.split("/").pop() || "";
@@ -2754,10 +2752,15 @@ function showNotification(message, type = "success") {
     } catch {}
   };
 
-  const clearHideTimer = () => {
-    if (!hideTimer) return;
-    clearInterval(hideTimer);
-    hideTimer = null;
+  const clearRevealCheck = () => {
+    if (revealCheckRaf) {
+      cancelAnimationFrame(revealCheckRaf);
+      revealCheckRaf = 0;
+    }
+    if (revealFallbackTimer) {
+      clearTimeout(revealFallbackTimer);
+      revealFallbackTimer = null;
+    }
   };
 
   const clearHardTimeout = () => {
@@ -2769,7 +2772,7 @@ function showNotification(message, type = "success") {
   const hideLoader = (markSeen = true) => {
     if (hidden) return;
     hidden = true;
-    clearHideTimer();
+    clearRevealCheck();
     clearHardTimeout();
     if (markSeen) {
       markLoaderAsSeen();
@@ -2799,6 +2802,31 @@ function showNotification(message, type = "success") {
     }
   };
 
+  const queueRevealCheck = (delayMs = 0) => {
+    if (hidden) return;
+
+    const runCheck = () => {
+      revealCheckRaf = 0;
+      revealFallbackTimer = null;
+      maybeHideLoader();
+      if (!hidden && revealFallbackAttempts < MAX_REVEAL_FALLBACK_ATTEMPTS) {
+        revealFallbackAttempts += 1;
+        queueRevealCheck(360);
+      }
+    };
+
+    if (delayMs > 0) {
+      if (revealFallbackTimer) return;
+      revealFallbackTimer = setTimeout(() => {
+        runCheck();
+      }, delayMs);
+      return;
+    }
+
+    if (revealCheckRaf) return;
+    revealCheckRaf = requestAnimationFrame(runCheck);
+  };
+
   const showLoader = () => {
     if (!isHomePage()) {
       hideLoader(false);
@@ -2811,7 +2839,8 @@ function showNotification(message, type = "success") {
     }
 
     hidden = false;
-    clearHideTimer();
+    revealFallbackAttempts = 0;
+    clearRevealCheck();
     clearHardTimeout();
     loader.style.display = "flex";
     loader.style.opacity = "1";
@@ -2819,9 +2848,9 @@ function showNotification(message, type = "success") {
     loader.classList.remove("fade-out");
     loader.style.transitionDuration = "260ms";
 
-    hideTimer = setInterval(() => {
-      maybeHideLoader();
-    }, 120);
+    queueRevealCheck(0);
+    queueRevealCheck(140);
+    queueRevealCheck(420);
 
     // Hard fail-safe: never keep loader too long on slow networks.
     hardTimeout = setTimeout(() => hideLoader(true), 4800);
@@ -2829,13 +2858,13 @@ function showNotification(message, type = "success") {
 
   window.addEventListener("carousel:ready", () => {
     window.__tokeCarouselReady = true;
-    maybeHideLoader();
+    queueRevealCheck();
   });
-  window.addEventListener("theme:ready", maybeHideLoader);
-  window.addEventListener("tb:initial-content-ready", maybeHideLoader);
+  window.addEventListener("theme:ready", () => queueRevealCheck());
+  window.addEventListener("tb:initial-content-ready", () => queueRevealCheck());
   window.addEventListener("spa:navigated", () => {
     if (isHomePage()) {
-      maybeHideLoader();
+      queueRevealCheck();
     } else {
       hideLoader(false);
     }
@@ -5299,6 +5328,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // STEP 2: Initialize sync system
   try {
+    if (
+      window.websiteUpdater &&
+      typeof window.websiteUpdater.destroy === "function"
+    ) {
+      window.websiteUpdater.destroy();
+    }
     window.websiteUpdater = new WebsiteAutoUpdater();
   } catch (error) {
     console.error("WebsiteAutoUpdater failed to initialize:", error);
