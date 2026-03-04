@@ -144,9 +144,6 @@ class WebsiteAutoUpdater {
     this.setForcedReloadVersion(version);
     clearContentCaches();
     requestDynamicCacheClearFromServiceWorker();
-    setTimeout(() => {
-      window.location.reload();
-    }, 180);
   }
 
   async refreshAffectedContent(changeType = "all", payload = {}) {
@@ -157,7 +154,6 @@ class WebsiteAutoUpdater {
     );
     if (forceReloadVersion > 0) {
       this.triggerHardReload(forceReloadVersion);
-      return;
     }
     const shouldRefreshCarousel =
       normalizedChangeType === "carousel" || normalizedChangeType === "all";

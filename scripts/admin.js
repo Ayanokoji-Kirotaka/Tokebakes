@@ -201,12 +201,15 @@ const CONTENT_VERSION_STORAGE_KEY = "toke_bakes_content_version";
 const LAST_CHANGE_TYPE_STORAGE_KEY = "toke_bakes_last_change_type";
 const LAST_SYNC_CHECK_STORAGE_KEY = "toke_bakes_last_sync_check_at";
 const SW_LAST_UPDATE_KEY = "toke_bakes_sw_last_update_detected_at";
-const ADMIN_FORCE_RELOAD_VERSION_KEY = "toke_bakes_admin_force_reload_version";
 const ADMIN_ERROR_LOG_LIMIT = 30;
+const ADMIN_TOAST_DEDUP_WINDOW_MS = 600;
+const ADMIN_POPUP_QUEUE = [];
 const adminDiagnosticsState = {
   errors: [],
   lastCachePurgeAt: 0,
 };
+let adminPopupActive = false;
+const adminToastLastShownAt = new Map();
 const adminActionLocks = new Set();
 const adminControlState = new WeakMap();
 const adminCrudProgressState = {
@@ -310,36 +313,6 @@ function setStoredLastChangeType(changeType) {
       normalizeChangeType(changeType)
     );
   } catch {}
-}
-
-function getAdminForcedReloadVersion() {
-  try {
-    return (
-      parseContentVersion(sessionStorage.getItem(ADMIN_FORCE_RELOAD_VERSION_KEY)) || 0
-    );
-  } catch {
-    return 0;
-  }
-}
-
-function setAdminForcedReloadVersion(version) {
-  const normalized = parseContentVersion(version);
-  if (!Number.isFinite(normalized) || normalized <= 0) return;
-  try {
-    sessionStorage.setItem(ADMIN_FORCE_RELOAD_VERSION_KEY, String(normalized));
-  } catch {}
-}
-
-function shouldForceAdminReload(normalizedType, payload = {}) {
-  if (normalizedType !== "all") return false;
-  if (payload?.forcedGlobalRefresh !== true) return false;
-
-  const version = parseContentVersion(payload?.contentVersion ?? payload?.version);
-  if (!Number.isFinite(version) || version <= 0) return false;
-  if (version <= getAdminForcedReloadVersion()) return false;
-
-  setAdminForcedReloadVersion(version);
-  return true;
 }
 
 function recordAdminError(type, message, details = null) {
@@ -1274,18 +1247,6 @@ async function refreshAdminUiFromSync(changeType = "all", payload = {}) {
 
   if (tasks.length) {
     await Promise.allSettled(tasks);
-  }
-
-  if (shouldForceAdminReload(normalizedType, payload)) {
-    clearDataCache();
-    markPublicContentCacheDirty();
-    clearThemeCachesSafely().catch(() => {});
-    clearAppCachesSafely().catch(() => {});
-    showNotification("Global refresh received. Reloading admin...", "info");
-    setTimeout(() => {
-      window.location.reload();
-    }, 220);
-    return true;
   }
 
   if (normalizedType === "all") {
@@ -2662,8 +2623,34 @@ function resolveImageForDisplay(rawValue, placeholderDataUri) {
 
 /* ================== CUSTOM POPUP SYSTEM ================== */
 
-// Custom popup system to replace alert/confirm
 function showPopup(options) {
+  return new Promise((resolve) => {
+    ADMIN_POPUP_QUEUE.push({ options, resolve });
+    pumpAdminPopupQueue();
+  });
+}
+
+function pumpAdminPopupQueue() {
+  if (adminPopupActive) return;
+  const next = ADMIN_POPUP_QUEUE.shift();
+  if (!next) return;
+
+  adminPopupActive = true;
+  showPopupInternal(next.options)
+    .then((result) => {
+      next.resolve(result);
+    })
+    .catch(() => {
+      next.resolve(false);
+    })
+    .finally(() => {
+      adminPopupActive = false;
+      pumpAdminPopupQueue();
+    });
+}
+
+// Custom popup system to replace alert/confirm
+function showPopupInternal(options) {
   return new Promise((resolve) => {
     // Remove existing popup if any
     const existingPopup = document.getElementById("custom-popup-overlay");
@@ -2756,7 +2743,7 @@ function showPopup(options) {
     `;
     const messageText = document.createElement("p");
     messageText.style.margin = "0";
-    messageText.textContent = message;
+    messageText.textContent = toSafeString(message, "");
     messageEl.appendChild(messageText);
 
     let inputEl = null;
@@ -2867,7 +2854,12 @@ function showPopup(options) {
     buttonsContainer.appendChild(confirmBtn);
     popup.appendChild(buttonsContainer);
     overlay.appendChild(popup);
-    document.body.appendChild(overlay);
+    const mountRoot = document.body || document.documentElement;
+    if (!mountRoot) {
+      resolve(false);
+      return;
+    }
+    mountRoot.appendChild(overlay);
 
     // Add animations
     if (!document.querySelector("#popup-animations")) {
@@ -2962,7 +2954,7 @@ async function compressImage(file, maxSizeKB = 300) {
     // 1. VALIDATION WITH USER-FRIENDLY ERRORS
     if (!file.type.startsWith("image/")) {
       showNotification(
-        "âŒ Please select an image file (JPEG, PNG, WebP, etc.)",
+        "Please select an image file (JPEG, PNG, WebP, etc.).",
         "error"
       );
       reject(new Error("File is not an image"));
@@ -2978,7 +2970,7 @@ async function compressImage(file, maxSizeKB = 300) {
     ];
     if (unsupportedFormats.includes(file.type.toLowerCase())) {
       showNotification(
-        "âŒ Please convert HEIC/TIFF/RAW images to JPEG or PNG first",
+        "Please convert HEIC/TIFF/RAW images to JPEG or PNG first.",
         "error"
       );
       reject(new Error("Unsupported image format"));
@@ -2987,13 +2979,13 @@ async function compressImage(file, maxSizeKB = 300) {
 
     if (file.size > 10 * 1024 * 1024) {
       // Increased to 10MB for food photography
-      showNotification("âŒ Image is too large! Maximum size is 10MB", "error");
+      showNotification("Image is too large. Maximum size is 10MB.", "error");
       reject(new Error("Image must be less than 10MB"));
       return;
     }
 
     // Show compression started notification
-    showNotification("ðŸ”„ Optimizing your image...", "info");
+    showNotification("Optimizing image...", "info");
 
     const reader = new FileReader();
 
@@ -3036,7 +3028,7 @@ async function compressImage(file, maxSizeKB = 300) {
 
             // 3. WEBP-OPTIMIZED COMPRESSION WITH SMART QUALITY ADJUSTMENT
             showNotification(
-              "ðŸ”§ Adjusting quality for optimal file size...",
+              "Adjusting quality for optimal file size...",
               "info"
             );
 
@@ -3054,17 +3046,17 @@ async function compressImage(file, maxSizeKB = 300) {
 
             let successMessage;
             if (savings > 75) {
-              successMessage = `âœ… Amazing compression! ${originalKB}KB â†’ ${compressedKB}KB (${savings}% saved)`;
+              successMessage = `Excellent compression: ${originalKB}KB -> ${compressedKB}KB (${savings}% saved)`;
             } else if (savings > 50) {
-              successMessage = `âœ… Great optimization! ${originalKB}KB â†’ ${compressedKB}KB`;
+              successMessage = `Great optimization: ${originalKB}KB -> ${compressedKB}KB`;
             } else if (savings > 20) {
-              successMessage = `âœ… Image optimized to ${compressedKB}KB`;
+              successMessage = `Image optimized to ${compressedKB}KB`;
             } else {
-              successMessage = `âœ… Image ready at ${compressedKB}KB (high quality preserved)`;
+              successMessage = `Image ready at ${compressedKB}KB (high quality preserved)`;
             }
 
             // Add format info
-            successMessage += ` â€¢ ${compressionResult.format.toUpperCase()}`;
+            successMessage += ` | ${compressionResult.format.toUpperCase()}`;
 
             showNotification(successMessage, "success");
 
@@ -3079,7 +3071,7 @@ async function compressImage(file, maxSizeKB = 300) {
             };
 
             debugLog(
-              `ðŸ° Food Image Compressed: ${originalKB}KB â†’ ${compressedKB}KB (${savings}% saved) ` +
+              `Food image compressed: ${originalKB}KB -> ${compressedKB}KB (${savings}% saved) ` +
                 `as ${compressionResult.format.toUpperCase()} at ${(
                   compressionResult.quality * 100
                 ).toFixed(0)}% quality`
@@ -3089,7 +3081,7 @@ async function compressImage(file, maxSizeKB = 300) {
           } catch (error) {
             // 6. PROCESSING ERROR WITH HELPFUL GUIDANCE
             showNotification(
-              "âŒ Failed to process image. Try a different format or smaller size.",
+              "Failed to process image. Try a different format or smaller size.",
               "error"
             );
             console.error("Image processing failed:", error);
@@ -3100,7 +3092,7 @@ async function compressImage(file, maxSizeKB = 300) {
 
       img.onerror = () => {
         showNotification(
-          "âŒ Could not load image. The file may be corrupted.",
+          "Could not load image. The file may be corrupted.",
           "error"
         );
         reject(new Error("Failed to load image"));
@@ -3111,7 +3103,7 @@ async function compressImage(file, maxSizeKB = 300) {
 
     reader.onerror = () => {
       showNotification(
-        "âŒ Error reading file. Please try selecting the image again.",
+        "Error reading file. Please try selecting the image again.",
         "error"
       );
       reject(new Error("Failed to read file"));
@@ -3163,7 +3155,7 @@ function optimizeImage(canvas, maxSizeKB) {
   } catch (error) {
     // Secondary: WebP failed, use JPEG fallback (5% of users)
     showNotification(
-      "â„¹ï¸ Using standard format for maximum compatibility",
+      "Using standard format for maximum compatibility.",
       "info"
     );
     quality = 0.82;
@@ -3483,35 +3475,60 @@ function ensureToastUi() {
 
   let wrap = document.getElementById("tb-toast-wrap");
   if (!wrap) {
+    const mountRoot = document.body || document.documentElement;
+    if (!mountRoot) return null;
     wrap = document.createElement("div");
     wrap.id = "tb-toast-wrap";
     wrap.className = "tb-toast-wrap";
     wrap.setAttribute("aria-live", "polite");
     wrap.setAttribute("aria-atomic", "false");
-    document.body.appendChild(wrap);
+    mountRoot.appendChild(wrap);
   }
   return wrap;
 }
 
-function showNotification(message, type = "success") {
+function showAdminPopup(message, type = "success") {
   const wrap = ensureToastUi();
+  if (!wrap) return;
   const normalizedType = ["success", "error", "info", "warning"].includes(type)
     ? type
     : "info";
+  const safeMessage = toSafeString(message, "Action completed.");
+  const dedupeKey = `${normalizedType}|${safeMessage}`;
+  const now = Date.now();
+  const lastShown = adminToastLastShownAt.get(dedupeKey) || 0;
+  if (now - lastShown < ADMIN_TOAST_DEDUP_WINDOW_MS) return;
+  adminToastLastShownAt.set(dedupeKey, now);
+
   const iconMap = {
     success: "ok",
     error: "!",
     info: "i",
     warning: "!",
   };
+
   const toast = document.createElement("article");
   toast.className = `tb-toast tb-toast-${normalizedType}`;
   toast.setAttribute("role", normalizedType === "error" ? "alert" : "status");
-  toast.innerHTML = `
-    <span class="tb-toast-icon" aria-hidden="true">${iconMap[normalizedType]}</span>
-    <div class="tb-toast-body">${escapeHtml(toSafeString(message, "Action completed."))}</div>
-    <button type="button" class="tb-toast-close" aria-label="Dismiss notification">x</button>
-  `;
+
+  const icon = document.createElement("span");
+  icon.className = "tb-toast-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = iconMap[normalizedType];
+
+  const body = document.createElement("div");
+  body.className = "tb-toast-body";
+  body.textContent = safeMessage;
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "tb-toast-close";
+  closeBtn.setAttribute("aria-label", "Dismiss notification");
+  closeBtn.textContent = "x";
+
+  toast.appendChild(icon);
+  toast.appendChild(body);
+  toast.appendChild(closeBtn);
   wrap.appendChild(toast);
 
   const dismiss = () => {
@@ -3519,9 +3536,7 @@ function showNotification(message, type = "success") {
     setTimeout(() => toast.remove(), 200);
   };
 
-  toast.querySelector(".tb-toast-close")?.addEventListener("click", dismiss, {
-    once: true,
-  });
+  closeBtn.addEventListener("click", dismiss, { once: true });
   requestAnimationFrame(() => {
     toast.classList.add("is-visible");
   });
@@ -3533,6 +3548,10 @@ function showNotification(message, type = "success") {
     error: 5000,
   };
   setTimeout(dismiss, timeoutByType[normalizedType] || 3200);
+}
+
+function showNotification(message, type = "success") {
+  showAdminPopup(message, type);
 }
 
 /* ================== SECURE API FUNCTIONS ================== */
@@ -3955,7 +3974,7 @@ async function checkIsAdmin() {
 
 async function checkLogin(email, password) {
   try {
-    debugLog("ðŸ” Login attempt for:", email);
+    debugLog("Login attempt for:", email);
 
     const storedAttempts = JSON.parse(
       sessionStorage.getItem("login_attempts") || '{"count":0,"timestamp":0}'
@@ -4007,7 +4026,7 @@ async function checkLogin(email, password) {
     sessionStorage.removeItem("login_attempts");
     startSessionTimeout();
     setupActivityMonitoring();
-    debugLog("âœ… Login successful!");
+    debugLog("Login successful.");
     return true;
   } catch (error) {
     console.error("Login error:", error);
@@ -4096,7 +4115,7 @@ function logoutAdmin() {
   resetCarouselForm(); // Added
   closeMenuOptionsManager();
 
-  debugLog("âœ… Logged out successfully");
+  debugLog("Logged out successfully.");
 }
 
 // Updated password change for Supabase Auth
@@ -6191,9 +6210,9 @@ function resetCarouselForm() {
 /* ================== FIXED INITIALIZATION ================== */
 
 async function initAdminPanel() {
-  debugLog("ðŸ”§ Initializing Admin Panel v2.1 (WITH CAROUSEL)...");
+  debugLog("Initializing Admin Panel v2.1 (with carousel)...");
 
-  // ðŸ”’ Admin session will be validated after login
+  // Admin session will be validated after login
 
   // Check session
   const session = await ensureValidSession();
@@ -6207,10 +6226,10 @@ async function initAdminPanel() {
       document.getElementById("admin-dashboard").style.display = "block";
       startSessionTimeout();
       setupActivityMonitoring();
-      debugLog("âœ… Restored existing session");
+      debugLog("Restored existing session.");
     } else {
       clearSession();
-      debugLog("âŒ Session is not authorized");
+      debugLog("Session is not authorized.");
     }
   }
 

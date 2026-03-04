@@ -12,6 +12,8 @@
   const SERVER_LOCK_KEY = "toke_bakes_sync_server_lock";
 
   const DEFAULT_SERVER_POLL_INTERVAL_MS = 35000;
+  const MIN_SERVER_POLL_INTERVAL_MS = 30000;
+  const MAX_SERVER_POLL_INTERVAL_MS = 45000;
   const DEFAULT_SERVER_MIN_GAP_MS = 9000;
   const DEFAULT_SERVER_LOCK_LEASE_MS = 25000;
   const DEFAULT_SEEN_EVENT_TTL_MS = 2 * 60 * 1000;
@@ -29,6 +31,11 @@
     const num = Number(value);
     if (!Number.isFinite(num) || num <= 0) return fallback;
     return Math.trunc(num);
+  };
+
+  const clampPollInterval = (value, fallback = DEFAULT_SERVER_POLL_INTERVAL_MS) => {
+    const parsed = toPositiveInt(value, fallback);
+    return Math.min(MAX_SERVER_POLL_INTERVAL_MS, Math.max(MIN_SERVER_POLL_INTERVAL_MS, parsed));
   };
 
   const createSourceId = () => {
@@ -152,7 +159,7 @@
       );
 
       this.serverSyncEnabled = options.serverSyncEnabled !== false;
-      this.serverPollIntervalMs = toPositiveInt(
+      this.serverPollIntervalMs = clampPollInterval(
         options.serverPollIntervalMs,
         DEFAULT_SERVER_POLL_INTERVAL_MS
       );
@@ -751,7 +758,7 @@
     }
 
     setServerPollInterval(intervalMs) {
-      this.serverPollIntervalMs = toPositiveInt(
+      this.serverPollIntervalMs = clampPollInterval(
         intervalMs,
         DEFAULT_SERVER_POLL_INTERVAL_MS
       );

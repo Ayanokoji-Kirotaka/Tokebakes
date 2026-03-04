@@ -12,6 +12,48 @@
       crossorigin
     />
     <link rel="dns-prefetch" href="//lmqoflcikfcxoeyinjus.supabase.co" />
+    <style id="admin-critical-shell">
+      html,
+      body {
+        min-height: 100%;
+      }
+      body.admin-root {
+        margin: 0;
+        font-family: "Poppins", sans-serif;
+        background: #1b140f;
+        color: #f5efe7;
+        position: relative;
+      }
+      html.admin-pre-init body.admin-root > * {
+        visibility: hidden !important;
+      }
+      html.admin-pre-init body.admin-root::before {
+        content: "Loading admin panel...";
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-size: 0.95rem;
+        letter-spacing: 0.01em;
+        color: rgba(255, 255, 255, 0.78);
+        visibility: visible;
+        z-index: 9998;
+      }
+      #login-screen.admin-login-container {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.25rem;
+      }
+      #login-screen .admin-login-box {
+        width: min(560px, 100%);
+        background: rgba(26, 19, 14, 0.92);
+        border: 1px solid rgba(230, 122, 0, 0.35);
+        border-radius: 18px;
+        padding: 1.25rem;
+      }
+    </style>
     <style id="logo-critical">
       img.logo-sm,
       img.hero-logo,
@@ -99,6 +141,7 @@
 
         document.documentElement.setAttribute("data-theme", savedMode);
         document.documentElement.setAttribute("data-overlay-ready", "0");
+        document.documentElement.classList.add("admin-pre-init");
         document.documentElement.classList.add("preload-no-transitions");
         try {
           document.documentElement.style.colorScheme = savedMode;
@@ -110,7 +153,7 @@
           preloadStyle = document.createElement("style");
           preloadStyle.id = "theme-preload-style";
           preloadStyle.textContent =
-            "html.theme-loading body > :not(#loader){visibility:hidden!important;}";
+            "html.theme-loading body.admin-root > *{visibility:hidden!important;}";
           document.head.appendChild(preloadStyle);
         }
         document.documentElement.classList.add("theme-loading");
@@ -130,6 +173,7 @@
           document.documentElement.classList.remove("theme-loading");
           document.documentElement.setAttribute("data-overlay-ready", "1");
           requestAnimationFrame(() => {
+            document.documentElement.classList.remove("admin-pre-init");
             document.documentElement.classList.remove("preload-no-transitions");
           });
           window.dispatchEvent(new CustomEvent("theme:ready"));
@@ -166,7 +210,7 @@
         document.head.appendChild(link);
         setTimeout(() => {
           finalizeThemeReady();
-        }, 5000);
+        }, 3200);
       })();
     </script>
     <link rel="shortcut icon" href="images/favicon.webp" type="image/png" />
@@ -326,7 +370,7 @@
       }
     </style>
   </head>
-  <body>
+  <body class="admin-root">
     <!-- <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes" /></div> -->
 
     <!-- Login Screen -->
