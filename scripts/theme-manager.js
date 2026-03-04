@@ -30,6 +30,7 @@ const ThemeManager = {
   themeAutoUpdateBound: false,
   themeActivationInFlight: false,
   initialized: false,
+  themeRpcDisabled: false,
 
   /* ================== INITIALIZATION ================== */
   init() {
@@ -1014,12 +1015,11 @@ const ThemeManager = {
     if (!window.SUPABASE_CONFIG?.URL || !window.SUPABASE_CONFIG?.ANON_KEY) {
       return null;
     }
+    if (this.themeRpcDisabled) {
+      return null;
+    }
 
-    const rpcCandidates = [
-      "get_active_theme_public",
-      "get_public_active_theme",
-      "get_active_theme",
-    ];
+    const rpcCandidates = ["get_active_theme_public"];
     for (const rpcName of rpcCandidates) {
       try {
         const response = await fetch(
@@ -1040,7 +1040,9 @@ const ThemeManager = {
 
         if (!response.ok) {
           if (response.status === 404 || response.status === 400) {
-            continue;
+            // Endpoint missing/misconfigured in this environment: stop retry spam.
+            this.themeRpcDisabled = true;
+            return null;
           }
           continue;
         }

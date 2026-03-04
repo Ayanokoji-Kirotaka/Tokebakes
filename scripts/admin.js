@@ -1157,6 +1157,79 @@ async function loadStatsPanel(force = false) {
   }
 }
 
+async function runGlobalRefreshFromStats() {
+  const globalRefreshBtn = document.getElementById("global-refresh-btn");
+  const actionResult = await runAdminAction({
+    actionKey: "global-refresh",
+    controls: [globalRefreshBtn].filter(Boolean),
+    progressTitle: "Publishing global refresh",
+    progressText: "Preparing global sync signal...",
+    task: async (progress) => {
+      setStatsStatus("Publishing global refresh signal...");
+
+      const baselineSignal = await fetchServerUpdateSignal();
+      const baselineVersion = Number(baselineSignal?.contentVersion || 0) || 0;
+
+      setAdminCrudProgress(20, "Clearing local caches...");
+      await Promise.allSettled([clearThemeCachesSafely(), clearAppCachesSafely()]);
+
+      setAdminCrudProgress(46, "Bumping global content version...");
+      const contentVersion = await ensureContentVersionAfterWrite(
+        baselineVersion,
+        "all"
+      );
+
+      setAdminCrudProgress(68, "Broadcasting update across clients...");
+      dataSync.notifyDataChanged("sync", "all", {
+        source: "admin-global-refresh",
+        forcedGlobalRefresh: true,
+        contentVersion,
+      });
+
+      if (
+        window.TokeUpdateSync &&
+        typeof window.TokeUpdateSync.requestServerCheck === "function"
+      ) {
+        await window.TokeUpdateSync.requestServerCheck(
+          "admin-global-refresh",
+          true
+        );
+      }
+
+      setAdminCrudProgress(82, "Refreshing admin snapshots...");
+      clearDataCache();
+      markPublicContentCacheDirty();
+      resetLoadedTabs();
+      await Promise.allSettled([updateItemCounts(), loadStatsPanel(true)]);
+
+      progress.complete("Global refresh published");
+      return contentVersion;
+    },
+  });
+
+  if (actionResult.ok) {
+    const versionLabel = Number.isFinite(actionResult.value)
+      ? `v${actionResult.value}`
+      : "latest version";
+    setStatsStatus(
+      `Global refresh published (${versionLabel}). Active devices will sync automatically.`
+    );
+    showNotification(
+      `Global refresh sent (${versionLabel}).`,
+      "success"
+    );
+    return;
+  }
+
+  if (actionResult.skipped) return;
+
+  recordAdminError("sync", "Global refresh action failed", {
+    message: actionResult.error?.message || "",
+  });
+  setStatsStatus("Global refresh failed. Check diagnostics.", true);
+  showNotification("Global refresh failed.", "error");
+}
+
 function formatDebugDate(value) {
   if (!value) return "-";
   const date = new Date(Number(value) || value);
@@ -6098,6 +6171,15 @@ function setupEventListeners() {
     refreshStatsBtn.addEventListener("click", () => {
       Promise.resolve(loadStatsPanel(true)).catch((error) => {
         console.error("Failed to refresh stats manually:", error);
+      });
+    });
+  }
+
+  const globalRefreshBtn = document.getElementById("global-refresh-btn");
+  if (globalRefreshBtn) {
+    globalRefreshBtn.addEventListener("click", () => {
+      Promise.resolve(runGlobalRefreshFromStats()).catch((error) => {
+        console.error("Failed to publish global refresh:", error);
       });
     });
   }

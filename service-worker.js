@@ -1,4 +1,4 @@
-const SW_VERSION = "v15";
+const SW_VERSION = "v16";
 const CACHE_PREFIX = "toke-bakes";
 const CACHE_NAMES = {
   precache: `${CACHE_PREFIX}-precache-${SW_VERSION}`,
@@ -150,7 +150,19 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   if (!isHttpRequest(request)) return;
 
-  event.respondWith(routeRequest(request, event));
+  event.respondWith(
+    (async () => {
+      try {
+        return await routeRequest(request, event);
+      } catch {
+        try {
+          return await fetch(request);
+        } catch {
+          return Response.error();
+        }
+      }
+    })()
+  );
 });
 
 function isHttpRequest(request) {
@@ -292,6 +304,10 @@ async function deleteCacheTimestamp(cacheName, requestUrl) {
 }
 
 async function fetchWithTimeout(request, options = {}, timeoutMs = 10000) {
+  if (!Number.isFinite(Number(timeoutMs)) || Number(timeoutMs) <= 0) {
+    return fetch(request, options);
+  }
+
   if (typeof AbortController === "undefined") {
     return fetch(request, options);
   }
@@ -324,6 +340,14 @@ function dedupedFetch(request, options = {}, timeoutMs = 10000) {
   inFlightFetches.set(key, networkPromise);
 
   return networkPromise.then((response) => response.clone());
+}
+
+async function failOpenFetch(request, fetchOptions = {}) {
+  try {
+    return await fetch(request, fetchOptions);
+  } catch {
+    return null;
+  }
 }
 
 async function cachePut(cacheName, request, response) {
@@ -527,6 +551,8 @@ async function networkFirst(request, options = {}, event) {
       return errorResponseFactory(request);
     }
 
+    const fallbackNetwork = await failOpenFetch(request, fetchOptions);
+    if (fallbackNetwork) return fallbackNetwork;
     return Response.error();
   }
 }
@@ -560,7 +586,15 @@ async function staleWhileRevalidate(request, options = {}, event) {
   }
 
   const fresh = await revalidateTask;
-  return fresh || Response.error();
+  if (fresh) return fresh;
+
+  const fallbackAnyCache = await caches.match(request);
+  if (fallbackAnyCache) return fallbackAnyCache;
+
+  const fallbackNetwork = await failOpenFetch(request, fetchOptions);
+  if (fallbackNetwork) return fallbackNetwork;
+
+  return Response.error();
 }
 
 async function cacheFirst(request, options = {}, event) {
@@ -613,6 +647,12 @@ async function cacheFirst(request, options = {}, event) {
     }
     return networkResponse;
   } catch {
+    const fallbackAnyCache = await caches.match(request);
+    if (fallbackAnyCache) return fallbackAnyCache;
+
+    const fallbackNetwork = await failOpenFetch(request, fetchOptions);
+    if (fallbackNetwork) return fallbackNetwork;
+
     return Response.error();
   }
 }
@@ -625,7 +665,7 @@ async function routeRequest(request, event) {
       request,
       {
         cacheName: CACHE_NAMES.api,
-        timeoutMs: 10000,
+        timeoutMs: 16000,
         fetchOptions: { cache: "no-store" },
         allowOpaque: false,
         allowCacheBustFallback: true,
@@ -641,7 +681,7 @@ async function routeRequest(request, event) {
       request,
       {
         cacheName: CACHE_NAMES.pages,
-        timeoutMs: 9000,
+        timeoutMs: 16000,
         fetchOptions: { cache: "no-store" },
         fallbackUrl: OFFLINE_FALLBACK_URL,
         allowOpaque: false,
@@ -656,7 +696,7 @@ async function routeRequest(request, event) {
       request,
       {
         cacheName: CACHE_NAMES.assets,
-        timeoutMs: 9000,
+        timeoutMs: 16000,
         fetchOptions: { cache: "no-store" },
         allowOpaque: false,
         allowCacheBustFallback: true,
@@ -670,7 +710,7 @@ async function routeRequest(request, event) {
       request,
       {
         cacheName: CACHE_NAMES.assets,
-        timeoutMs: 10000,
+        timeoutMs: 20000,
         fetchOptions: { cache: "no-cache" },
         allowOpaque: true,
       },
@@ -683,7 +723,7 @@ async function routeRequest(request, event) {
       request,
       {
         cacheName: CACHE_NAMES.assets,
-        timeoutMs: 12000,
+        timeoutMs: 22000,
         fetchOptions: { cache: "no-cache" },
         allowOpaque: true,
       },
@@ -698,7 +738,7 @@ async function routeRequest(request, event) {
         request,
         {
           cacheName: CACHE_NAMES.images,
-          timeoutMs: 12000,
+          timeoutMs: 22000,
           fetchOptions: { cache: "no-cache" },
           allowOpaque: true,
         },
@@ -712,7 +752,7 @@ async function routeRequest(request, event) {
       request,
       {
         cacheName: CACHE_NAMES.images,
-        timeoutMs: 5000,
+        timeoutMs: 16000,
         fetchOptions: { cache: "no-store" },
         allowOpaque: true,
       },
@@ -724,7 +764,7 @@ async function routeRequest(request, event) {
     request,
     {
       cacheName: CACHE_NAMES.assets,
-      timeoutMs: 12000,
+      timeoutMs: 20000,
       fetchOptions: { cache: "no-cache" },
       allowOpaque: true,
     },
