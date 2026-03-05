@@ -95,6 +95,25 @@ const debugWarn = (...args) => {
   if (DEBUG) console.warn(...args);
 };
 
+function syncAutoYearBadges() {
+  const currentYear = String(new Date().getFullYear());
+  document
+    .querySelectorAll("#admin-year, #current-year, [data-auto-year]")
+    .forEach((node) => {
+      node.textContent = currentYear;
+    });
+}
+
+if (typeof document !== "undefined") {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", syncAutoYearBadges, {
+      once: true,
+    });
+  } else {
+    syncAutoYearBadges();
+  }
+}
+
 // Current admin state
 let currentAdmin = null;
 let isEditing = false;
@@ -6446,10 +6465,7 @@ async function initAdminPanel() {
   }
 
   // Set current year
-  const yearElement = document.getElementById("admin-year");
-  if (yearElement) {
-    yearElement.textContent = new Date().getFullYear();
-  }
+  syncAutoYearBadges();
 
   // Setup event listeners
   setupEventListeners();

@@ -20,6 +20,25 @@ if (typeof initThemeToggle === "undefined") {
 if (typeof window !== "undefined" && window.__tbInitialContentReady !== true) {
   window.__tbInitialContentReady = false;
 }
+
+function syncAutoYearBadges() {
+  const currentYear = String(new Date().getFullYear());
+  document
+    .querySelectorAll("#current-year, #admin-year, [data-auto-year]")
+    .forEach((node) => {
+      node.textContent = currentYear;
+    });
+}
+
+if (typeof document !== "undefined") {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", syncAutoYearBadges, {
+      once: true,
+    });
+  } else {
+    syncAutoYearBadges();
+  }
+}
 /* ================== END PATCH ================== */
 /* ================== script.js - TOKE BAKES WEBSITE ================== */
 
@@ -5519,10 +5538,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // Update copyright year
-  const yearElement = document.getElementById("current-year");
-  if (yearElement) {
-    yearElement.textContent = new Date().getFullYear();
-  }
+  syncAutoYearBadges();
 
   debugLog("Toke Bakes fully initialized");
 });
