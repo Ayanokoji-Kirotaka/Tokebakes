@@ -160,24 +160,40 @@
         document.documentElement.classList.add("theme-loading");
 
         const DEFAULT_THEME_CSS = "styles/style.css";
+        const baseStylesheet = document.getElementById("base-stylesheet");
         const link = document.createElement("link");
         link.rel = "stylesheet";
         link.id = "theme-stylesheet";
         link.dataset.loaded = "false";
+        let baseStylesReady = !baseStylesheet;
         let themeReady = false;
+        let overlayRevealed = false;
+        let themeReadyDispatched = false;
         let triedDefaultFallback = false;
 
-        const finalizeThemeReady = () => {
-          if (themeReady) return;
-          themeReady = true;
-          link.dataset.loaded = "true";
+        const dispatchThemeReady = () => {
+          if (themeReadyDispatched) return;
+          themeReadyDispatched = true;
+          window.dispatchEvent(new CustomEvent("theme:ready"));
+        };
+
+        const revealAdminUi = () => {
+          if (overlayRevealed || !themeReady || !baseStylesReady) return;
+          overlayRevealed = true;
           document.documentElement.classList.remove("theme-loading");
           document.documentElement.setAttribute("data-overlay-ready", "1");
           requestAnimationFrame(() => {
             document.documentElement.classList.remove("admin-pre-init");
             document.documentElement.classList.remove("preload-no-transitions");
           });
-          window.dispatchEvent(new CustomEvent("theme:ready"));
+          dispatchThemeReady();
+        };
+
+        const finalizeThemeReady = () => {
+          if (themeReady) return;
+          themeReady = true;
+          link.dataset.loaded = "true";
+          revealAdminUi();
         };
 
         const applyThemeHref = (cssFile, useStoredVersion = true, cacheBust = false) => {
@@ -207,11 +223,36 @@
           },
           { once: true }
         );
+        if (baseStylesheet) {
+          const markBaseStylesReady = () => {
+            baseStylesReady = true;
+            revealAdminUi();
+          };
+          if (baseStylesheet.sheet) {
+            baseStylesReady = true;
+          } else {
+            baseStylesheet.addEventListener("load", markBaseStylesReady, {
+              once: true,
+            });
+            baseStylesheet.addEventListener("error", markBaseStylesReady, {
+              once: true,
+            });
+          }
+        }
         applyThemeHref(savedTheme, true, false);
         document.head.appendChild(link);
         setTimeout(() => {
+          baseStylesReady = true;
           finalizeThemeReady();
+          revealAdminUi();
         }, 3200);
+        setTimeout(() => {
+          if (overlayRevealed) return;
+          baseStylesReady = true;
+          themeReady = true;
+          link.dataset.loaded = "true";
+          revealAdminUi();
+        }, 5200);
       })();
     </script>
     <link rel="shortcut icon" href="images/favicon.webp" type="image/png" />
@@ -232,7 +273,7 @@
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
     />
-    <link rel="manifest" href="manifest.json?v=2" />
+    <link rel="manifest" href="manifest.json?v=3" />
     <link rel="icon" href="images/favicon.webp" type="image/webp" />
     <link
       rel="preload"

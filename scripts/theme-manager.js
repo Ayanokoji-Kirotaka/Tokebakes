@@ -634,11 +634,27 @@ const ThemeManager = {
   updateThemeLogo(logoFile) {
     const normalizedLogo = this.normalizeAssetPath(logoFile);
     if (!normalizedLogo) return;
+    const fallbackLogo = this.normalizeAssetPath("images/logo.webp") || "images/logo.webp";
     const logoTargets = document.querySelectorAll(
       "[data-theme-logo], img.logo-sm, img.hero-logo, img.admin-logo, #loader img, .brand img"
     );
     logoTargets.forEach((img) => {
-      if (img && img.getAttribute("src") !== normalizedLogo) {
+      if (!img) return;
+
+      if (!img.dataset.tbLogoFallbackBound) {
+        img.dataset.tbLogoFallbackBound = "1";
+        img.addEventListener(
+          "error",
+          () => {
+            const current = this.normalizeAssetPath(img.getAttribute("src"));
+            if (!current || current === fallbackLogo) return;
+            img.setAttribute("src", fallbackLogo);
+          },
+          { passive: true }
+        );
+      }
+
+      if (img.getAttribute("src") !== normalizedLogo) {
         img.setAttribute("src", normalizedLogo);
       }
     });

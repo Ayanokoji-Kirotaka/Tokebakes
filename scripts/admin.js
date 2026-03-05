@@ -1152,13 +1152,21 @@ async function loadStatsPanel(force = false) {
         STATS_ENDPOINTS.counts,
         "POST",
         { p_days: days },
-        { authRequired: true }
+        {
+          authRequired: true,
+          suppressNotifications: true,
+          timeout: 22000,
+        }
       ),
       secureRequest(
         STATS_ENDPOINTS.daily,
         "POST",
         { p_days: days },
-        { authRequired: true }
+        {
+          authRequired: true,
+          suppressNotifications: true,
+          timeout: 22000,
+        }
       ),
     ]);
 
@@ -2563,7 +2571,7 @@ function escapeHtml(text) {
 
 function toSafeString(value, fallback = "") {
   if (value === null || value === undefined) return fallback;
-  const text = String(value).trim();
+  const text = String(value).replace(/\u0000/g, "").trim();
   return text || fallback;
 }
 
@@ -3682,13 +3690,20 @@ async function secureRequest(
   data = null,
   options = {}
 ) {
+  const normalizedMethod = toSafeString(method, "GET").toUpperCase();
   const {
     retries = 3,
-    timeout = 10000,
+    timeout = normalizedMethod === "GET" ? 22000 : 15000,
     authRequired = false,
     headers: extraHeaders = {},
     suppressNotifications = false,
   } = options;
+  const requestTimeout =
+    Number.isFinite(Number(timeout)) && Number(timeout) > 0
+      ? Number(timeout)
+      : normalizedMethod === "GET"
+        ? 22000
+        : 15000;
 
   if (!SUPABASE_CONFIG || !SUPABASE_CONFIG.URL || !SUPABASE_CONFIG.ANON_KEY) {
     throw new Error("Supabase configuration missing. Check config.js");
@@ -3715,39 +3730,91 @@ async function secureRequest(
     ...extraHeaders,
   };
 
-  if (data && (method === "POST" || method === "PATCH" || method === "PUT")) {
+  if (
+    data &&
+    (normalizedMethod === "POST" ||
+      normalizedMethod === "PATCH" ||
+      normalizedMethod === "PUT")
+  ) {
     baseHeaders["Content-Type"] = "application/json";
   }
 
+  const isRetryableStatus = (status) => {
+    const code = Number(status) || 0;
+    return (
+      code === 408 ||
+      code === 425 ||
+      code === 429 ||
+      code === 502 ||
+      code === 503 ||
+      code === 504 ||
+      code >= 500
+    );
+  };
+
+  const isTransientNetworkError = (error) => {
+    const message = toSafeString(error?.message).toLowerCase();
+    return (
+      error?.name === "AbortError" ||
+      message.includes("failed to fetch") ||
+      message.includes("networkerror") ||
+      message.includes("network request failed") ||
+      message.includes("load failed") ||
+      message.includes("timeout")
+    );
+  };
+
+  const getRetryDelayMs = (attempt, retryAfterSeconds = 0) => {
+    if (retryAfterSeconds > 0) {
+      return Math.min(10000, Math.max(300, retryAfterSeconds * 1000));
+    }
+    return Math.min(
+      10000,
+      Math.pow(2, attempt) * 700 + Math.floor(Math.random() * 250)
+    );
+  };
+
   for (let attempt = 1; attempt <= retries; attempt++) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const controller =
+      typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timeoutId = controller
+      ? setTimeout(() => controller.abort(), requestTimeout)
+      : null;
 
     const config = {
-      method,
+      method: normalizedMethod,
       headers: baseHeaders,
-      signal: controller.signal,
+      signal: controller ? controller.signal : undefined,
       cache: "no-store",
     };
 
-    if (data && (method === "POST" || method === "PATCH" || method === "PUT")) {
+    if (
+      data &&
+      (normalizedMethod === "POST" ||
+        normalizedMethod === "PATCH" ||
+        normalizedMethod === "PUT")
+    ) {
       config.body = JSON.stringify(data);
     }
 
     try {
       const response = await fetch(`${SUPABASE_CONFIG.URL}${safeEndpoint}`, config);
-      clearTimeout(timeoutId);
+      if (timeoutId) clearTimeout(timeoutId);
 
       if (response.status === 429) {
-        const retryAfter = response.headers.get("Retry-After") || 1;
-        await new Promise((resolve) => setTimeout(resolve, retryAfter * 1000));
-        continue;
+        const retryAfter = Number(response.headers.get("Retry-After") || 1) || 1;
+        if (attempt < retries) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, getRetryDelayMs(attempt, retryAfter))
+          );
+          continue;
+        }
       }
 
       if (!response.ok) {
         const errorData = await response.text();
         recordAdminError("fetch", `HTTP ${response.status} ${safeEndpoint}`, {
-          method,
+          method: normalizedMethod,
           status: response.status,
         });
 
@@ -3759,7 +3826,9 @@ async function secureRequest(
             );
           }
           logoutAdmin();
-          throw new Error("Authentication failed");
+          const authError = new Error("Authentication failed");
+          authError.status = response.status;
+          throw authError;
         }
 
         if (response.status === 403) {
@@ -3769,7 +3838,9 @@ async function secureRequest(
               "error"
             );
           }
-          throw new Error("Permission denied");
+          const permissionError = new Error("Permission denied");
+          permissionError.status = response.status;
+          throw permissionError;
         }
 
         if (response.status === 413) {
@@ -3779,15 +3850,27 @@ async function secureRequest(
               "error"
             );
           }
-          throw new Error("File too large");
+          const sizeError = new Error("File too large");
+          sizeError.status = response.status;
+          throw sizeError;
         }
 
-        throw new Error(
+        const httpError = new Error(
           `HTTP ${response.status}: ${errorData.substring(0, 200)}`
         );
+        httpError.status = response.status;
+        httpError.responseBody = errorData;
+
+        if (attempt < retries && isRetryableStatus(response.status)) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, getRetryDelayMs(attempt))
+          );
+          continue;
+        }
+        throw httpError;
       }
 
-      if (method === "DELETE" && response.status === 204) {
+      if (normalizedMethod === "DELETE" && response.status === 204) {
         return { success: true, message: "Item deleted successfully" };
       }
 
@@ -3813,39 +3896,57 @@ async function secureRequest(
 
       return { success: true };
     } catch (error) {
-      clearTimeout(timeoutId);
+      if (timeoutId) clearTimeout(timeoutId);
 
-        if (attempt === retries) {
-          console.error("API request failed after retries:", error);
-          recordAdminError("fetch", `Request failed: ${safeEndpoint}`, {
-            method,
-            message: error?.message || "Unknown error",
-          });
+      const statusCode = Number(error?.status) || 0;
+      const canRetry =
+        attempt < retries &&
+        (isRetryableStatus(statusCode) || isTransientNetworkError(error));
 
-          if (!suppressNotifications) {
-          if (error.name === "AbortError") {
-            showNotification("Request timeout. Please try again.", "error");
-          } else if (error.message.includes("Failed to fetch")) {
-            showNotification(
-              "Network error. Please check your connection.",
-              "error"
-            );
-          } else if (error.message.includes("CORS")) {
-            showNotification(
-              "Cross-origin request blocked. Please check configuration.",
-              "error"
-            );
-          } else {
-            showNotification(`Operation failed: ${error.message}`, "error");
-          }
-        }
-
-        throw error;
+      if (canRetry) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, getRetryDelayMs(attempt))
+        );
+        continue;
       }
 
-      await new Promise((resolve) =>
-        setTimeout(resolve, Math.pow(2, attempt) * 1000)
-      );
+      if (!suppressNotifications) {
+        console.error("API request failed after retries:", error);
+      } else {
+        debugWarn("API request failed after retries:", safeEndpoint, error?.message);
+      }
+      recordAdminError("fetch", `Request failed: ${safeEndpoint}`, {
+        method: normalizedMethod,
+        status: statusCode || undefined,
+        message: error?.message || "Unknown error",
+      });
+
+      if (!suppressNotifications) {
+        if (error?.name === "AbortError") {
+          showNotification(
+            "Request timed out while contacting the server. Please try again.",
+            "error"
+          );
+        } else if (
+          toSafeString(error?.message).toLowerCase().includes("failed to fetch")
+        ) {
+          showNotification(
+            "Network error. Please check your connection.",
+            "error"
+          );
+        } else if (
+          toSafeString(error?.message).toLowerCase().includes("cors")
+        ) {
+          showNotification(
+            "Cross-origin request blocked. Please check configuration.",
+            "error"
+          );
+        } else {
+          showNotification(`Operation failed: ${error.message}`, "error");
+        }
+      }
+
+      throw error;
     }
   }
 }
@@ -3880,6 +3981,9 @@ async function loadDataFromSupabase(endpoint, id = null, forceRefresh = false) {
 
     const result = await secureRequest(url, "GET", null, {
       authRequired: true,
+      suppressNotifications: true,
+      timeout: 24000,
+      retries: 4,
     });
 
     // Handle Supabase response format
@@ -3900,7 +4004,20 @@ async function loadDataFromSupabase(endpoint, id = null, forceRefresh = false) {
 
     return data;
   } catch (error) {
-    console.error(`Error loading from ${endpoint}:`, error);
+    const errorMessage = toSafeString(error?.message);
+    const lowerMessage = errorMessage.toLowerCase();
+    const isTransientFailure =
+      error?.name === "AbortError" ||
+      lowerMessage.includes("failed to fetch") ||
+      lowerMessage.includes("http 503") ||
+      lowerMessage.includes("http 502") ||
+      lowerMessage.includes("http 504");
+
+    if (!isTransientFailure) {
+      console.error(`Error loading from ${endpoint}:`, error);
+    } else {
+      debugWarn(`Transient fetch issue on ${endpoint}:`, errorMessage);
+    }
 
     // Return cached data if available (even if stale)
     if (dataCache.has(cacheKey)) {
@@ -3908,7 +4025,9 @@ async function loadDataFromSupabase(endpoint, id = null, forceRefresh = false) {
       return dataCache.get(cacheKey).data;
     }
 
-    console.error("Failed to load data from cloud");
+    if (!isTransientFailure) {
+      console.error("Failed to load data from cloud");
+    }
     return id ? null : [];
   }
 }
@@ -6125,15 +6244,23 @@ async function importData(file) {
         await Promise.all([
           secureRequest(`${API_ENDPOINTS.FEATURED}?id=not.is.null`, "DELETE", null, {
             authRequired: true,
+            suppressNotifications: true,
+            timeout: 26000,
           }),
           secureRequest(`${API_ENDPOINTS.MENU}?id=not.is.null`, "DELETE", null, {
             authRequired: true,
+            suppressNotifications: true,
+            timeout: 26000,
           }),
           secureRequest(`${SPECIALS_ENDPOINT}?id=not.is.null`, "DELETE", null, {
             authRequired: true,
+            suppressNotifications: true,
+            timeout: 26000,
           }),
           secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=not.is.null`, "DELETE", null, {
             authRequired: true,
+            suppressNotifications: true,
+            timeout: 26000,
           }),
         ]);
         setAdminCrudProgress(28, "Importing records...");
@@ -6802,15 +6929,23 @@ function setupEventListeners() {
             await Promise.all([
               secureRequest(`${API_ENDPOINTS.FEATURED}?id=not.is.null`, "DELETE", null, {
                 authRequired: true,
+                suppressNotifications: true,
+                timeout: 26000,
               }),
               secureRequest(`${API_ENDPOINTS.MENU}?id=not.is.null`, "DELETE", null, {
                 authRequired: true,
+                suppressNotifications: true,
+                timeout: 26000,
               }),
               secureRequest(`${SPECIALS_ENDPOINT}?id=not.is.null`, "DELETE", null, {
                 authRequired: true,
+                suppressNotifications: true,
+                timeout: 26000,
               }),
               secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=not.is.null`, "DELETE", null, {
                 authRequired: true,
+                suppressNotifications: true,
+                timeout: 26000,
               }),
             ]);
 

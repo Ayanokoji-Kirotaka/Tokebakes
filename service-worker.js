@@ -1,4 +1,4 @@
-const SW_VERSION = "v18";
+const SW_VERSION = "v19";
 const CACHE_PREFIX = "toke-bakes";
 const CACHE_NAMES = {
   precache: `${CACHE_PREFIX}-precache-${SW_VERSION}`,
@@ -30,7 +30,7 @@ const PRECACHE_URLS = [
   "privacy.html",
   "terms-of-use.html",
   "manifest.json",
-  "manifest.json?v=2",
+  "manifest.json?v=3",
   "styles/style.css",
   "styles/theme-christmas.css",
   "styles/theme-halloween.css",
@@ -55,8 +55,8 @@ const PRECACHE_URLS = [
   "images/favicon.webp",
   "images/icon-192.png",
   "images/icon-512.png",
-  "images/icon-192-v2.png",
-  "images/icon-512-v2.png",
+  "images/icon-192-v3.png",
+  "images/icon-512-v3.png",
 ];
 
 const inFlightFetches = new Map();
@@ -668,7 +668,7 @@ async function routeRequest(request, event) {
       request,
       {
         cacheName: CACHE_NAMES.api,
-        timeoutMs: 16000,
+        timeoutMs: 28000,
         fetchOptions: { cache: "no-store" },
         allowOpaque: false,
         allowCacheBustFallback: true,
