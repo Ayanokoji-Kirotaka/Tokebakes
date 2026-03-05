@@ -84,6 +84,7 @@
         height: 120px;
       }
     </style>
+    <link rel="stylesheet" href="styles/style.css" id="base-stylesheet" />
     <script>
       (function () {
         const normalizeAssetPath = (value) => {
@@ -153,7 +154,7 @@
           preloadStyle = document.createElement("style");
           preloadStyle.id = "theme-preload-style";
           preloadStyle.textContent =
-            "html.theme-loading body.admin-root > *{visibility:hidden!important;}";
+            "html.theme-loading body.admin-root > :not(#sync-status-indicator){visibility:hidden!important;}";
           document.head.appendChild(preloadStyle);
         }
         document.documentElement.classList.add("theme-loading");
@@ -231,6 +232,7 @@
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
     />
+    <link rel="manifest" href="manifest.json?v=2" />
     <link rel="icon" href="images/favicon.webp" type="image/webp" />
     <link
       rel="preload"

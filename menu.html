@@ -76,6 +76,7 @@
         height: 120px;
       }
     </style>
+    <link rel="stylesheet" href="styles/style.css" id="base-stylesheet" />
     <script>
       (function () {
         const normalizeAssetPath = (value) => {
@@ -144,7 +145,7 @@
           preloadStyle = document.createElement("style");
           preloadStyle.id = "theme-preload-style";
           preloadStyle.textContent =
-            "html.theme-loading body > :not(#loader){visibility:hidden!important;}";
+            "html.theme-loading body > :not(#loader):not(#sync-status-indicator){visibility:hidden!important;}";
           document.head.appendChild(preloadStyle);
         }
         document.documentElement.classList.add("theme-loading");
@@ -187,11 +188,10 @@
         }, 4000);
       })();
     </script>
-    <link rel="manifest" href="manifest.json" />
+    <link rel="manifest" href="manifest.json?v=2" />
     <meta name="theme-color" content="#e67a00" />
-    <link rel="apple-touch-icon" href="images/icon-192.png" />
+    <link rel="apple-touch-icon" href="images/icon-192-v2.png" />
     <link rel="icon" href="images/favicon.webp" type="image/webp" />
-    <link rel="preload" href="styles/style.css" as="style" />
     <link
       rel="preload"
       href="images/logo.webp"

@@ -836,7 +836,11 @@ async function bumpServerUpdateSignal(changeType = "all") {
   return fallback;
 }
 
-async function ensureContentVersionAfterWrite(previousVersion = null, changeType = "all") {
+async function ensureContentVersionAfterWrite(
+  previousVersion = null,
+  changeType = "all",
+  forceIncrement = false
+) {
   const before =
     Number.isFinite(previousVersion) && previousVersion >= 0
       ? previousVersion
@@ -844,7 +848,7 @@ async function ensureContentVersionAfterWrite(previousVersion = null, changeType
 
   const currentSignal = await fetchServerUpdateSignal();
   const current = currentSignal.contentVersion;
-  if (Number.isFinite(current) && current > before) {
+  if (!forceIncrement && Number.isFinite(current) && current > before) {
     return current;
   }
 
@@ -1274,10 +1278,18 @@ async function runGlobalRefreshFromStats() {
       await Promise.allSettled([clearThemeCachesSafely(), clearAppCachesSafely()]);
 
       setAdminCrudProgress(46, "Bumping global content version...");
-      const contentVersion = await ensureContentVersionAfterWrite(
+      let contentVersion = await ensureContentVersionAfterWrite(
         baselineVersion,
-        "all"
+        "all",
+        true
       );
+      const verifiedSignal = await fetchServerUpdateSignal();
+      if (
+        Number.isFinite(verifiedSignal?.contentVersion) &&
+        verifiedSignal.contentVersion > contentVersion
+      ) {
+        contentVersion = verifiedSignal.contentVersion;
+      }
 
       setAdminCrudProgress(68, "Broadcasting update across clients...");
       dataSync.notifyDataChanged("sync", "all", {
@@ -2511,6 +2523,37 @@ function sanitizeInput(input) {
     .trim();
 }
 
+const UUID_FORMAT_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuidLike(value) {
+  return UUID_FORMAT_REGEX.test(toSafeString(value));
+}
+
+function readJwtPayload(token) {
+  const rawToken = toSafeString(token);
+  if (!rawToken) return null;
+  const parts = rawToken.split(".");
+  if (parts.length < 2) return null;
+  try {
+    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = payload.padEnd(Math.ceil(payload.length / 4) * 4, "=");
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+}
+
+function isSessionTokenUsable(session) {
+  if (!session || typeof session !== "object") return false;
+  const accessToken = toSafeString(session.access_token);
+  if (!accessToken) return false;
+  const payload = readJwtPayload(accessToken);
+  if (!payload || typeof payload !== "object") return false;
+  const subject = toSafeString(payload.sub || session.user?.id);
+  return isUuidLike(subject);
+}
+
 // Escape HTML for safety
 function escapeHtml(text) {
   const div = document.createElement("div");
@@ -3619,8 +3662,18 @@ async function refreshSessionIfNeeded(session) {
 
 async function ensureValidSession() {
   const session = getStoredSession();
-  if (!session) return null;
-  return refreshSessionIfNeeded(session);
+  if (!isSessionTokenUsable(session)) {
+    clearSession();
+    return null;
+  }
+
+  const refreshed = await refreshSessionIfNeeded(session);
+  if (!isSessionTokenUsable(refreshed)) {
+    clearSession();
+    return null;
+  }
+
+  return refreshed;
 }
 
 async function secureRequest(
@@ -3639,6 +3692,11 @@ async function secureRequest(
 
   if (!SUPABASE_CONFIG || !SUPABASE_CONFIG.URL || !SUPABASE_CONFIG.ANON_KEY) {
     throw new Error("Supabase configuration missing. Check config.js");
+  }
+
+  const safeEndpoint = toSafeString(endpoint).replace(/\u0000/g, "");
+  if (!safeEndpoint.startsWith("/")) {
+    throw new Error("Invalid API endpoint");
   }
 
   const session = await ensureValidSession();
@@ -3677,7 +3735,7 @@ async function secureRequest(
     }
 
     try {
-      const response = await fetch(`${SUPABASE_CONFIG.URL}${endpoint}`, config);
+      const response = await fetch(`${SUPABASE_CONFIG.URL}${safeEndpoint}`, config);
       clearTimeout(timeoutId);
 
       if (response.status === 429) {
@@ -3688,7 +3746,7 @@ async function secureRequest(
 
       if (!response.ok) {
         const errorData = await response.text();
-        recordAdminError("fetch", `HTTP ${response.status} ${endpoint}`, {
+        recordAdminError("fetch", `HTTP ${response.status} ${safeEndpoint}`, {
           method,
           status: response.status,
         });
@@ -3759,7 +3817,7 @@ async function secureRequest(
 
         if (attempt === retries) {
           console.error("API request failed after retries:", error);
-          recordAdminError("fetch", `Request failed: ${endpoint}`, {
+          recordAdminError("fetch", `Request failed: ${safeEndpoint}`, {
             method,
             message: error?.message || "Unknown error",
           });
@@ -4008,6 +4066,12 @@ async function checkLogin(email, password) {
       storedAttempts.timestamp =
         storedAttempts.count === 1 ? Date.now() : storedAttempts.timestamp;
       sessionStorage.setItem("login_attempts", JSON.stringify(storedAttempts));
+      return false;
+    }
+
+    if (!isSessionTokenUsable(authResult.session)) {
+      clearSession();
+      showNotification("Invalid session returned. Please try logging in again.", "error");
       return false;
     }
 
@@ -6563,9 +6627,10 @@ function setupEventListeners() {
   if (addAdminForm) {
     addAdminForm.addEventListener("submit", async function (e) {
       e.preventDefault();
-      const userId = document.getElementById("admin-user-id").value.trim();
+      const rawUserId = document.getElementById("admin-user-id").value.trim();
+      const userId = rawUserId.replace(/\u0000/g, "");
 
-      if (!userId) {
+      if (!userId || !isUuidLike(userId)) {
         showNotification("Please enter a valid Auth User ID.", "error");
         return;
       }
@@ -6754,7 +6819,8 @@ function setupEventListeners() {
             markPublicContentCacheDirty();
             const contentVersion = await ensureContentVersionAfterWrite(
               baselineVersion,
-              "all"
+              "all",
+              true
             );
 
             await Promise.all([

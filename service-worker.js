@@ -1,4 +1,4 @@
-const SW_VERSION = "v17";
+const SW_VERSION = "v18";
 const CACHE_PREFIX = "toke-bakes";
 const CACHE_NAMES = {
   precache: `${CACHE_PREFIX}-precache-${SW_VERSION}`,
@@ -30,6 +30,7 @@ const PRECACHE_URLS = [
   "privacy.html",
   "terms-of-use.html",
   "manifest.json",
+  "manifest.json?v=2",
   "styles/style.css",
   "styles/theme-christmas.css",
   "styles/theme-halloween.css",
@@ -54,6 +55,8 @@ const PRECACHE_URLS = [
   "images/favicon.webp",
   "images/icon-192.png",
   "images/icon-512.png",
+  "images/icon-192-v2.png",
+  "images/icon-512-v2.png",
 ];
 
 const inFlightFetches = new Map();
@@ -746,14 +749,14 @@ async function routeRequest(request, event) {
       );
     }
 
-    // Unversioned images can go stale if the origin reuses the same URL.
-    // Prefer network-first with cache fallback to keep visuals fresh.
-    return networkFirst(
+    // Unversioned images should still render instantly across SPA navigation.
+    // Serve from cache immediately and refresh in the background.
+    return staleWhileRevalidate(
       request,
       {
         cacheName: CACHE_NAMES.images,
-        timeoutMs: 16000,
-        fetchOptions: { cache: "no-store" },
+        timeoutMs: 20000,
+        fetchOptions: { cache: "no-cache" },
         allowOpaque: true,
       },
       event

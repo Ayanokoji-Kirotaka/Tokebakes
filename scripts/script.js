@@ -410,6 +410,69 @@ let inFlightMenuOptionRequest = null;
 let renderedMenuItemLookup = new Map();
 let renderedFeaturedItemLookup = new Map();
 let renderedSpecialItemLookup = new Map();
+const MAX_WARMED_IMAGE_ENTRIES = 120;
+const warmedImageSources = new Set();
+const renderedSignaturesByContext = new Map();
+
+function warmImageInBackground(src, priority = "auto") {
+  const normalizedSrc = toSafeString(src);
+  if (!normalizedSrc || warmedImageSources.has(normalizedSrc)) return;
+  if (warmedImageSources.size >= MAX_WARMED_IMAGE_ENTRIES) {
+    warmedImageSources.clear();
+  }
+  warmedImageSources.add(normalizedSrc);
+
+  try {
+    const img = new Image();
+    img.decoding = "async";
+    if (priority === "high") {
+      img.loading = "eager";
+      img.fetchPriority = "high";
+    } else {
+      img.fetchPriority = "auto";
+    }
+    img.src = normalizedSrc;
+    if (typeof img.decode === "function") {
+      img.decode().catch(() => {});
+    }
+  } catch {}
+}
+
+function warmImagesFromItems(items = [], limit = 10) {
+  const maxCount = Math.max(0, Math.trunc(limit));
+  toArray(items)
+    .slice(0, maxCount)
+    .forEach((item) => {
+      const src = toSafeString(item?.image || item?.image_url || item?.src);
+      if (src) {
+        warmImageInBackground(src);
+      }
+    });
+}
+
+function buildItemsRenderSignature(items = []) {
+  return toArray(items)
+    .map((item) => {
+      const id = normalizeItemId(item?.id);
+      const updated = toSafeString(item?.updated_at || item?.created_at || "");
+      const image = toSafeString(item?.image || item?.image_url || "");
+      const title = toSafeString(item?.title || "");
+      const price = toMoney(item?.price, 0);
+      const active = parseBoolean(item?.is_active ?? item?.is_available, true) ? 1 : 0;
+      return `${id}|${updated}|${image}|${title}|${price}|${active}`;
+    })
+    .join("||");
+}
+
+function shouldSkipRenderForSignature(container, context, signature) {
+  const key = `${context}:${container?.id || "container"}`;
+  const previous = renderedSignaturesByContext.get(key) || "";
+  if (previous === signature && container?.querySelector(".product-card")) {
+    return true;
+  }
+  renderedSignaturesByContext.set(key, signature);
+  return false;
+}
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = SUPABASE_FETCH_TIMEOUT_MS) {
   if (typeof AbortController === "undefined") {
@@ -1897,7 +1960,7 @@ function showConfigError() {
 }
 
 function formatNairaValue(value) {
-  return `₦${formatPrice(Math.max(0, toMoney(value, 0)))}`;
+  return `NGN ${formatPrice(Math.max(0, toMoney(value, 0)))}`;
 }
 
 function getComputedDiscount(originalPrice, price) {
@@ -2067,16 +2130,25 @@ function renderProductCards(container, items, context) {
 
 function renderFeaturedItems(container, items) {
   const safeItems = normalizeFeaturedItems(items).filter(isFeaturedActive);
+  const signature = buildItemsRenderSignature(safeItems);
+  if (shouldSkipRenderForSignature(container, "featured", signature)) {
+    return;
+  }
   renderedFeaturedItemLookup = new Map();
   safeItems.forEach((item) => {
     const itemId = normalizeItemId(item.id);
     if (itemId) renderedFeaturedItemLookup.set(itemId, item);
   });
   renderProductCards(container, safeItems, "featured");
+  warmImagesFromItems(safeItems, 8);
 }
 
 function renderMenuItems(container, items) {
   const safeItems = normalizeMenuItems(items).filter(isMenuItemAvailable);
+  const signature = buildItemsRenderSignature(safeItems);
+  if (shouldSkipRenderForSignature(container, "menu", signature)) {
+    return;
+  }
   renderedMenuItemLookup = new Map();
   safeItems.forEach((item) => {
     const itemId = normalizeItemId(item.id);
@@ -2085,16 +2157,22 @@ function renderMenuItems(container, items) {
     }
   });
   renderProductCards(container, safeItems, "menu");
+  warmImagesFromItems(safeItems, 14);
 }
 
 function renderSpecialItems(container, items) {
   const safeItems = normalizeSpecialItems(items).filter(isSpecialItemActive);
+  const signature = buildItemsRenderSignature(safeItems);
+  if (shouldSkipRenderForSignature(container, "specials", signature)) {
+    return;
+  }
   renderedSpecialItemLookup = new Map();
   safeItems.forEach((item) => {
     const itemId = normalizeItemId(item.id);
     if (itemId) renderedSpecialItemLookup.set(itemId, item);
   });
   renderProductCards(container, safeItems, "specials");
+  warmImagesFromItems(safeItems, 12);
 }
 
 // ================== ORIGINAL TOKE BAKES CODE ==================
@@ -5371,6 +5449,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   debugLog("Initializing Toke Bakes with Enhanced Sync...");
 
   ensureContentCacheVersion();
+  warmImageInBackground("images/logo.webp", "high");
+  document
+    .querySelectorAll("img.logo-sm, img.hero-logo, #loader img")
+    .forEach((img) => {
+      if (img?.src) {
+        warmImageInBackground(img.src, "high");
+      }
+    });
+  window.addEventListener("carousel:ready", () => {
+    document
+      .querySelectorAll(".hero-carousel img.slide-image")
+      .forEach((img, index) => {
+        if (img?.src) {
+          warmImageInBackground(img.src, index === 0 ? "high" : "auto");
+        }
+      });
+  });
   ensureChatWidgetScriptLoaded();
   trackCurrentPageView(true);
 

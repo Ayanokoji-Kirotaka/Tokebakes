@@ -110,7 +110,13 @@
         height: 120px;
       }
     </style>
+    <link rel="stylesheet" href="styles/style.css" id="base-stylesheet" />
     <link rel="preload" href="images/logo.webp" as="image" fetchpriority="high" />
+    <link rel="prefetch" href="images/christmas-logo.webp" as="image" />
+    <link rel="prefetch" href="images/halloween-logo.webp" as="image" />
+    <link rel="prefetch" href="images/independence-day-logo.webp" as="image" />
+    <link rel="prefetch" href="images/ramadan-logo.webp" as="image" />
+    <link rel="prefetch" href="images/valantine-logo.webp" as="image" />
     <meta
       name="twitter:title"
       content="Toke Bakes | Artisan Cakes, Cupcakes and Pastries"
@@ -204,7 +210,7 @@
           preloadStyle = document.createElement("style");
           preloadStyle.id = "theme-preload-style";
           preloadStyle.textContent =
-            "html.theme-loading body > :not(#loader){visibility:hidden!important;}";
+            "html.theme-loading body > :not(#loader):not(#sync-status-indicator){visibility:hidden!important;}";
           document.head.appendChild(preloadStyle);
         }
         document.documentElement.classList.add("theme-loading");
@@ -259,7 +265,7 @@
         document.head.appendChild(link);
         setTimeout(() => {
           finalizeThemeReady();
-        }, 5000);
+        }, 3200);
       })();
     </script>
     <script>
@@ -286,9 +292,9 @@
         } catch {}
       })();
     </script>
-    <link rel="manifest" href="manifest.json" />
+    <link rel="manifest" href="manifest.json?v=2" />
     <meta name="theme-color" content="#e67a00" />
-    <link rel="apple-touch-icon" href="images/icon-192.png" />
+    <link rel="apple-touch-icon" href="images/icon-192-v2.png" />
     <link rel="icon" href="images/favicon.webp" type="image/webp" />
     <link
       rel="preload"
@@ -509,6 +515,23 @@
 
     <script src="scripts/carousel.js" defer></script>
     <script src="scripts/spa-manager.js" defer></script>
+    <script>
+      (function hardFailSafeLoaderExit() {
+        const loader = document.getElementById("loader");
+        if (!loader) return;
+        const forceHide = () => {
+          if (loader.style.display === "none") return;
+          loader.classList.add("fade-out");
+          loader.style.opacity = "0";
+          loader.style.pointerEvents = "none";
+          setTimeout(() => {
+            loader.style.display = "none";
+            loader.classList.remove("fade-out");
+          }, 380);
+        };
+        setTimeout(forceHide, 10000);
+      })();
+    </script>
     <script src="scripts/script.js" defer></script>
     <script src="scripts/sw-register.js" defer></script>
   </body>
