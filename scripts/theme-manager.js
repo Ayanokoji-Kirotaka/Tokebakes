@@ -824,6 +824,20 @@ const ThemeManager = {
       updated_at: new Date().toISOString(),
     };
 
+    const updateByThemeUrl = `${deactivateUrl}?theme_name=eq.${encodeURIComponent(
+      themeName
+    )}`;
+    const updateByCssUrl = `${deactivateUrl}?css_file=eq.${encodeURIComponent(
+      cssFile
+    )}`;
+
+    const doPatch = async (url) =>
+      fetch(url, {
+        method: "PATCH",
+        headers: { ...baseHeaders, Prefer: "return=representation" },
+        body: JSON.stringify(upsertBody),
+      });
+
     const upsertUrl = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?on_conflict=theme_name`;
     const doUpsert = async () =>
       fetch(upsertUrl, {
@@ -835,28 +849,32 @@ const ThemeManager = {
         body: JSON.stringify(upsertBody),
       });
 
-    let resp = await doUpsert();
-
-    // If unique constraint (409) still happens, hard-reset actives then retry once.
-    if (resp.status === 409) {
-      const retryDeactivateResponse = await fetch(
-        `${deactivateUrl}?is_active=eq.true`,
-        {
-          method: "PATCH",
-          headers: { ...baseHeaders, Prefer: "return=representation" },
-          body: JSON.stringify({ is_active: false }),
-        }
-      );
-      if (!retryDeactivateResponse.ok) {
-        throw new Error(
-          `Theme retry deactivate failed (${retryDeactivateResponse.status})`
-        );
-      }
-      resp = await doUpsert();
+    let resp = await doPatch(updateByThemeUrl);
+    let payload = null;
+    if (resp.ok) {
+      payload = await resp.json().catch(() => null);
+    } else if (resp.status !== 409) {
+      throw new Error(`Theme update failed (${resp.status})`);
     }
 
-    if (!resp.ok) {
-      throw new Error(`Theme upsert failed (${resp.status})`);
+    if (!payload || (Array.isArray(payload) && payload.length === 0)) {
+      resp = await doPatch(updateByCssUrl);
+      if (resp.ok) {
+        payload = await resp.json().catch(() => null);
+      } else if (resp.status !== 409) {
+        throw new Error(`Theme update failed (${resp.status})`);
+      }
+    }
+
+    if (!payload || (Array.isArray(payload) && payload.length === 0)) {
+      resp = await doUpsert();
+      if (!resp.ok && resp.status === 409) {
+        resp = await doPatch(updateByCssUrl);
+      }
+      if (!resp.ok) {
+        throw new Error(`Theme upsert failed (${resp.status})`);
+      }
+      payload = await resp.json().catch(() => null);
     }
 
     const nowTs = Date.now();

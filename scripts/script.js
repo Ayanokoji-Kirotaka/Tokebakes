@@ -2916,6 +2916,7 @@ function showNotification(message, type = "success") {
   };
   const getLoaderLogo = () => {
     return (
+      normalizeAssetPath(window.__tbInitialLoaderLogo) ||
       resolveStoredThemeLogo() ||
       normalizeAssetPath(window.ThemeManager?.currentLogo) ||
       "images/logo.webp"

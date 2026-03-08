@@ -687,6 +687,10 @@ async function runAdminAction({
   }
 }
 
+if (typeof window !== "undefined") {
+  window.runAdminAction = runAdminAction;
+}
+
 function requestAdminDynamicCacheClear() {
   if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
     return;

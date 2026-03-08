@@ -199,6 +199,12 @@
         const savedThemeRaw = lsGet("toke_bakes_global_theme_css") || lsGet("toke_bakes_css_theme") || "styles/style.css";
         const savedTheme = fixLegacyThemePath(savedThemeRaw);
         const themeVersion = lsGet("toke_bakes_global_theme_updated_at") || lsGet("toke_bakes_theme_last_update") || "";
+        const savedLogoRaw =
+          lsGet("toke_bakes_global_theme_logo") ||
+          lsGet("toke_bakes_theme_logo") ||
+          "images/logo.webp";
+        const savedLogo = normalizeAssetPath(savedLogoRaw) || "images/logo.webp";
+        window.__tbInitialLoaderLogo = savedLogo;
 
         if (savedThemeRaw !== savedTheme) {
           lsSet("toke_bakes_css_theme", savedTheme);
