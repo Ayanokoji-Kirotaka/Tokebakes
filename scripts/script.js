@@ -2903,7 +2903,25 @@ function showNotification(message, type = "success") {
   if (!loader) return;
 
   const loaderImage = loader.querySelector("img");
-  const DEFAULT_LOADER_LOGO = "images/logo.webp";
+  const resolveStoredThemeLogo = () => {
+    try {
+      const saved =
+        localStorage.getItem("toke_bakes_global_theme_logo") ||
+        localStorage.getItem("toke_bakes_theme_logo") ||
+        "";
+      return normalizeAssetPath(saved);
+    } catch {
+      return "";
+    }
+  };
+  const getLoaderLogo = () => {
+    return (
+      resolveStoredThemeLogo() ||
+      normalizeAssetPath(window.ThemeManager?.currentLogo) ||
+      "images/logo.webp"
+    );
+  };
+  let DEFAULT_LOADER_LOGO = getLoaderLogo();
   const MIN_VISIBLE_MS = 650;
   const MAX_VISIBLE_MS = 7000;
   const LOGO_READY_TIMEOUT_MS = 1800;
@@ -2963,11 +2981,13 @@ function showNotification(message, type = "success") {
 
     const fallbackToDefaultLogo = () => {
       const current = (loaderImage.getAttribute("src") || "").trim();
+      DEFAULT_LOADER_LOGO = getLoaderLogo();
       if (current === DEFAULT_LOADER_LOGO) return;
       loaderImage.setAttribute("src", DEFAULT_LOADER_LOGO);
     };
 
     const currentSrc = (loaderImage.getAttribute("src") || "").trim();
+    DEFAULT_LOADER_LOGO = getLoaderLogo();
     if (!currentSrc) {
       loaderImage.setAttribute("src", DEFAULT_LOADER_LOGO);
     }

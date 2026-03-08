@@ -452,8 +452,35 @@ const ThemeManager = {
         themeFile,
         card.dataset.themeLogo || this.getLogoForTheme(themeFile)
       );
+      const themeName = this.getThemeName(themeFile);
       themeDebugLog("Admin theme activation (strict):", themeFile);
-      await this.activateThemeGlobally(themeFile, logoFile);
+
+      const runActivation = async (progress) => {
+        if (progress && typeof setAdminCrudProgress === "function") {
+          setAdminCrudProgress(18, `Activating ${themeName}...`);
+        }
+        const ok = await this.activateThemeGlobally(themeFile, logoFile);
+        if (progress) {
+          if (ok) {
+            progress.complete(`${themeName} applied`);
+          } else {
+            progress.fail("Theme activation failed");
+          }
+        }
+        return ok;
+      };
+
+      if (typeof window.runAdminAction === "function") {
+        await window.runAdminAction({
+          actionKey: "theme-activate",
+          controls: [btn].filter(Boolean),
+          progressTitle: `Applying ${themeName}`,
+          progressText: "Updating theme across devices...",
+          task: runActivation,
+        });
+      } else {
+        await runActivation();
+      }
     });
   },
 
@@ -797,7 +824,7 @@ const ThemeManager = {
       updated_at: new Date().toISOString(),
     };
 
-    const upsertUrl = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes`;
+    const upsertUrl = `${SUPABASE_CONFIG.URL}/rest/v1/website_themes?on_conflict=theme_name`;
     const doUpsert = async () =>
       fetch(upsertUrl, {
         method: "POST",
