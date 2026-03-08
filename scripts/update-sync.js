@@ -89,7 +89,6 @@
       return "menu";
     }
 
-    if (value === "gallery") return "specials";
     if (value === "site" || value === "settings") return "all";
 
     if (

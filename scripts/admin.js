@@ -1,4 +1,4 @@
-﻿/* ================== admin.js ================== */
+/* ================== admin.js ================== */
 /* Toke Bakes Admin Panel - MODERN CONFIRMATION DIALOG VERSION */
 /* UPDATED WITH CAROUSEL FUNCTIONALITY */
 
@@ -168,24 +168,19 @@ function getExistingImageUrlForItem(itemType, id) {
 const STORAGE_BUCKETS = {
   featured: "featured-items",
   menu: "menu-items",
-  gallery: "specials",
+  specials: "specials",
   carousel: "hero-carousel",
 };
 
 const STORAGE_LIMITS_KB = {
   featured: 2000,
   menu: 2000,
-  gallery: 5000,
+  specials: 5000,
   carousel: 5000,
 };
 
-const ITEM_TYPES = ["featured", "menu", "gallery", "carousel"];
-const DISPLAY_ORDER_MANAGED_TYPES = new Set([
-  "featured",
-  "menu",
-  "gallery",
-  "carousel",
-]);
+const ITEM_TYPES = ["featured", "menu", "specials", "carousel"];
+const DISPLAY_ORDER_MANAGED_TYPES = new Set(["featured", "menu", "specials", "carousel"]);
 const itemStateCache = ITEM_TYPES.reduce((acc, type) => {
   acc[type] = new Map();
   return acc;
@@ -273,9 +268,6 @@ function normalizeChangeType(raw) {
     value === "options"
   ) {
     return "menu";
-  }
-  if (value === "gallery") {
-    return "specials";
   }
   if (["menu", "featured", "specials", "carousel", "theme", "all"].includes(value)) {
     return value;
@@ -919,7 +911,7 @@ function getEndpointForType(itemType) {
   const endpoints = {
     featured: API_ENDPOINTS.FEATURED,
     menu: API_ENDPOINTS.MENU,
-    gallery: SPECIALS_ENDPOINT,
+    specials: SPECIALS_ENDPOINT,
     carousel: API_ENDPOINTS.CAROUSEL,
   };
   return endpoints[itemType] || null;
@@ -929,7 +921,7 @@ function getBucketForType(itemType) {
   const buckets = {
     featured: STORAGE_BUCKETS.featured,
     menu: STORAGE_BUCKETS.menu,
-    gallery: STORAGE_BUCKETS.gallery,
+    specials: STORAGE_BUCKETS.specials,
     carousel: STORAGE_BUCKETS.carousel,
   };
   return buckets[itemType] || null;
@@ -1785,7 +1777,7 @@ class ModernConfirmationDialog {
       let itemType = "Item";
       if (itemDetails.type === "featured") itemType = "Featured Item";
       if (itemDetails.type === "menu") itemType = "Menu Item";
-      if (itemDetails.type === "gallery") itemType = "Special";
+      if (itemDetails.type === "specials") itemType = "Special";
       if (itemDetails.type === "carousel") itemType = "Carousel Image"; // Added
 
       titleEl.textContent = `Delete ${itemType}`;
@@ -1999,7 +1991,7 @@ function getAdminListContainer(itemType) {
   const selectors = {
     featured: "featured-items-list",
     menu: "menu-items-list",
-    gallery: "specials-admin-grid",
+    specials: "specials-admin-grid",
     carousel: "carousel-admin-grid",
   };
   return document.getElementById(selectors[itemType] || "");
@@ -2052,7 +2044,7 @@ function buildSpecialsAdminCardElement(item = {}, badgeOrder = null) {
   if (!id) return null;
   const imgSrc = resolveImageForDisplay(
     resolveRecordImage(item),
-    ADMIN_IMAGE_PLACEHOLDERS.gallery
+    ADMIN_IMAGE_PLACEHOLDERS.specials
   );
   const title = toSafeString(item.title || item.alt, "Special Offer");
   const price = toMoney(item.price, 0);
@@ -2070,13 +2062,13 @@ function buildSpecialsAdminCardElement(item = {}, badgeOrder = null) {
   const escapedId = escapeHtml(id);
 
   const card = document.createElement("div");
-  card.className = "gallery-admin-item";
+  card.className = "specials-admin-item";
   card.dataset.id = id;
   card.dataset.order = String(orderValue);
   card.innerHTML = `
     <img src="${imgSrc}" alt="${escapeHtml(title)}" loading="lazy" decoding="async"
-         onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.gallery}';">
-    <div class="gallery-admin-overlay">
+         onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.specials}';">
+    <div class="specials-admin-overlay">
       <p><strong>Title:</strong> ${escapeHtml(title)}</p>
       <p><strong>Price:</strong> \u20A6${escapeHtml(formatPrice(price))}${
         Number.isFinite(originalPrice) && originalPrice > price
@@ -2089,7 +2081,7 @@ function buildSpecialsAdminCardElement(item = {}, badgeOrder = null) {
         isSpecialBadge ? " | Badge On" : ""
       }</p>
       <p><strong>Order:</strong> <span data-order-label="true">${badgeValue}</span></p>
-      <div class="gallery-admin-actions">
+      <div class="specials-admin-actions">
         <button class="btn-edit" onclick="editSpecialsItem('${escapedId}')">
           <i class="fas fa-edit"></i> Edit
         </button>
@@ -2146,7 +2138,7 @@ function buildCarouselAdminCardElement(item = {}, badgeOrder = null) {
 
 function buildAdminCardElement(itemType, item, badgeOrder = null) {
   if (itemType === "menu") return buildMenuAdminCardElement(item);
-  if (itemType === "gallery") return buildSpecialsAdminCardElement(item, badgeOrder);
+  if (itemType === "specials") return buildSpecialsAdminCardElement(item, badgeOrder);
   if (itemType === "carousel") return buildCarouselAdminCardElement(item, badgeOrder);
   return null;
 }
@@ -2351,7 +2343,7 @@ function removeItemFromUi(itemType, id) {
   const selectorMap = {
     featured: `#featured-items-list [data-id="${id}"]`,
     menu: `#menu-items-list [data-id="${id}"]`,
-    gallery: `#specials-admin-grid [data-id="${id}"]`,
+    specials: `#specials-admin-grid [data-id="${id}"]`,
     carousel: `#carousel-admin-grid [data-id="${id}"]`,
   };
   const target = document.querySelector(selectorMap[itemType]);
@@ -2375,7 +2367,7 @@ function refreshListAfterDelete(itemType, forceRefresh = false) {
         populateFeaturedMenuSelect(null, forceRefresh),
       ]);
     }
-    if (itemType === "gallery") {
+    if (itemType === "specials") {
       return renderSpecialsItems(forceRefresh);
     }
     if (itemType === "carousel") {
@@ -2399,7 +2391,7 @@ async function deleteItemByType(id, itemType) {
   const labels = {
     featured: "Featured item",
     menu: "Menu item",
-    gallery: "Special",
+    specials: "Special",
     carousel: "Carousel image",
   };
   const label = labels[itemType] || "Item";
@@ -2486,7 +2478,7 @@ async function deleteMenuItem(id) {
 }
 
 async function deleteSpecialsItem(id) {
-  return deleteItemByType(id, "gallery");
+  return deleteItemByType(id, "specials");
 }
 
 /* ================== CAROUSEL DELETE FUNCTION ================== */
@@ -2615,7 +2607,7 @@ const ADMIN_IMAGE_PLACEHOLDERS = {
   featured:
     "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkZlYXR1cmVkPC90ZXh0Pjwvc3ZnPg==",
   menu: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1lbnUgSXRlbTwvdGV4dD48L3N2Zz4=",
-  gallery:
+  specials:
     "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdhbGxlcnk8L3RleHQ+PC9zdmc+=",
   carousel:
     "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkNhcm91c2VsPC90ZXh0Pjwvc3ZnPg==",
@@ -4387,7 +4379,7 @@ async function saveItem(itemType, formData, options = {}) {
     const endpoints = {
       featured: API_ENDPOINTS.FEATURED,
       menu: API_ENDPOINTS.MENU,
-      gallery: SPECIALS_ENDPOINT,
+      specials: SPECIALS_ENDPOINT,
       carousel: API_ENDPOINTS.CAROUSEL, // Added
     };
 
@@ -4400,7 +4392,7 @@ async function saveItem(itemType, formData, options = {}) {
     const requiredFields = {
       featured: ["title", "description", "image"],
       menu: ["title", "description", "price", "image"],
-      gallery: ["title", "image", "price"],
+      specials: ["title", "image", "price"],
       carousel: ["alt", "image"], // Added
     };
 
@@ -5554,7 +5546,7 @@ async function openMenuOptionsManager(menuItemId) {
   await loadMenuOptionGroups(true);
 }
 
-// Specials Management (backed by the existing gallery endpoint/table)
+// Specials Management
 async function renderSpecialsItems(forceRefresh = false) {
   const container = document.getElementById("specials-admin-grid");
   if (!container) return;
@@ -5566,7 +5558,7 @@ async function renderSpecialsItems(forceRefresh = false) {
       : [];
 
     if (sortedItems.length === 0) {
-      cacheItemsForType("gallery", []);
+      cacheItemsForType("specials", []);
       container.innerHTML = `
         <div class="empty-state">
           <i class="fas fa-tag"></i>
@@ -5583,7 +5575,7 @@ async function renderSpecialsItems(forceRefresh = false) {
     });
 
     if (!fragment.childNodes.length) {
-      cacheItemsForType("gallery", []);
+      cacheItemsForType("specials", []);
       container.innerHTML = `
         <div class="empty-state">
           <i class="fas fa-tag"></i>
@@ -5594,11 +5586,11 @@ async function renderSpecialsItems(forceRefresh = false) {
     }
 
     container.replaceChildren(fragment);
-    refreshOrderBadges("gallery");
-    cacheItemsForType("gallery", sortedItems);
+    refreshOrderBadges("specials");
+    cacheItemsForType("specials", sortedItems);
   } catch (error) {
     console.error(`Error rendering specials:`, error);
-    cacheItemsForType("gallery", []);
+    cacheItemsForType("specials", []);
     container.innerHTML = `
       <div class="empty-state error">
         <i class="fas fa-exclamation-triangle"></i>
@@ -5642,7 +5634,7 @@ async function saveSpecialsItem(e) {
   const imageFile = imageField?.files?.[0] || null;
   const itemId = toSafeString(idField?.value).trim();
   const isUpdate = Boolean(itemId);
-  const existingUrl = isUpdate ? getExistingImageUrlForItem("gallery", itemId) : "";
+  const existingUrl = isUpdate ? getExistingImageUrlForItem("specials", itemId) : "";
 
   if (!title || title.length > 120) {
     setFieldError(titleField, "Title must be 1-120 characters.");
@@ -5686,7 +5678,7 @@ async function saveSpecialsItem(e) {
         throw new Error("Display order must be 0 or higher");
       }
 
-      const upload = await processImageUpload("gallery", imageFile, existingUrl);
+      const upload = await processImageUpload("specials", imageFile, existingUrl);
 
       const formData = {
         title,
@@ -5709,7 +5701,7 @@ async function saveSpecialsItem(e) {
         formData.file_size = upload.meta.size || null;
       }
 
-      const result = await saveItem("gallery", formData, { itemId });
+      const result = await saveItem("specials", formData, { itemId });
 
       if (!result.success) {
         await rollbackUploadedImage(upload);
@@ -5725,16 +5717,14 @@ async function saveSpecialsItem(e) {
       };
       const savedId = toSafeString(savedRecord.id).trim();
       const normalization = await normalizeDisplayOrderConflicts(
-        "gallery",
+        "specials",
         savedId,
         displayOrder
       );
 
       await finalizeImageReplacement(upload);
       resetSpecialsForm();
-      const updatedInPlace = savedId
-        ? upsertItemCardInUi("gallery", savedRecord)
-        : false;
+      const updatedInPlace = savedId ? upsertItemCardInUi("specials", savedRecord) : false;
       if (normalization.normalized || !updatedInPlace) {
         await withPreservedScroll(() => renderSpecialsItems(true));
       }
@@ -5748,7 +5738,7 @@ async function saveSpecialsItem(e) {
       } else {
         showNotification("Special saved successfully!", "success");
       }
-      dataSync.notifyDataChanged(result.operation, "gallery", {
+      dataSync.notifyDataChanged(result.operation, "specials", {
         contentVersion: result.contentVersion,
       });
       return result;
@@ -5766,7 +5756,7 @@ async function saveSpecialsItem(e) {
 
 async function editSpecialsItem(id) {
   try {
-    const item = await getEditableItem("gallery", id);
+    const item = await getEditableItem("specials", id);
 
     if (!item) {
       showNotification("Special not found", "error");
@@ -5816,8 +5806,8 @@ async function editSpecialsItem(id) {
     cacheTempImageForItem(item.id, resolveRecordImage(item));
 
     const preview = document.getElementById("specials-image-preview");
-    preview.innerHTML = `<img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.gallery)}" alt="Current image" style="max-height: 150px; border-radius: 8px;" decoding="async"
-      onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.gallery}';">`;
+    preview.innerHTML = `<img src="${resolveImageForDisplay(resolveRecordImage(item), ADMIN_IMAGE_PLACEHOLDERS.specials)}" alt="Current image" style="max-height: 150px; border-radius: 8px;" decoding="async"
+      onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.specials}';">`;
 
     document.getElementById("specials-form-container").style.display = "block";
     isEditing = true;
@@ -6093,14 +6083,14 @@ async function editCarouselItem(id) {
 
 async function updateStorageUsage() {
   try {
-    const [featured, menu, gallery, carousel] = await Promise.all([
+    const [featured, menu, specials, carousel] = await Promise.all([
       loadDataFromSupabase(API_ENDPOINTS.FEATURED),
       loadDataFromSupabase(API_ENDPOINTS.MENU),
       loadDataFromSupabase(SPECIALS_ENDPOINT),
       loadDataFromSupabase(API_ENDPOINTS.CAROUSEL), // Added carousel
     ]);
 
-    const allItems = [...featured, ...menu, ...gallery, ...carousel];
+    const allItems = [...featured, ...menu, ...specials, ...carousel];
     let totalBytes = 0;
     let hasUnknown = false;
 
@@ -6147,7 +6137,7 @@ async function updateStorageUsage() {
 
 async function updateItemCounts() {
   try {
-    const [featured, menu, gallery, carousel] = await Promise.all([
+    const [featured, menu, specials, carousel] = await Promise.all([
       loadDataFromSupabase(API_ENDPOINTS.FEATURED),
       loadDataFromSupabase(API_ENDPOINTS.MENU),
       loadDataFromSupabase(SPECIALS_ENDPOINT),
@@ -6161,7 +6151,7 @@ async function updateItemCounts() {
 
     if (countFeatured) countFeatured.textContent = featured.length || 0;
     if (countMenu) countMenu.textContent = menu.length || 0;
-    if (countSpecials) countSpecials.textContent = gallery.length || 0;
+    if (countSpecials) countSpecials.textContent = specials.length || 0;
     if (countCarousel) countCarousel.textContent = carousel.length || 0;
 
     await updateStorageUsage();
@@ -6636,11 +6626,32 @@ function setupEventListeners() {
         document.getElementById("admin-email").value
       );
       const password = document.getElementById("admin-password").value;
+      const submitBtn = loginForm.querySelector("button[type='submit']");
 
       debugLog("Attempting login with:", email);
 
-      const isValid = await checkLogin(email, password);
-      if (isValid) {
+      const actionResult = await runAdminAction({
+        actionKey: `login-${email || "attempt"}`,
+        controls: submitBtn ? [submitBtn] : [],
+        progressTitle: "Logging in...",
+        progressText: "Checking credentials...",
+        task: async (progress) => {
+          const isValid = await checkLogin(email, password);
+          if (!isValid) {
+            progress.fail("Login failed");
+            return false;
+          }
+          progress.complete("Login successful");
+          return true;
+        },
+      });
+
+      if (!actionResult.ok || !actionResult.value) {
+        showNotification("Invalid email or password", "error");
+        return;
+      }
+
+      if (actionResult.value) {
         currentAdmin = email;
         document.getElementById("login-screen").style.display = "none";
         document.getElementById("admin-dashboard").style.display = "block";
@@ -6650,8 +6661,6 @@ function setupEventListeners() {
         await loadAdminTabData("featured", true);
         await updateItemCounts();
         preloadAdminTabsInBackground();
-      } else {
-        showNotification("Invalid email or password", "error");
       }
     });
   }
@@ -6836,7 +6845,7 @@ function setupEventListeners() {
         formContainer.scrollIntoView({ behavior: "smooth" });
       }
       Promise.resolve(
-        prefillNextDisplayOrder("gallery", "specials-display-order")
+        prefillNextDisplayOrder("specials", "specials-display-order")
       ).catch(() => {});
     });
   }

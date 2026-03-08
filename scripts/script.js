@@ -72,10 +72,20 @@ class WebsiteAutoUpdater {
       this.unsubscribeSync = this.syncBus.registerRefreshHandler(
         async (payload) => {
           const nextType = this.normalizeChangeType(payload?.changeType || "all");
-          await this.refreshAffectedContent(nextType, payload || {});
+          const incomingVersion = Number(payload?.contentVersion || 0) || 0;
+          const previousVersion = Number(this.lastAppliedVersion || 0) || 0;
+          const shouldNotifyUser =
+            previousVersion > 0 &&
+            incomingVersion > previousVersion &&
+            (document.visibilityState || "visible") === "visible";
+
+          await this.refreshAffectedContent(nextType, {
+            ...(payload || {}),
+            _notifyUser: shouldNotifyUser,
+          });
           this.lastAppliedVersion = Math.max(
             this.lastAppliedVersion,
-            Number(payload?.contentVersion || 0) || 0
+            incomingVersion
           );
           this.lastAppliedChangeType = nextType;
           return true;
@@ -117,9 +127,6 @@ class WebsiteAutoUpdater {
       value === "option"
     ) {
       return "menu";
-    }
-    if (value === "gallery") {
-      return "specials";
     }
     if (
       value === "menu" ||
@@ -231,7 +238,7 @@ class WebsiteAutoUpdater {
       debugLog("Cart refreshed after content sync");
     }
 
-    if (typeof showNotification === "function") {
+    if (payload?._notifyUser && typeof showNotification === "function") {
       showNotification("New updates are now live.", "info");
     }
   }
@@ -358,13 +365,13 @@ function getAdaptiveImageHints(index = 0) {
   }
 
   const profile = getRuntimePerfProfile();
-  let eagerCount = 2;
+  let eagerCount = 4;
 
   if (profile.networkTier === "standard" || profile.lowEndDevice) {
-    eagerCount = 1;
+    eagerCount = 2;
   }
   if (profile.networkTier === "slow" || profile.saveData) {
-    eagerCount = 0;
+    eagerCount = 1;
   }
 
   const eager = index < eagerCount;
@@ -467,6 +474,50 @@ function warmImagesFromItems(items = [], limit = 10) {
         warmImageInBackground(src);
       }
     });
+}
+
+function readCachedDatasetRows(cacheKey) {
+  const key = toSafeString(cacheKey);
+  if (!key) return [];
+
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+    if (Array.isArray(parsed?.data)) return parsed.data;
+  } catch {}
+
+  return [];
+}
+
+function warmCachedContentImages() {
+  const warmed = new Set();
+  const pushWarm = (src, priority = "auto") => {
+    const normalizedSrc = toSafeString(src);
+    if (!normalizedSrc || warmed.has(normalizedSrc)) return;
+    warmed.add(normalizedSrc);
+    warmImageInBackground(normalizedSrc, priority);
+  };
+
+  const warmFromRows = (rows, limit = 8, highPriorityCount = 1) => {
+    toArray(rows)
+      .slice(0, Math.max(0, Math.trunc(limit)))
+      .forEach((row, index) => {
+        const src = toSafeString(row?.image || row?.image_url || row?.src);
+        if (!src) return;
+        pushWarm(src, index < highPriorityCount ? "high" : "auto");
+      });
+  };
+
+  const featuredKey = `${API_ENDPOINTS.FEATURED}_data`;
+  const specialsEndpoint = window.API_ENDPOINTS?.SPECIALS || API_ENDPOINTS.SPECIALS || "";
+  const specialsKey = specialsEndpoint ? `${specialsEndpoint}_data` : SPECIALS_CACHE_KEY;
+
+  warmFromRows(readCachedDatasetRows(featuredKey), 8, 2);
+  warmFromRows(readCachedDatasetRows(MENU_CACHE_KEY), 14, 3);
+  warmFromRows(readCachedDatasetRows(specialsKey), 12, 2);
+  warmFromRows(readCachedDatasetRows("hero_carousel_data"), 5, 2);
 }
 
 function buildItemsRenderSignature(items = []) {
@@ -787,7 +838,7 @@ function normalizeOriginalPrice(value) {
   return toMoney(parsed, 0);
 }
 
-function normalizeBadgeIcon(value, fallback = "🔥") {
+function normalizeBadgeIcon(value, fallback = "fire") {
   const normalized = toSafeString(value, fallback).slice(0, 8);
   return normalized || fallback;
 }
@@ -810,7 +861,7 @@ function normalizeFeaturedItem(rawItem = {}, index = 0) {
     ),
     is_special: parseBoolean(rawItem.is_special, false),
     badge_right_text: toSafeString(rawItem.badge_right_text, "SPECIAL"),
-    badge_right_icon: normalizeBadgeIcon(rawItem.badge_right_icon, "🔥"),
+    badge_right_icon: normalizeBadgeIcon(rawItem.badge_right_icon, "fire"),
     cta_label: toSafeString(rawItem.cta_label, "Order Now"),
     display_order: parseNumber(rawItem.display_order, index),
     is_active: parseBoolean(rawItem.is_active ?? rawItem.active, true),
@@ -838,7 +889,7 @@ function normalizeMenuItem(rawItem = {}, index = 0) {
     ),
     is_special: parseBoolean(rawItem.is_special, false),
     badge_right_text: toSafeString(rawItem.badge_right_text, "SPECIAL"),
-    badge_right_icon: normalizeBadgeIcon(rawItem.badge_right_icon, "🔥"),
+    badge_right_icon: normalizeBadgeIcon(rawItem.badge_right_icon, "fire"),
     cta_label: toSafeString(rawItem.cta_label, "Preferences"),
     is_available: parseBoolean(
       rawItem.is_available ?? rawItem.available ?? rawItem.is_active,
@@ -883,7 +934,7 @@ function normalizeSpecialItem(rawItem = {}, index = 0) {
     ),
     is_special: parseBoolean(rawItem.is_special, false),
     badge_right_text: toSafeString(rawItem.badge_right_text, "SPECIAL"),
-    badge_right_icon: normalizeBadgeIcon(rawItem.badge_right_icon, "🔥"),
+    badge_right_icon: normalizeBadgeIcon(rawItem.badge_right_icon, "fire"),
     cta_label: toSafeString(rawItem.cta_label, "Order Now"),
     is_active: parseBoolean(rawItem.is_active ?? rawItem.active, true),
     width: Number.isFinite(width) && width > 0 ? Math.round(width) : null,
@@ -1904,7 +1955,7 @@ function clearContentCaches() {
 
 function clearContentCachesForChange(changeType = "all") {
   const rawType = toSafeString(changeType, "all").toLowerCase();
-  const type = rawType === "gallery" ? "specials" : rawType;
+  const type = rawType;
   if (type === "all") {
     clearContentCaches();
     return;
@@ -2014,7 +2065,6 @@ function renderProductCard(item, context = "specials", index = 0) {
   const discount = getComputedDiscount(item?.original_price, item?.price);
   const showRightBadge = parseBoolean(item?.is_special, false);
   const badgeText = toSafeString(item?.badge_right_text, "SPECIAL").toUpperCase();
-  const badgeIcon = normalizeBadgeIcon(item?.badge_right_icon, "🔥");
   const ctaLabel = resolveCardCtaLabel(item, contextKey);
   const titleText = toSafeString(item?.title, "Product");
   const descriptionText = toSafeString(item?.description, "");
@@ -2031,6 +2081,7 @@ function renderProductCard(item, context = "specials", index = 0) {
       ? "featured-card"
       : "specials-card";
   card.className = `product-card ${contextClass}`;
+  card.style.setProperty("--tb-stagger-index", String(index % 8));
   card.dataset.ripple = "true";
   card.dataset.context = contextKey;
   card.dataset.id = itemId;
@@ -2078,7 +2129,10 @@ function renderProductCard(item, context = "specials", index = 0) {
     rightBadge.className = "product-chip product-chip--special";
     const iconSpan = document.createElement("span");
     iconSpan.className = "product-chip-icon";
-    iconSpan.textContent = badgeIcon;
+    const icon = document.createElement("i");
+    icon.className = "fa-solid fa-fire";
+    icon.setAttribute("aria-hidden", "true");
+    iconSpan.appendChild(icon);
     const textSpan = document.createElement("span");
     textSpan.className = "product-chip-text";
     textSpan.textContent = badgeText;
@@ -2843,6 +2897,7 @@ function showNotification(message, type = "success") {
   const DEFAULT_LOADER_LOGO = "images/logo.webp";
   const MIN_VISIBLE_MS = 650;
   const MAX_VISIBLE_MS = 7000;
+  const LOGO_READY_TIMEOUT_MS = 1800;
   let hidden = false;
   let hardTimeout = null;
   let revealCheckRaf = 0;
@@ -2850,6 +2905,7 @@ function showNotification(message, type = "success") {
   let revealFallbackAttempts = 0;
   const MAX_REVEAL_FALLBACK_ATTEMPTS = 4;
   let shownAt = 0;
+  let logoReady = !loaderImage;
 
   const isHomePage = () => {
     const page = window.location.pathname.split("/").pop() || "";
@@ -2866,6 +2922,7 @@ function showNotification(message, type = "success") {
   };
   const isInitialContentReady = () => window.__tbInitialContentReady === true;
   const canRevealLoader = () => {
+    if (!logoReady) return false;
     if (!isThemeReady()) return false;
     if (!isInitialContentReady()) return false;
     if (document.querySelector(".hero-carousel") && !isCarouselReady()) {
@@ -2875,24 +2932,87 @@ function showNotification(message, type = "success") {
   };
 
   const ensureLoaderImageSource = () => {
-    if (!loaderImage) return;
+    if (!loaderImage) {
+      logoReady = true;
+      return Promise.resolve();
+    }
 
-    const fallbackToDefaultLogo = () => {
-      if (loaderImage.getAttribute("src") === DEFAULT_LOADER_LOGO) return;
-      loaderImage.setAttribute("src", DEFAULT_LOADER_LOGO);
+    logoReady = false;
+    loader.setAttribute("data-logo-ready", "0");
+    loaderImage.style.opacity = "0";
+    loaderImage.style.transition = "opacity 180ms ease";
+
+    const markReady = () => {
+      if (logoReady) return;
+      logoReady = true;
+      loader.setAttribute("data-logo-ready", "1");
+      loaderImage.style.opacity = "1";
+      try {
+        queueRevealCheck(0);
+      } catch {}
     };
 
-    loaderImage.addEventListener("error", fallbackToDefaultLogo);
+    const fallbackToDefaultLogo = () => {
+      const current = (loaderImage.getAttribute("src") || "").trim();
+      if (current === DEFAULT_LOADER_LOGO) return;
+      loaderImage.setAttribute("src", DEFAULT_LOADER_LOGO);
+    };
 
     const currentSrc = (loaderImage.getAttribute("src") || "").trim();
     if (!currentSrc) {
       loaderImage.setAttribute("src", DEFAULT_LOADER_LOGO);
-      return;
     }
 
     if (loaderImage.complete && loaderImage.naturalWidth === 0) {
       fallbackToDefaultLogo();
     }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      let timeoutId = null;
+
+      const cleanup = () => {
+        loaderImage.removeEventListener("load", onLoad);
+        loaderImage.removeEventListener("error", onError);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+      };
+
+      const finalize = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        markReady();
+        resolve();
+      };
+
+      const onLoad = () => {
+        if (typeof loaderImage.decode === "function") {
+          loaderImage.decode().catch(() => {}).finally(finalize);
+          return;
+        }
+        finalize();
+      };
+
+      const onError = () => {
+        const current = (loaderImage.getAttribute("src") || "").trim();
+        if (current && current !== DEFAULT_LOADER_LOGO) {
+          fallbackToDefaultLogo();
+          return;
+        }
+        finalize();
+      };
+
+      loaderImage.addEventListener("load", onLoad);
+      loaderImage.addEventListener("error", onError);
+      timeoutId = setTimeout(finalize, LOGO_READY_TIMEOUT_MS);
+
+      if (loaderImage.complete && loaderImage.naturalWidth > 0) {
+        onLoad();
+      }
+    });
   };
 
   const clearRevealCheck = () => {
@@ -5141,6 +5261,152 @@ function setupHomeScrollReveal() {
 function refreshHomeEnhancements() {
   ensureHomeEnhancementStyles();
   setupHomeScrollReveal();
+  markCursorGlowTargets();
+  initCursorGlow();
+}
+
+let cursorGlowBound = false;
+let cursorGlowRaf = 0;
+let cursorGlowPendingEvent = null;
+let cursorGlowActiveEl = null;
+let cursorGlowLastX = -1;
+let cursorGlowLastY = -1;
+
+function shouldEnableCursorGlow() {
+  if (!window.matchMedia) return false;
+  const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  return Boolean(finePointer && !reducedMotion);
+}
+
+function markCursorGlowTargets(root = document) {
+  if (!root || typeof root.querySelectorAll !== "function") return;
+  const selectors = [
+    ".product-card",
+    ".btn",
+    ".btn-secondary",
+    ".btn-admin",
+    ".cart-link",
+    ".theme-toggle",
+    ".carousel-nav button",
+  ];
+
+  root.querySelectorAll(selectors.join(",")).forEach((el) => {
+    if (!(el instanceof HTMLElement)) return;
+    el.setAttribute("data-cursor-glow", "1");
+  });
+}
+
+function initCursorGlow() {
+  if (cursorGlowBound) return;
+  cursorGlowBound = true;
+  if (!shouldEnableCursorGlow()) return;
+
+  const applyGlow = () => {
+    cursorGlowRaf = 0;
+    const event = cursorGlowPendingEvent;
+    if (!event || !(event.target instanceof Element)) return;
+
+    const target = event.target.closest("[data-cursor-glow='1']");
+    if (!(target instanceof HTMLElement)) return;
+
+    const rect = target.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    const x = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+    const y = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+
+    if (target === cursorGlowActiveEl && rx === cursorGlowLastX && ry === cursorGlowLastY) {
+      return;
+    }
+
+    cursorGlowActiveEl = target;
+    cursorGlowLastX = rx;
+    cursorGlowLastY = ry;
+    target.style.setProperty("--tb-cursor-x", `${rx}px`);
+    target.style.setProperty("--tb-cursor-y", `${ry}px`);
+  };
+
+  window.addEventListener(
+    "pointermove",
+    (event) => {
+      cursorGlowPendingEvent = event;
+      if (!cursorGlowRaf) {
+        cursorGlowRaf = requestAnimationFrame(applyGlow);
+      }
+    },
+    { passive: true }
+  );
+}
+
+let homeScrollEffectRaf = 0;
+let homeScrollEffectBound = false;
+let homeScrollLastY = -1;
+
+function resetHomeScrollEffect() {
+  const hero = document.querySelector(".hero");
+  const content = document.querySelector(".hero-content");
+  if (hero) {
+    hero.style.removeProperty("--tb-hero-scroll-shift");
+  }
+  if (content) {
+    content.style.removeProperty("transform");
+    content.style.removeProperty("opacity");
+  }
+  homeScrollLastY = -1;
+}
+
+function applyHomeScrollEffect() {
+  homeScrollEffectRaf = 0;
+
+  if (!isHomePageRuntime()) {
+    resetHomeScrollEffect();
+    return;
+  }
+
+  const prefersReducedMotion =
+    window.matchMedia &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (prefersReducedMotion || shouldUseConservativePerfMode()) {
+    resetHomeScrollEffect();
+    return;
+  }
+
+  const hero = document.querySelector(".hero");
+  const content = document.querySelector(".hero-content");
+  if (!hero || !content) return;
+
+  const y = Math.max(0, window.scrollY || window.pageYOffset || 0);
+  if (Math.abs(y - homeScrollLastY) < 1) return;
+  homeScrollLastY = y;
+
+  const clamped = Math.min(y, 320);
+  const contentShift = Math.round(clamped * 0.11);
+  const overlayShift = Math.round(clamped * 0.06);
+  const opacity = Math.max(0.74, 1 - clamped / 900);
+
+  content.style.transform = `translate3d(0, calc(-1vh - ${contentShift}px), 0)`;
+  content.style.opacity = opacity.toFixed(3);
+  hero.style.setProperty("--tb-hero-scroll-shift", `${overlayShift}px`);
+}
+
+function scheduleHomeScrollEffect() {
+  if (homeScrollEffectRaf) return;
+  homeScrollEffectRaf = requestAnimationFrame(applyHomeScrollEffect);
+}
+
+function initHomeScrollEffect() {
+  if (!homeScrollEffectBound) {
+    homeScrollEffectBound = true;
+    window.addEventListener("scroll", scheduleHomeScrollEffect, { passive: true });
+    window.addEventListener("resize", scheduleHomeScrollEffect, { passive: true });
+    window.addEventListener("orientationchange", scheduleHomeScrollEffect, {
+      passive: true,
+    });
+  }
+  scheduleHomeScrollEffect();
 }
 
 let postRenderEnhanceRaf = 0;
@@ -5163,6 +5429,7 @@ function schedulePostRenderEnhancements() {
   postRenderEnhanceRaf = requestAnimationFrame(() => {
     postRenderEnhanceRaf = 0;
     refreshHomeEnhancements();
+    initHomeScrollEffect();
 
     const run3D = () => {
       postRenderEnhanceIdle = null;
@@ -5229,6 +5496,17 @@ function isIosSafari() {
   return isSafari && !excluded;
 }
 
+function isMobileInstallSurface() {
+  const compactViewport =
+    window.matchMedia && window.matchMedia("(max-width: 1024px)").matches;
+  const coarsePointer =
+    window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  const mobileUa = /android|iphone|ipad|ipod|mobile/.test(
+    String(window.navigator?.userAgent || "").toLowerCase()
+  );
+  return Boolean(compactViewport || coarsePointer || mobileUa);
+}
+
 function ensurePwaInstallUi() {
   let button = document.getElementById("tb-pwa-install-btn");
   if (!button) {
@@ -5288,6 +5566,12 @@ function openIosInstallPanel() {
 }
 
 function refreshPwaInstallUi() {
+  if (!isMobileInstallSurface()) {
+    setPwaInstallButtonVisible(false);
+    closeIosInstallPanel();
+    return;
+  }
+
   const standalone = isStandaloneMode();
   if (standalone) {
     setPwaInstallButtonVisible(false);
@@ -5476,6 +5760,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         warmImageInBackground(img.src, "high");
       }
     });
+  warmCachedContentImages();
   window.addEventListener("carousel:ready", () => {
     document
       .querySelectorAll(".hero-carousel img.slide-image")

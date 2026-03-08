@@ -1,4 +1,4 @@
-const SW_VERSION = "v19";
+const SW_VERSION = "v20";
 const CACHE_PREFIX = "toke-bakes";
 const CACHE_NAMES = {
   precache: `${CACHE_PREFIX}-precache-${SW_VERSION}`,
@@ -735,22 +735,23 @@ async function routeRequest(request, event) {
   }
 
   if (isImageRequest(request, url)) {
-    // Versioned image URLs are immutable per version token, so cache-first is safe and fast.
-    if (isVersionedAssetRequest(url)) {
+    // Keep same-origin images cache-first for instant rendering across navigation.
+    // Caches are cleared via CLEAR_DYNAMIC_CACHES when admin content/version changes.
+    const sameOriginImage = url.origin === self.location.origin;
+    if (sameOriginImage || isVersionedAssetRequest(url)) {
       return cacheFirst(
         request,
         {
           cacheName: CACHE_NAMES.images,
           timeoutMs: 22000,
-          fetchOptions: { cache: "no-cache" },
+          fetchOptions: { cache: "force-cache" },
           allowOpaque: true,
         },
         event
       );
     }
 
-    // Unversioned images should still render instantly across SPA navigation.
-    // Serve from cache immediately and refresh in the background.
+    // Cross-origin images keep stale-while-revalidate behavior.
     return staleWhileRevalidate(
       request,
       {

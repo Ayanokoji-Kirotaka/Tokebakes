@@ -58,6 +58,14 @@
         background: rgba(230, 122, 0, 0.08);
         box-shadow: 0 0 32px rgba(230, 122, 0, 0.38);
         animation: loaderPulse 1.6s ease-in-out infinite;
+        opacity: 1;
+        transition: opacity 180ms ease;
+      }
+      #loader[data-logo-ready="0"] img {
+        opacity: 0;
+      }
+      #loader[data-logo-ready="1"] img {
+        opacity: 1;
       }
       #loader.fade-out {
         transition: opacity 0.35s ease;
@@ -318,7 +326,7 @@
     <script src="scripts/theme-manager.js" defer></script>
   </head>
   <body>
-    <div id="loader">
+    <div id="loader" data-logo-ready="0">
       <img
         src="images/logo.webp"
         alt="Toke Bakes"
@@ -507,7 +515,7 @@
           <a href="terms-of-use.html" class="legal-link">Terms of Use</a>
         </div>
         <p class="copyright">
-          &copy; <span id="current-year">2024</span> Toke Bakes. All rights
+          &copy; <span id="current-year" data-auto-year>2026</span> Toke Bakes. All rights
           reserved.
         </p>
       </div>

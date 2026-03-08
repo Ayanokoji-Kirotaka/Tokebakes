@@ -540,7 +540,6 @@ const ThemeManager = {
     ) {
       return "menu";
     }
-    if (value === "gallery") return "specials";
     if (
       value === "all" ||
       value === "menu" ||

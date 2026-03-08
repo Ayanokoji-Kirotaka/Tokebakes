@@ -1398,14 +1398,14 @@ header {
   }
 }
 
-/* ================== GALLERY SECTION ================== */
-.gallery-section {
+/* ================== Specials Section ================== */
+.specials-section {
   padding: 4rem 1.25rem;
   text-align: center;
   position: relative;
 }
 
-.gallery-section::before {
+.specials-section::before {
   content: "";
   position: absolute;
   top: 0;
@@ -1422,7 +1422,7 @@ header {
   );
 }
 
-#gallery-container {
+#specials-container {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1.75rem;
@@ -1430,7 +1430,7 @@ header {
   perspective: 800px;
 }
 
-#gallery-container img {
+#specials-container img {
   width: 100%;
   aspect-ratio: 4/3;
   object-fit: cover;
@@ -1449,47 +1449,47 @@ header {
   overflow: hidden;
   transform-origin: center center;
   filter: saturate(0.95) brightness(1);
-  animation: galleryImageAppear 0.8s ease-out backwards;
+  animation: specialsImageAppear 0.8s ease-out backwards;
   will-change: transform, filter;
   box-shadow: 0 2px 8px rgba(198, 40, 40, 0.1);
 }
 
-#gallery-container img {
-  animation: galleryImageAppear 0.8s ease-out backwards;
+#specials-container img {
+  animation: specialsImageAppear 0.8s ease-out backwards;
 }
 
-#gallery-container img:nth-child(10n + 1) {
+#specials-container img:nth-child(10n + 1) {
   animation-delay: 0.1s;
 }
-#gallery-container img:nth-child(10n + 2) {
+#specials-container img:nth-child(10n + 2) {
   animation-delay: 0.2s;
 }
-#gallery-container img:nth-child(10n + 3) {
+#specials-container img:nth-child(10n + 3) {
   animation-delay: 0.3s;
 }
-#gallery-container img:nth-child(10n + 4) {
+#specials-container img:nth-child(10n + 4) {
   animation-delay: 0.4s;
 }
-#gallery-container img:nth-child(10n + 5) {
+#specials-container img:nth-child(10n + 5) {
   animation-delay: 0.5s;
 }
-#gallery-container img:nth-child(10n + 6) {
+#specials-container img:nth-child(10n + 6) {
   animation-delay: 0.6s;
 }
-#gallery-container img:nth-child(10n + 7) {
+#specials-container img:nth-child(10n + 7) {
   animation-delay: 0.7s;
 }
-#gallery-container img:nth-child(10n + 8) {
+#specials-container img:nth-child(10n + 8) {
   animation-delay: 0.8s;
 }
-#gallery-container img:nth-child(10n + 9) {
+#specials-container img:nth-child(10n + 9) {
   animation-delay: 0.9s;
 }
-#gallery-container img:nth-child(10n + 10) {
+#specials-container img:nth-child(10n + 10) {
   animation-delay: 1s;
 }
 
-@keyframes galleryImageAppear {
+@keyframes specialsImageAppear {
   from {
     opacity: 0;
     transform: translateY(25px) scale(0.95);
@@ -1502,7 +1502,7 @@ header {
   }
 }
 
-#gallery-container img::before {
+#specials-container img::before {
   content: "";
   position: absolute;
   top: 0;
@@ -1522,11 +1522,11 @@ header {
   pointer-events: none;
 }
 
-#gallery-container img:hover::before {
+#specials-container img:hover::before {
   left: 100%;
 }
 
-#gallery-container img:hover {
+#specials-container img:hover {
   transform: scale(1.06) translateY(-8px) rotateX(4deg) rotateY(2deg);
   filter: saturate(1.15) brightness(1.08) contrast(1.05);
   z-index: 50;
@@ -1535,14 +1535,14 @@ header {
     0 3px 10px rgba(46, 125, 50, 0.1);
 }
 
-#gallery-container img:active {
+#specials-container img:active {
   transform: scale(0.97);
   transition: transform 0.15s ease;
   box-shadow: 0 4px 12px rgba(198, 40, 40, 0.2),
     0 2px 6px rgba(46, 125, 50, 0.1);
 }
 
-[data-theme="dark"] #gallery-container img {
+[data-theme="dark"] #specials-container img {
   background: linear-gradient(135deg, #1a0a0a, #2a1a1a);
   background-image: linear-gradient(
       rgba(26, 46, 26, 0.9),
@@ -1554,7 +1554,7 @@ header {
   box-shadow: none;
 }
 
-[data-theme="dark"] #gallery-container img::after {
+[data-theme="dark"] #specials-container img::after {
   content: "";
   position: absolute;
   top: 0;
@@ -1576,7 +1576,7 @@ header {
   transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-[data-theme="dark"] #gallery-container img:hover {
+[data-theme="dark"] #specials-container img:hover {
   transform: scale(1.08) translateY(-12px) rotateX(8deg) rotateY(4deg);
   filter: saturate(1.25) brightness(1.2) contrast(1.15);
   z-index: 100;
@@ -1585,7 +1585,7 @@ header {
     0 0 25px rgba(46, 125, 50, 0.1), 0 10px 20px rgba(46, 125, 50, 0.08);
 }
 
-[data-theme="dark"] #gallery-container img:hover::after {
+[data-theme="dark"] #specials-container img:hover::after {
   opacity: 0.9;
   background: radial-gradient(
       circle at 85% 85%,
@@ -1607,7 +1607,7 @@ header {
     );
 }
 
-[data-theme="dark"] #gallery-container img:active {
+[data-theme="dark"] #specials-container img:active {
   transform: scale(0.96) translateY(-4px);
   transition: transform 0.12s ease;
   box-shadow: 0 0 0 2px rgba(198, 40, 40, 0.35),
@@ -1615,7 +1615,7 @@ header {
     0 8px 18px rgba(46, 125, 50, 0.1);
 }
 
-[data-theme="dark"] #gallery-container img:active::after {
+[data-theme="dark"] #specials-container img:active::after {
   background: radial-gradient(
     circle at 85% 85%,
     rgba(198, 40, 40, 0.45) 0%,
@@ -1624,7 +1624,7 @@ header {
   );
 }
 
-[data-theme="dark"] #gallery-container img::before {
+[data-theme="dark"] #specials-container img::before {
   background: linear-gradient(
     90deg,
     transparent,
@@ -1636,7 +1636,7 @@ header {
 }
 
 @supports not (aspect-ratio: 4/3) {
-  #gallery-container img {
+  #specials-container img {
     height: 300px;
   }
 }
@@ -3186,14 +3186,14 @@ html {
   box-shadow: 0 4px 12px rgba(198, 40, 40, 0.15);
 }
 
-.gallery-admin-grid {
+.specials-admin-grid {
   display: grid;
   gap: 2.5rem;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   padding: 0.5rem;
 }
 
-.gallery-admin-item {
+.specials-admin-item {
   position: relative;
   border-radius: 20px;
   overflow: hidden;
@@ -3207,13 +3207,13 @@ html {
   background-clip: padding-box, border-box;
 }
 
-.gallery-admin-item:hover {
+.specials-admin-item:hover {
   transform: translateY(-12px) scale(1.02);
   box-shadow: 0 20px 40px rgba(198, 40, 40, 0.15),
     0 15px 30px rgba(46, 125, 50, 0.12);
 }
 
-.gallery-admin-item img {
+.specials-admin-item img {
   width: 100%;
   height: 280px;
   object-fit: contain;
@@ -3225,7 +3225,7 @@ html {
   transform: scale(0.98);
 }
 
-.gallery-admin-item:hover img {
+.specials-admin-item:hover img {
   transform: scale(1.05);
   filter: saturate(1.05) brightness(1.05);
   animation: gentleFloat 3s ease-in-out infinite;
@@ -3241,7 +3241,7 @@ html {
   }
 }
 
-.gallery-admin-overlay {
+.specials-admin-overlay {
   position: absolute;
   bottom: 0;
   left: 0;
@@ -3260,19 +3260,19 @@ html {
   text-align: center;
 }
 
-.gallery-admin-item:hover .gallery-admin-overlay {
+.specials-admin-item:hover .specials-admin-overlay {
   transform: translateY(0);
   padding-bottom: 2.5rem;
 }
 
-.gallery-admin-actions {
+.specials-admin-actions {
   display: flex;
   gap: 1rem;
   margin-top: 1.5rem;
   justify-content: center;
 }
 
-.gallery-admin-actions button {
+.specials-admin-actions button {
   padding: 0.75rem 1.5rem;
   border-radius: 12px;
   border: 2px solid rgba(255, 255, 255, 0.3);
@@ -3287,7 +3287,7 @@ html {
   backdrop-filter: blur(10px);
 }
 
-.gallery-admin-actions button:hover {
+.specials-admin-actions button:hover {
   background: rgba(255, 255, 255, 0.25);
   transform: translateY(-3px);
   border-color: rgba(255, 255, 255, 0.5);
@@ -4224,12 +4224,12 @@ body.spa-navigating .navbar button {
     transform: scale(1.09);
   }
 
-  #gallery-container {
+  #specials-container {
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 2rem;
   }
 
-  #gallery-container img:hover {
+  #specials-container img:hover {
     transform: scale(1.06) translateY(-10px) rotateX(4deg) rotateY(1.5deg);
   }
 }
@@ -4237,7 +4237,7 @@ body.spa-navigating .navbar button {
 /* Tablets and Small Desktops (769px to 1024px) */
 @media (min-width: 769px) and (max-width: 1024px) {
   .items-list,
-  .gallery-admin-grid {
+  .specials-admin-grid {
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   }
 
@@ -4443,22 +4443,22 @@ body.spa-navigating .navbar button {
     filter: brightness(1.05);
   }
 
-  .gallery-section {
+  .specials-section {
     padding: 3rem 1rem;
   }
 
-  #gallery-container {
+  #specials-container {
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1rem;
     perspective: 400px;
   }
 
-  #gallery-container img {
+  #specials-container img {
     transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
     animation-duration: 0.5s;
   }
 
-  #gallery-container img:hover {
+  #specials-container img:hover {
     transform: scale(1.03) translateY(-4px);
     box-shadow: 0 15px 30px rgba(198, 40, 40, 0.15),
       0 8px 20px rgba(46, 125, 50, 0.1);
@@ -4513,8 +4513,8 @@ body.spa-navigating .navbar button {
     transform: translateY(-2px) scale(1.02);
   }
 
-  #gallery-container,
-  .gallery-grid {
+  #specials-container,
+  .specials-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
@@ -4559,7 +4559,7 @@ body.spa-navigating .navbar button {
   }
 
   .items-list,
-  .gallery-admin-grid,
+  .specials-admin-grid,
   .settings-grid {
     grid-template-columns: 1fr;
   }
@@ -4595,11 +4595,11 @@ body.spa-navigating .navbar button {
     width: 100%;
   }
 
-  .gallery-admin-actions {
+  .specials-admin-actions {
     flex-direction: column;
   }
 
-  .gallery-admin-actions button {
+  .specials-admin-actions button {
     width: 100%;
   }
 
@@ -4659,8 +4659,8 @@ body.spa-navigating .navbar button {
   .featured-grid,
   #menu-container,
   .menu-grid,
-  #gallery-container,
-  .gallery-grid {
+  #specials-container,
+  .specials-grid {
     grid-template-columns: 1fr;
   }
 
@@ -4694,7 +4694,7 @@ body.spa-navigating .navbar button {
     margin: 0 1rem 1rem;
   }
 
-  #gallery-container {
+  #specials-container {
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   }
 
@@ -4900,17 +4900,17 @@ body.spa-navigating .navbar button {
     display: none;
   }
 
-  #gallery-container img {
+  #specials-container img {
     animation: none;
     transition: none;
   }
 
-  #gallery-container img:hover {
+  #specials-container img:hover {
     transform: none;
     filter: none;
   }
 
-  #gallery-container img::before {
+  #specials-container img::before {
     display: none;
   }
 
