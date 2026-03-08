@@ -104,6 +104,72 @@ function syncAutoYearBadges() {
     });
 }
 
+const adminSyncBadgeState = {
+  initialized: false,
+};
+
+function getAdminSyncBadge() {
+  return document.getElementById("admin-sync-badge");
+}
+
+function setAdminSyncBadge(state, detail = {}) {
+  const badge = getAdminSyncBadge();
+  if (!badge) return;
+
+  badge.classList.remove("is-syncing", "is-ok", "is-error");
+
+  if (state === "syncing") {
+    badge.classList.add("is-syncing");
+    badge.textContent = "Syncing...";
+    return;
+  }
+
+  if (state === "error") {
+    badge.classList.add("is-error");
+    badge.textContent = "Sync failed";
+    return;
+  }
+
+  const version =
+    Number(detail?.contentVersion) ||
+    Number(detail?.appliedVersion) ||
+    Number(detail?.version) ||
+    0;
+  badge.classList.add("is-ok");
+  badge.textContent = version > 0 ? `Up to date (v${version})` : "Sync: ready";
+}
+
+function initAdminSyncBadge() {
+  if (adminSyncBadgeState.initialized) return;
+  adminSyncBadgeState.initialized = true;
+
+  const badge = getAdminSyncBadge();
+  if (!badge) return;
+
+  if (window.TokeUpdateSync && typeof window.TokeUpdateSync.getStatus === "function") {
+    const status = window.TokeUpdateSync.getStatus();
+    if (status?.applying) {
+      setAdminSyncBadge("syncing", status);
+    } else {
+      setAdminSyncBadge("ok", status);
+    }
+  } else {
+    setAdminSyncBadge("ok", {});
+  }
+
+  window.addEventListener("tb:update-syncing", (event) => {
+    setAdminSyncBadge("syncing", event?.detail || {});
+  });
+
+  window.addEventListener("tb:update-applied", (event) => {
+    setAdminSyncBadge("ok", event?.detail || {});
+  });
+
+  window.addEventListener("tb:update-failed", () => {
+    setAdminSyncBadge("error", {});
+  });
+}
+
 if (typeof document !== "undefined") {
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", syncAutoYearBadges, {
@@ -6456,6 +6522,7 @@ async function initAdminPanel() {
 
   // Set current year
   syncAutoYearBadges();
+  initAdminSyncBadge();
 
   // Setup event listeners
   setupEventListeners();

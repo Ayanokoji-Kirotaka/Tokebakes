@@ -665,6 +665,17 @@
 
       this.applyInFlight = (async () => {
         try {
+          try {
+            window.dispatchEvent(
+              new CustomEvent("tb:update-syncing", {
+                detail: {
+                  contentVersion: normalizedVersion,
+                  changeType: normalizedChangeType,
+                  payload: applyPayload,
+                },
+              })
+            );
+          } catch {}
           if (this.shouldRenderIndicator()) {
             this.showIndicator("syncing");
           }

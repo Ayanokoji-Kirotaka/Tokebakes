@@ -212,6 +212,14 @@ class WebsiteAutoUpdater {
       await runContentRefresh(normalizedChangeType);
     }
 
+    if (
+      (normalizedChangeType === "theme" || normalizedChangeType === "all") &&
+      window.ThemeManager &&
+      typeof window.ThemeManager.checkForThemeUpdates === "function"
+    ) {
+      await window.ThemeManager.checkForThemeUpdates(true);
+    }
+
     if (shouldRefreshCarousel) {
       if (window.heroCarousel) {
         if (typeof window.heroCarousel.refresh === "function") {
@@ -2199,6 +2207,7 @@ function renderProductCards(container, items, context) {
     fragment.appendChild(card);
   });
   container.replaceChildren(fragment);
+  schedulePostRenderEnhancements();
 }
 
 function renderFeaturedItems(container, items) {
@@ -4921,7 +4930,7 @@ function initRipple(selector) {
       const rect = el.getBoundingClientRect();
       const ripple = document.createElement("span");
       ripple.className = "ripple-effect";
-      const size = Math.max(rect.width, rect.height) * 1.2;
+      const size = Math.max(rect.width, rect.height) * 1.4;
       ripple.style.width = ripple.style.height = size + "px";
       ripple.style.left = e.clientX - rect.left - size / 2 + "px";
       ripple.style.top = e.clientY - rect.top - size / 2 + "px";
@@ -4929,7 +4938,7 @@ function initRipple(selector) {
       el.style.position = el.style.position || "relative";
       el.style.overflow = "hidden";
       el.appendChild(ripple);
-      setTimeout(() => ripple.remove(), 600);
+      setTimeout(() => ripple.remove(), 1050);
     },
     { passive: true }
   );
@@ -4954,18 +4963,18 @@ function ensureModern3DStyles() {
       .specials-card.interactive-3d {
         --tilt-x: 0deg;
         --tilt-y: 0deg;
-        --lift-3d: -6px;
+        --lift-3d: -8px;
         transform-style: preserve-3d;
         will-change: transform, box-shadow, filter;
-        transition: transform 220ms cubic-bezier(0.22, 0.8, 0.22, 1),
-          box-shadow 220ms ease, filter 220ms ease;
+        transition: transform 380ms var(--ease-soft), box-shadow 320ms ease,
+          filter 320ms ease;
         backface-visibility: hidden;
       }
 
       .featured-card.interactive-3d,
       .product-card.interactive-3d,
       .specials-card.interactive-3d {
-        --lift-3d: -8px;
+        --lift-3d: -11px;
       }
 
       .feature.interactive-3d:hover,
@@ -4980,8 +4989,8 @@ function ensureModern3DStyles() {
       .specials-card.interactive-3d.is-interacting {
         transform: translateY(var(--lift-3d))
           rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
-        box-shadow: 0 20px 42px rgba(20, 14, 10, 0.2);
-        filter: saturate(1.04);
+        box-shadow: 0 26px 52px rgba(20, 14, 10, 0.24);
+        filter: saturate(1.06);
       }
     }
 
@@ -5124,7 +5133,7 @@ function ensureHomeEnhancementStyles() {
       opacity: 0;
       transform: translateY(18px);
       filter: blur(6px);
-      transition: opacity 700ms ease, transform 700ms cubic-bezier(0.2, 0.9, 0.3, 1), filter 700ms ease;
+      transition: opacity 860ms ease, transform 860ms cubic-bezier(0.2, 0.9, 0.3, 1), filter 860ms ease;
     }
     .reveal.is-visible {
       opacity: 1;
@@ -5197,7 +5206,10 @@ function isHomePageRuntime() {
 }
 
 function setupHomeScrollReveal() {
-  if (!isHomePageRuntime()) {
+  const hasRevealTargets = Boolean(
+    document.querySelector("#featured-container, #menu-container, #specials-container")
+  );
+  if (!hasRevealTargets) {
     if (homeRevealObserver) {
       homeRevealObserver.disconnect();
       homeRevealObserver = null;

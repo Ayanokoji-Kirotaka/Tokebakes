@@ -19,10 +19,11 @@
       }
       body.admin-root {
         margin: 0;
-        font-family: "Poppins", sans-serif;
+        font-family: "Manrope", "Segoe UI", Tahoma, sans-serif;
         background: #1b140f;
         color: #f5efe7;
         position: relative;
+        width: 100%;
       }
       html.admin-pre-init body.admin-root > * {
         visibility: hidden !important;
@@ -44,6 +45,8 @@
         display: flex;
         align-items: center;
         justify-content: center;
+        width: 100%;
+        flex: 1 1 100%;
         padding: 1.25rem;
       }
       #login-screen .admin-login-box {
@@ -517,6 +520,10 @@
                 >
               </li>
             </ul>
+
+            <div id="admin-sync-badge" class="admin-sync-badge" role="status" aria-live="polite">
+              Sync: ready
+            </div>
 
             <!-- Theme toggle -->
             <button

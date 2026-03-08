@@ -25,6 +25,8 @@ const ThemeManager = {
   spaHooksBound: false,
   themeSyncUnsubscribe: null,
   themeLoadingTimer: null,
+  themeAutoUpdateTimer: null,
+  themeVisibilityBound: false,
   systemModeMedia: null,
   systemModeHandler: null,
   themeAutoUpdateBound: false,
@@ -153,6 +155,24 @@ const ThemeManager = {
 
     // Ensure startup alignment with DB active theme.
     this.checkForThemeUpdates(true).catch(() => {});
+
+    if (!this.themeVisibilityBound && typeof document !== "undefined") {
+      this.themeVisibilityBound = true;
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) return;
+        this.checkForThemeUpdates(true).catch(() => {});
+      });
+      window.addEventListener("focus", () => {
+        this.checkForThemeUpdates(true).catch(() => {});
+      });
+    }
+
+    if (this.themeAutoUpdateTimer) {
+      clearInterval(this.themeAutoUpdateTimer);
+    }
+    this.themeAutoUpdateTimer = setInterval(() => {
+      this.checkForThemeUpdates(true).catch(() => {});
+    }, 45000);
   },
 
   async checkForThemeUpdates(force = false) {
