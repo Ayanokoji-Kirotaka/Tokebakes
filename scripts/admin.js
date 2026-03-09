@@ -3130,7 +3130,7 @@ async function compressImage(file, maxSizeKB = 300) {
           try {
             // 2. SMART DIMENSION CALCULATION FOR FOOD IMAGES
             const canvas = document.createElement("canvas");
-            const maxDimension = 1200; // Higher for food detail
+            const maxDimension = 1000; // Standardized for consistent sizing
 
             // Preserve aspect ratio with food-optimized sizing
             let width = img.width;

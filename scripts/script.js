@@ -5860,4 +5860,3 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   debugLog("Toke Bakes fully initialized");
 });
-
