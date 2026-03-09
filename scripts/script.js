@@ -1414,6 +1414,8 @@ async function loadFeaturedItems(forceReload = false, silentRefresh = false) {
 
   const shouldShowLoading = cachedData === null && !silentRefresh;
 
+  let loadingTimeout = null;
+
   // Only show loading if no cache
   if (shouldShowLoading) {
     setContainerLoading(container, true);
@@ -1423,6 +1425,20 @@ async function loadFeaturedItems(forceReload = false, silentRefresh = false) {
         <p>Loading featured creations...</p>
       </div>
     `;
+
+    // Show empty state after 5 seconds if data hasn't loaded
+    loadingTimeout = setTimeout(() => {
+      if (container.querySelector(".loading-message")) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <i class="fas fa-star"></i>
+            <p>No featured items yet. Check back soon!</p>
+            <p class="small">Admin can add items in the admin panel</p>
+          </div>
+        `;
+        setContainerLoading(container, false);
+      }
+    }, 5000);
   }
 
   try {
@@ -1434,6 +1450,9 @@ async function loadFeaturedItems(forceReload = false, silentRefresh = false) {
       { forceRefresh: forceReload }
       )
     );
+
+    // Clear loading timeout since data arrived
+    if (loadingTimeout) clearTimeout(loadingTimeout);
 
     // Cache successful response (even if empty) so stale content doesn't linger.
     try {
@@ -1453,11 +1472,16 @@ async function loadFeaturedItems(forceReload = false, silentRefresh = false) {
           <p class="small">Admin can add items in the admin panel</p>
         </div>
       `;
+      setContainerLoading(container, false);
       return;
     }
 
     renderFeaturedItems(container, items);
+    setContainerLoading(container, false);
   } catch (error) {
+    // Clear loading timeout on error
+    if (loadingTimeout) clearTimeout(loadingTimeout);
+
     console.error("Error loading featured items:", error);
 
     // If error but we have cached data, keep showing it (including empty-state).
@@ -1556,6 +1580,8 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
 
   const shouldShowLoading = cachedData === null && !silentRefresh;
 
+  let loadingTimeout = null;
+
   // Only show loading if no cache
   if (shouldShowLoading) {
     setContainerLoading(container, true);
@@ -1565,6 +1591,20 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
         <p>Loading menu items...</p>
       </div>
     `;
+
+    // Show empty state after 5 seconds if data hasn't loaded
+    loadingTimeout = setTimeout(() => {
+      if (container.querySelector(".loading-message")) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <i class="fas fa-utensils"></i>
+            <p>Our menu is being prepared.</p>
+            <p class="small">Delicious items coming soon!</p>
+          </div>
+        `;
+        setContainerLoading(container, false);
+      }
+    }, 5000);
   }
 
   try {
@@ -1574,6 +1614,9 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
       getMenuOptionMap(forceReload),
     ]);
     const allItems = normalizeMenuItems(menuItems);
+
+    // Clear loading timeout since data arrived
+    if (loadingTimeout) clearTimeout(loadingTimeout);
 
     // Update cache (even if empty) so stale content doesn't linger.
     cachedMenuItems = allItems;
@@ -1597,11 +1640,16 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
           <p class="small">Delicious items coming soon!</p>
         </div>
       `;
+      setContainerLoading(container, false);
       return;
     }
 
     renderMenuItems(container, items);
+    setContainerLoading(container, false);
   } catch (error) {
+    // Clear loading timeout on error
+    if (loadingTimeout) clearTimeout(loadingTimeout);
+
     console.error("Error loading menu items:", error);
 
     const fallback =
@@ -1708,6 +1756,8 @@ async function loadSpecialItems(forceReload = false, silentRefresh = false) {
 
   const shouldShowLoading = cachedData === null && !silentRefresh;
 
+  let loadingTimeout = null;
+
   // Only show loading if no cache
   if (shouldShowLoading) {
     setContainerLoading(container, true);
@@ -1717,6 +1767,20 @@ async function loadSpecialItems(forceReload = false, silentRefresh = false) {
         <p>Loading specials...</p>
       </div>
     `;
+
+    // Show empty state after 5 seconds if data hasn't loaded
+    loadingTimeout = setTimeout(() => {
+      if (container.querySelector(".loading-message")) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <i class="fas fa-tag"></i>
+            <p>No specials right now.</p>
+            <p class="small">Check back soon for fresh offers.</p>
+          </div>
+        `;
+        setContainerLoading(container, false);
+      }
+    }, 5000);
   }
 
   try {
@@ -1728,6 +1792,9 @@ async function loadSpecialItems(forceReload = false, silentRefresh = false) {
       { forceRefresh: forceReload }
       )
     ).filter(isSpecialItemActive);
+
+    // Clear loading timeout since data arrived
+    if (loadingTimeout) clearTimeout(loadingTimeout);
 
     // Cache successful response (even if empty) so stale content doesn't linger.
     try {
@@ -1745,11 +1812,16 @@ async function loadSpecialItems(forceReload = false, silentRefresh = false) {
           <p class="small">Check back soon for fresh offers.</p>
         </div>
       `;
+      setContainerLoading(container, false);
       return;
     }
 
     renderSpecialItems(container, items);
+    setContainerLoading(container, false);
   } catch (error) {
+    // Clear loading timeout on error
+    if (loadingTimeout) clearTimeout(loadingTimeout);
+
     console.error("Error loading specials:", error);
 
     // If error but we have cached data, keep showing it (including empty-state).
