@@ -223,29 +223,28 @@ class HeroCarousel {
     this.currentIndex = 0;
     this.runtimeProfile = getCarouselRuntimeProfile();
 
-    // Auto-play timers
-    this.autoPlayInterval = null;
-    this.autoPlayDelay = 2500;
-    this.autoPlayEnabled = true;
-    if (
-      this.runtimeProfile.prefersReducedMotion
-    ) {
-      this.autoPlayEnabled = false;
-    }
-    this.resumeTimeout = null;
-    this.resumeDelay = 3500;
-    this.pointerIdleResumeDelay = 3800;
-    this.pointerActivityThrottleMs =
-      this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.lowEndDevice
-        ? 240
-        : 160;
-    this.lastPointerActivityAt = 0;
-    this.isHovered = false;
-    this.preloadNeighborDepth =
-      this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.saveData
-        ? 0
-        : this.runtimeProfile.networkTier === "standard"
-          ? 1
+    // Auto-play timers 
+    this.autoPlayInterval = null; 
+    this.autoPlayDelay = 6000; 
+    this.autoPlayEnabled = true; 
+    if ( 
+      this.runtimeProfile.prefersReducedMotion 
+    ) { 
+      this.autoPlayDelay = Math.max(this.autoPlayDelay, 9000); 
+    } 
+    this.resumeTimeout = null; 
+    this.resumeDelay = 3500; 
+    this.pointerIdleResumeDelay = 3800; 
+    this.pointerActivityThrottleMs = 
+      this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.lowEndDevice 
+        ? 240 
+        : 160; 
+    this.lastPointerActivityAt = 0; 
+    this.preloadNeighborDepth = 
+      this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.saveData 
+        ? 0 
+        : this.runtimeProfile.networkTier === "standard" 
+          ? 1 
           : 2;
 
     // State management
@@ -1011,11 +1010,11 @@ class HeroCarousel {
     this.dotsContainer.addEventListener("click", this.boundHandlers.dotsClick);
 
     // Arrow navigation
-    if (this.navContainer) {
-      this.boundHandlers.navClick = (e) => {
-        e.stopPropagation();
-        const targetEl =
-          e.target instanceof Element ? e.target : e.target?.parentElement;
+    if (this.navContainer) { 
+      this.boundHandlers.navClick = (e) => { 
+        e.stopPropagation(); 
+        const targetEl = 
+          e.target instanceof Element ? e.target : e.target?.parentElement; 
         const prevBtn =
           targetEl && typeof targetEl.closest === "function"
             ? targetEl.closest(".carousel-prev")
@@ -1033,28 +1032,14 @@ class HeroCarousel {
 
         this.pauseAutoPlay();
       };
-      this.navContainer.addEventListener("click", this.boundHandlers.navClick);
-    }
+      this.navContainer.addEventListener("click", this.boundHandlers.navClick); 
+    } 
 
-    // Pause autoplay while hovered (desktop), then resume shortly on leave.
-    this.boundHandlers.mouseEnter = () => {
-      this.isHovered = true;
-      this.stopAutoPlay();
-      this.clearResumeTimer();
-    };
-    this.container.addEventListener("mouseenter", this.boundHandlers.mouseEnter);
-
-    this.boundHandlers.mouseLeave = () => {
-      this.isHovered = false;
-      this.scheduleAutoPlayResume(220);
-    };
-    this.container.addEventListener("mouseleave", this.boundHandlers.mouseLeave);
-
-    // While user is actively moving/clicking inside carousel, pause briefly then auto-resume.
-    this.boundHandlers.mouseMove = () => {
-      const now = Date.now();
-      if (now - this.lastPointerActivityAt < this.pointerActivityThrottleMs) return;
-      this.lastPointerActivityAt = now;
+    // While user is actively moving/clicking inside carousel, pause briefly then auto-resume. 
+    this.boundHandlers.mouseMove = () => { 
+      const now = Date.now(); 
+      if (now - this.lastPointerActivityAt < this.pointerActivityThrottleMs) return; 
+      this.lastPointerActivityAt = now; 
       this.pauseAutoPlay(this.pointerIdleResumeDelay);
     };
     this.container.addEventListener("mousemove", this.boundHandlers.mouseMove, {
@@ -1149,20 +1134,14 @@ class HeroCarousel {
     if (this.dotsContainer && this.boundHandlers.dotsClick) {
       this.dotsContainer.removeEventListener("click", this.boundHandlers.dotsClick);
     }
-    if (this.navContainer && this.boundHandlers.navClick) {
-      this.navContainer.removeEventListener("click", this.boundHandlers.navClick);
-    }
-    if (this.container && this.boundHandlers.mouseEnter) {
-      this.container.removeEventListener("mouseenter", this.boundHandlers.mouseEnter);
-    }
-    if (this.container && this.boundHandlers.mouseLeave) {
-      this.container.removeEventListener("mouseleave", this.boundHandlers.mouseLeave);
-    }
-    if (this.container && this.boundHandlers.mouseMove) {
-      this.container.removeEventListener("mousemove", this.boundHandlers.mouseMove);
-    }
-    if (this.container && this.boundHandlers.pointerDown) {
-      this.container.removeEventListener("pointerdown", this.boundHandlers.pointerDown);
+    if (this.navContainer && this.boundHandlers.navClick) { 
+      this.navContainer.removeEventListener("click", this.boundHandlers.navClick); 
+    } 
+    if (this.container && this.boundHandlers.mouseMove) { 
+      this.container.removeEventListener("mousemove", this.boundHandlers.mouseMove); 
+    } 
+    if (this.container && this.boundHandlers.pointerDown) { 
+      this.container.removeEventListener("pointerdown", this.boundHandlers.pointerDown); 
     }
     if (this.container && this.boundHandlers.touchStart) {
       this.container.removeEventListener("touchstart", this.boundHandlers.touchStart);

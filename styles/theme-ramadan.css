@@ -1,16 +1,58 @@
-﻿/* theme-ramadan.css - Minimal Theme */
+/* theme-ramadan.css - Variables only (imports base styles) */
 @import url("style.css");
 
+/* ================== LIGHT MODE ================== */
 :root {
-  --primary: #007bff;
-  --secondary: #6c757d;
-  --text: #212529;
-  --background: #ffffff;
+  --primary: #0b6b3a;
+  --primary-strong: #d4a017;
+  --primary-soft: rgba(11, 107, 58, 0.18);
+
+  --secondary: #0a3a2c;
+
+  --text: #1a2a22;
+  --text-light: #3b5246;
+
+  --background: #fdf7e8;
+  --surface: rgba(255, 255, 255, 0.88);
+  --surface-2: rgba(255, 250, 235, 0.95);
+  --surface-secondary: var(--surface-2);
+
+  --border: rgba(212, 160, 23, 0.24);
+  --border-strong: rgba(212, 160, 23, 0.38);
+  --border-subtle: rgba(212, 160, 23, 0.18);
+
+  --shadow: rgba(46, 28, 18, 0.16);
+
+  --focus-ring: 0 0 0 3px rgba(212, 160, 23, 0.35);
+
+  --primary-color: var(--primary);
+  --secondary-color: var(--primary-strong);
 }
 
+/* ================== DARK MODE ================== */
 [data-theme="dark"] {
-  --primary: #0d6efd;
-  --secondary: #5a6268;
-  --text: #f8f9fa;
-  --background: #212529;
+  --primary: #2fd17a;
+  --primary-strong: #f5c542;
+  --primary-soft: rgba(47, 209, 122, 0.18);
+
+  --secondary: #0b6b3a;
+
+  --text: #f3fff8;
+  --text-light: #c7e6d6;
+
+  --background: #071a13;
+  --surface: rgba(12, 35, 26, 0.92);
+  --surface-2: rgba(16, 46, 34, 0.94);
+  --surface-secondary: var(--surface-2);
+
+  --border: rgba(245, 197, 66, 0.22);
+  --border-strong: rgba(245, 197, 66, 0.36);
+  --border-subtle: rgba(245, 197, 66, 0.18);
+
+  --shadow: rgba(0, 0, 0, 0.55);
+
+  --focus-ring: 0 0 0 3px rgba(245, 197, 66, 0.42);
+
+  --primary-color: var(--primary);
+  --secondary-color: var(--primary-strong);
 }

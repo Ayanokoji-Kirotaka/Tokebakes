@@ -1,16 +1,72 @@
-/* theme-halloween.css - Minimal Theme */
+/* theme-halloween.css - Enhanced Light & Dark Theme */
 @import url("style.css");
 
+/* ================== LIGHT MODE ================== */
 :root {
   --primary: #ff7a00;
+  --primary-strong: #ff9a3c;
+  --primary-soft: rgba(255, 122, 0, 0.18);
   --secondary: #2b1b3a;
-  --text: #212529;
-  --background: #ffffff;
+
+  /* Light Mode: Text Colors */
+  --text: #1a1a1a;
+  --text-light: #4a4a4a;
+
+  /* Light Mode: Background System */
+  --background: #f5f5f5;
+  --surface: #ffffff;
+  --surface-secondary: #fafafa;
+  --surface-2: var(--surface-secondary);
+
+  /* Light Mode: Borders */
+  --border: #e0e0e0;
+  --border-subtle: #f0f0f0;
+  --border-strong: #d0d0d0;
+
+  /* Light Mode: Shadows (improved for elevation) */
+  --shadow: rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 12px 24px rgba(0, 0, 0, 0.12);
+
+  --focus-ring: 0 0 0 3px rgba(255, 122, 0, 0.35);
+
+  --primary-color: var(--primary);
+  --secondary-color: var(--primary-strong);
 }
 
+/* ================== DARK MODE ================== */
 [data-theme="dark"] {
   --primary: #ff9a3c;
+  --primary-strong: #ffb15a;
+  --primary-soft: rgba(255, 154, 60, 0.18);
   --secondary: #3a2650;
+
+  /* Dark Mode: Text Colors */
   --text: #f8f9fa;
-  --background: #121212;
+  --text-light: #d0d0d0;
+
+  /* Dark Mode: Background System */
+  --background: #0f0f0f;
+  --surface: #1a1a1a;
+  --surface-secondary: #232323;
+  --surface-2: var(--surface-secondary);
+
+  /* Dark Mode: Borders */
+  --border: #333333;
+  --border-subtle: #222222;
+  --border-strong: #444444;
+
+  /* Dark Mode: Shadows */
+  --shadow: rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 12px 24px rgba(0, 0, 0, 0.6);
+
+  --focus-ring: 0 0 0 3px rgba(255, 154, 60, 0.42);
+
+  --primary-color: var(--primary);
+  --secondary-color: var(--primary-strong);
 }

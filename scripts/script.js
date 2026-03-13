@@ -53,7 +53,11 @@ class WebsiteAutoUpdater {
       localStorage.getItem("toke_bakes_last_change_type") || "all";
     this.lastForcedReloadVersion = (() => {
       try {
-        return Number(sessionStorage.getItem("toke_bakes_force_reload_version") || "0") || 0;
+        return (
+          Number(
+            sessionStorage.getItem("toke_bakes_force_reload_version") || "0",
+          ) || 0
+        );
       } catch {
         return 0;
       }
@@ -68,10 +72,15 @@ class WebsiteAutoUpdater {
       this.syncBus = window.TokeUpdateSync;
     }
 
-    if (this.syncBus && typeof this.syncBus.registerRefreshHandler === "function") {
+    if (
+      this.syncBus &&
+      typeof this.syncBus.registerRefreshHandler === "function"
+    ) {
       this.unsubscribeSync = this.syncBus.registerRefreshHandler(
         async (payload) => {
-          const nextType = this.normalizeChangeType(payload?.changeType || "all");
+          const nextType = this.normalizeChangeType(
+            payload?.changeType || "all",
+          );
           const incomingVersion = Number(payload?.contentVersion || 0) || 0;
           const previousVersion = Number(this.lastAppliedVersion || 0) || 0;
           const shouldNotifyUser =
@@ -85,7 +94,7 @@ class WebsiteAutoUpdater {
           });
           this.lastAppliedVersion = Math.max(
             this.lastAppliedVersion,
-            incomingVersion
+            incomingVersion,
           );
           this.lastAppliedChangeType = nextType;
           return true;
@@ -94,8 +103,15 @@ class WebsiteAutoUpdater {
           id: "website-content-refresh",
           showIndicator: true,
           priority: 20,
-          changeTypes: ["all", "featured", "menu", "specials", "carousel", "theme"],
-        }
+          changeTypes: [
+            "all",
+            "featured",
+            "menu",
+            "specials",
+            "carousel",
+            "theme",
+          ],
+        },
       );
     }
 
@@ -104,7 +120,7 @@ class WebsiteAutoUpdater {
       () => {
         this.destroy();
       },
-      { once: true }
+      { once: true },
     );
   }
 
@@ -141,7 +157,8 @@ class WebsiteAutoUpdater {
   }
 
   getPayloadVersion(payload = {}) {
-    const parsed = Number(payload?.contentVersion ?? payload?.version ?? 0) || 0;
+    const parsed =
+      Number(payload?.contentVersion ?? payload?.version ?? 0) || 0;
     if (!Number.isFinite(parsed) || parsed <= 0) return 0;
     return Math.trunc(parsed);
   }
@@ -153,7 +170,7 @@ class WebsiteAutoUpdater {
     try {
       sessionStorage.setItem(
         "toke_bakes_force_reload_version",
-        String(this.lastForcedReloadVersion)
+        String(this.lastForcedReloadVersion),
       );
     } catch {}
   }
@@ -176,7 +193,7 @@ class WebsiteAutoUpdater {
     const normalizedChangeType = this.normalizeChangeType(changeType);
     const forceReloadVersion = this.shouldForceHardReload(
       normalizedChangeType,
-      payload
+      payload,
     );
     if (forceReloadVersion > 0) {
       this.triggerHardReload(forceReloadVersion);
@@ -284,7 +301,9 @@ const debugWarn = (...args) => {
 const TB_PERF_PROFILE_EVENT = "tb:perf-profile-changed";
 const TB_RUNTIME_CONNECTION =
   typeof navigator !== "undefined"
-    ? navigator.connection || navigator.mozConnection || navigator.webkitConnection
+    ? navigator.connection ||
+      navigator.mozConnection ||
+      navigator.webkitConnection
     : null;
 let tbRuntimePerfProfile = null;
 let tbRuntimePerfBound = false;
@@ -296,7 +315,8 @@ function computeRuntimePerfProfile() {
   const downlink = Number(connection?.downlink || 0);
   const rtt = Number(connection?.rtt || 0);
   const prefersReducedMotion = Boolean(
-    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    window.matchMedia &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
   const memory = Number(navigator.deviceMemory || 0);
   const cores = Number(navigator.hardwareConcurrency || 0);
@@ -401,7 +421,7 @@ function bindRuntimePerfSignals() {
       const profile = getRuntimePerfProfile(true);
       try {
         window.dispatchEvent(
-          new CustomEvent(TB_PERF_PROFILE_EVENT, { detail: profile })
+          new CustomEvent(TB_PERF_PROFILE_EVENT, { detail: profile }),
         );
       } catch {}
     });
@@ -519,8 +539,11 @@ function warmCachedContentImages() {
   };
 
   const featuredKey = `${API_ENDPOINTS.FEATURED}_data`;
-  const specialsEndpoint = window.API_ENDPOINTS?.SPECIALS || API_ENDPOINTS.SPECIALS || "";
-  const specialsKey = specialsEndpoint ? `${specialsEndpoint}_data` : SPECIALS_CACHE_KEY;
+  const specialsEndpoint =
+    window.API_ENDPOINTS?.SPECIALS || API_ENDPOINTS.SPECIALS || "";
+  const specialsKey = specialsEndpoint
+    ? `${specialsEndpoint}_data`
+    : SPECIALS_CACHE_KEY;
 
   warmFromRows(readCachedDatasetRows(featuredKey), 8, 2);
   warmFromRows(readCachedDatasetRows(MENU_CACHE_KEY), 14, 3);
@@ -536,7 +559,9 @@ function buildItemsRenderSignature(items = []) {
       const image = toSafeString(item?.image || item?.image_url || "");
       const title = toSafeString(item?.title || "");
       const price = toMoney(item?.price, 0);
-      const active = parseBoolean(item?.is_active ?? item?.is_available, true) ? 1 : 0;
+      const active = parseBoolean(item?.is_active ?? item?.is_available, true)
+        ? 1
+        : 0;
       return `${id}|${updated}|${image}|${title}|${price}|${active}`;
     })
     .join("||");
@@ -552,7 +577,11 @@ function shouldSkipRenderForSignature(container, context, signature) {
   return false;
 }
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = SUPABASE_FETCH_TIMEOUT_MS) {
+async function fetchWithTimeout(
+  url,
+  options = {},
+  timeoutMs = SUPABASE_FETCH_TIMEOUT_MS,
+) {
   if (typeof AbortController === "undefined") {
     return fetch(url, options);
   }
@@ -614,23 +643,26 @@ function getLatestContentUpdateToken() {
   try {
     latestTimestamp = Math.max(
       Number(localStorage.getItem(CONTENT_DB_LAST_UPDATED_KEY) || "0"),
-      Number(localStorage.getItem(CONTENT_LAST_UPDATE_KEY) || "0")
+      Number(localStorage.getItem(CONTENT_LAST_UPDATE_KEY) || "0"),
     );
 
     const payloadRaw = localStorage.getItem(CONTENT_LAST_PAYLOAD_KEY);
     if (payloadRaw) {
       const payload = JSON.parse(payloadRaw);
-      latestTimestamp = Math.max(latestTimestamp, Number(payload?.timestamp) || 0);
+      latestTimestamp = Math.max(
+        latestTimestamp,
+        Number(payload?.timestamp) || 0,
+      );
       latestVersion = Math.max(
         latestVersion,
         Number(payload?.contentVersion) || 0,
-        Number(payload?.version) || 0
+        Number(payload?.version) || 0,
       );
     }
 
     latestVersion = Math.max(
       latestVersion,
-      Number(localStorage.getItem(CONTENT_VERSION_STORAGE_KEY) || "0")
+      Number(localStorage.getItem(CONTENT_VERSION_STORAGE_KEY) || "0"),
     );
   } catch {}
 
@@ -665,7 +697,7 @@ function appendContentAssetVersion(src) {
     if (raw.includes(`${CONTENT_ASSET_VERSION_PARAM}=`)) {
       return raw.replace(
         /([?&])cv=[^&#]*/i,
-        `$1${CONTENT_ASSET_VERSION_PARAM}=${encodedVersion}`
+        `$1${CONTENT_ASSET_VERSION_PARAM}=${encodedVersion}`,
       );
     }
     return `${raw}${raw.includes("?") ? "&" : "?"}${CONTENT_ASSET_VERSION_PARAM}=${encodedVersion}`;
@@ -751,10 +783,9 @@ function trackSiteEvent(eventName, options = {}) {
   const normalizedName = toSafeString(eventName).trim().toLowerCase();
   if (!SITE_EVENT_NAME_PATTERN.test(normalizedName)) return;
 
-  const pagePath = toSafeString(options.pagePath || window.location.pathname).slice(
-    0,
-    512
-  );
+  const pagePath = toSafeString(
+    options.pagePath || window.location.pathname,
+  ).slice(0, 512);
   const source = toSafeString(options.source || "web").toLowerCase();
   const amount = Math.max(0, toMoney(options.amount, 0));
   const metadata =
@@ -857,15 +888,18 @@ function normalizeFeaturedItem(rawItem = {}, index = 0) {
     title: toSafeString(rawItem.title || rawItem.name, "Featured Item"),
     description: toSafeString(
       rawItem.description || rawItem.subtitle || rawItem.summary,
-      ""
+      "",
     ),
     image: resolveImageForDisplay(
       rawItem.image || rawItem.image_url || rawItem.src,
-      PUBLIC_IMAGE_PLACEHOLDERS.featured
+      PUBLIC_IMAGE_PLACEHOLDERS.featured,
     ),
-    price: toMoney(parseNumber(rawItem.price ?? rawItem.amount ?? rawItem.cost, 0), 0),
+    price: toMoney(
+      parseNumber(rawItem.price ?? rawItem.amount ?? rawItem.cost, 0),
+      0,
+    ),
     original_price: normalizeOriginalPrice(
-      rawItem.original_price ?? rawItem.old_price ?? rawItem.previous_price
+      rawItem.original_price ?? rawItem.old_price ?? rawItem.previous_price,
     ),
     is_special: parseBoolean(rawItem.is_special, false),
     badge_right_text: toSafeString(rawItem.badge_right_text, "SPECIAL"),
@@ -885,15 +919,18 @@ function normalizeMenuItem(rawItem = {}, index = 0) {
     title: toSafeString(rawItem.title || rawItem.name, "Menu Item"),
     description: toSafeString(
       rawItem.description || rawItem.details || rawItem.subtitle,
-      ""
+      "",
     ),
-    price: toMoney(parseNumber(rawItem.price ?? rawItem.amount ?? rawItem.cost, 0), 0),
+    price: toMoney(
+      parseNumber(rawItem.price ?? rawItem.amount ?? rawItem.cost, 0),
+      0,
+    ),
     original_price: normalizeOriginalPrice(
-      rawItem.original_price ?? rawItem.old_price ?? rawItem.previous_price
+      rawItem.original_price ?? rawItem.old_price ?? rawItem.previous_price,
     ),
     image: resolveImageForDisplay(
       rawItem.image || rawItem.image_url || rawItem.src,
-      PUBLIC_IMAGE_PLACEHOLDERS.menu
+      PUBLIC_IMAGE_PLACEHOLDERS.menu,
     ),
     is_special: parseBoolean(rawItem.is_special, false),
     badge_right_text: toSafeString(rawItem.badge_right_text, "SPECIAL"),
@@ -901,7 +938,7 @@ function normalizeMenuItem(rawItem = {}, index = 0) {
     cta_label: toSafeString(rawItem.cta_label, "Preferences"),
     is_available: parseBoolean(
       rawItem.is_available ?? rawItem.available ?? rawItem.is_active,
-      true
+      true,
     ),
     display_order: parseNumber(rawItem.display_order, index),
     created_at: rawItem.created_at || rawItem.createdAt || null,
@@ -909,11 +946,11 @@ function normalizeMenuItem(rawItem = {}, index = 0) {
     tags: Array.isArray(rawItem.tags)
       ? rawItem.tags
       : toSafeString(rawItem.tags)
-      ? toSafeString(rawItem.tags)
-          .split(",")
-          .map((tag) => tag.trim())
-          .filter(Boolean)
-      : [],
+        ? toSafeString(rawItem.tags)
+            .split(",")
+            .map((tag) => tag.trim())
+            .filter(Boolean)
+        : [],
     calories:
       rawItem.calories === null || rawItem.calories === undefined
         ? null
@@ -926,19 +963,25 @@ function normalizeSpecialItem(rawItem = {}, index = 0) {
   const height = parseNumber(rawItem.height, null);
   return {
     id: rawItem.id ?? `special-${index}`,
-    title: toSafeString(rawItem.title || rawItem.alt || rawItem.name, "Special Offer"),
+    title: toSafeString(
+      rawItem.title || rawItem.alt || rawItem.name,
+      "Special Offer",
+    ),
     description: toSafeString(
       rawItem.description || rawItem.summary || rawItem.caption,
-      ""
+      "",
     ),
     image: resolveImageForDisplay(
       rawItem.image_url || rawItem.image || rawItem.src,
-      PUBLIC_IMAGE_PLACEHOLDERS.specials
+      PUBLIC_IMAGE_PLACEHOLDERS.specials,
     ),
     image_url: toSafeString(rawItem.image_url || rawItem.image || rawItem.src),
-    price: toMoney(parseNumber(rawItem.price ?? rawItem.amount ?? rawItem.cost, 0), 0),
+    price: toMoney(
+      parseNumber(rawItem.price ?? rawItem.amount ?? rawItem.cost, 0),
+      0,
+    ),
     original_price: normalizeOriginalPrice(
-      rawItem.original_price ?? rawItem.old_price ?? rawItem.previous_price
+      rawItem.original_price ?? rawItem.old_price ?? rawItem.previous_price,
     ),
     is_special: parseBoolean(rawItem.is_special, false),
     badge_right_text: toSafeString(rawItem.badge_right_text, "SPECIAL"),
@@ -955,21 +998,21 @@ function normalizeSpecialItem(rawItem = {}, index = 0) {
 
 function normalizeFeaturedItems(items) {
   const normalized = toArray(items).map((item, index) =>
-    normalizeFeaturedItem(item, index)
+    normalizeFeaturedItem(item, index),
   );
   return sortByDisplayAndCreated(normalized);
 }
 
 function normalizeMenuItems(items) {
   const normalized = toArray(items).map((item, index) =>
-    normalizeMenuItem(item, index)
+    normalizeMenuItem(item, index),
   );
   return sortByDisplayAndCreated(normalized);
 }
 
 function normalizeSpecialItems(items) {
   const normalized = toArray(items).map((item, index) =>
-    normalizeSpecialItem(item, index)
+    normalizeSpecialItem(item, index),
   );
   return sortByDisplayAndCreated(normalized);
 }
@@ -986,7 +1029,9 @@ function normalizeProductOptionGroup(rawGroup = {}, index = 0) {
   const type = normalizeOptionType(rawGroup.type);
   const maxSelectionsRaw = parseNumber(rawGroup.max_selections, null);
   const maxSelections =
-    type === "multiple" && Number.isFinite(maxSelectionsRaw) && maxSelectionsRaw > 0
+    type === "multiple" &&
+    Number.isFinite(maxSelectionsRaw) &&
+    maxSelectionsRaw > 0
       ? Math.floor(maxSelectionsRaw)
       : null;
 
@@ -1049,7 +1094,7 @@ function buildMenuOptionMap(groups = [], values = []) {
         const bDate = Date.parse(b.created_at || "") || 0;
         if (aDate !== bDate) return aDate - bDate;
         return a.name.localeCompare(b.name);
-      }
+      },
     );
 
     currentGroups.push({
@@ -1080,7 +1125,7 @@ function cacheMenuOptionsLocally(groups, values) {
         timestamp: Date.now(),
         groups: toArray(groups),
         values: toArray(values),
-      })
+      }),
     );
   } catch {}
 }
@@ -1090,7 +1135,11 @@ function readMenuOptionsFromLocalCache() {
     const raw = localStorage.getItem(MENU_OPTIONS_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.groups) || !Array.isArray(parsed.values)) {
+    if (
+      !parsed ||
+      !Array.isArray(parsed.groups) ||
+      !Array.isArray(parsed.values)
+    ) {
       return null;
     }
     return {
@@ -1138,7 +1187,10 @@ async function getMenuOptionMap(forceRefresh = false) {
       cacheMenuOptionsLocally(groups, values);
       return optionMap;
     } catch (error) {
-      debugWarn("Product option fetch failed; using fallback if available:", error);
+      debugWarn(
+        "Product option fetch failed; using fallback if available:",
+        error,
+      );
 
       const localCache = readMenuOptionsFromLocalCache();
       if (localCache) {
@@ -1268,7 +1320,7 @@ async function loadFromSupabase(endpoint, query = "", options = {}) {
         },
         cache: "no-store",
       },
-      SUPABASE_FETCH_TIMEOUT_MS
+      SUPABASE_FETCH_TIMEOUT_MS,
     );
 
     if (!response.ok) {
@@ -1276,7 +1328,7 @@ async function loadFromSupabase(endpoint, query = "", options = {}) {
       throw new Error(
         `Supabase request failed (${response.status})${
           errorText ? `: ${errorText.slice(0, 140)}` : ""
-        }`
+        }`,
       );
     }
 
@@ -1323,7 +1375,7 @@ async function getMenuItems(forceRefresh = false) {
     const freshItems = normalizeMenuItems(
       await loadFromSupabase(API_ENDPOINTS.MENU, buildMenuQuery(), {
         forceRefresh,
-      })
+      }),
     );
 
     cachedMenuItems = freshItems;
@@ -1444,11 +1496,9 @@ async function loadFeaturedItems(forceReload = false, silentRefresh = false) {
   try {
     // Try to load fresh data
     const freshItems = normalizeFeaturedItems(
-      await loadFromSupabase(
-      API_ENDPOINTS.FEATURED,
-      buildFeaturedQuery(),
-      { forceRefresh: forceReload }
-      )
+      await loadFromSupabase(API_ENDPOINTS.FEATURED, buildFeaturedQuery(), {
+        forceRefresh: forceReload,
+      }),
     );
 
     // Clear loading timeout since data arrived
@@ -1458,7 +1508,7 @@ async function loadFeaturedItems(forceReload = false, silentRefresh = false) {
     try {
       localStorage.setItem(
         dataCacheKey,
-        JSON.stringify({ data: freshItems, timestamp: Date.now() })
+        JSON.stringify({ data: freshItems, timestamp: Date.now() }),
       );
     } catch (e) {}
 
@@ -1624,7 +1674,7 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
     try {
       localStorage.setItem(
         MENU_CACHE_KEY,
-        JSON.stringify({ data: allItems, timestamp: Date.now() })
+        JSON.stringify({ data: allItems, timestamp: Date.now() }),
       );
     } catch {
       debugLog("Could not write menu cache");
@@ -1661,9 +1711,8 @@ async function loadMenuItems(forceReload = false, silentRefresh = false) {
 
     // If error but we have cached data, keep showing it (including empty-state).
     if (fallback !== null) {
-      const fallbackAvailable = normalizeMenuItems(fallback).filter(
-        isMenuItemAvailable
-      );
+      const fallbackAvailable =
+        normalizeMenuItems(fallback).filter(isMenuItemAvailable);
       if (fallbackAvailable.length > 0) {
         renderMenuItems(container, fallbackAvailable);
         Promise.resolve(getMenuOptionMap(false)).catch(() => {});
@@ -1708,7 +1757,8 @@ async function loadSpecialItems(forceReload = false, silentRefresh = false) {
   }
 
   // Check cache first
-  const specialsEndpoint = window.API_ENDPOINTS?.SPECIALS || "/rest/v1/specials";
+  const specialsEndpoint =
+    window.API_ENDPOINTS?.SPECIALS || "/rest/v1/specials";
   if (!specialsEndpoint) {
     container.innerHTML = `
       <div class="empty-state error">
@@ -1731,7 +1781,9 @@ async function loadSpecialItems(forceReload = false, silentRefresh = false) {
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Date.now() - parsed.timestamp < CACHE_DURATION_GENERAL) {
-          cachedData = normalizeSpecialItems(parsed.data).filter(isSpecialItemActive);
+          cachedData = normalizeSpecialItems(parsed.data).filter(
+            isSpecialItemActive,
+          );
           debugLog("Using cached specials");
         }
       }
@@ -1786,11 +1838,9 @@ async function loadSpecialItems(forceReload = false, silentRefresh = false) {
   try {
     // Try to load fresh data
     const items = normalizeSpecialItems(
-      await loadFromSupabase(
-      specialsEndpoint,
-      buildSpecialsQuery(),
-      { forceRefresh: forceReload }
-      )
+      await loadFromSupabase(specialsEndpoint, buildSpecialsQuery(), {
+        forceRefresh: forceReload,
+      }),
     ).filter(isSpecialItemActive);
 
     // Clear loading timeout since data arrived
@@ -1800,7 +1850,7 @@ async function loadSpecialItems(forceReload = false, silentRefresh = false) {
     try {
       localStorage.setItem(
         dataCacheKey,
-        JSON.stringify({ data: items, timestamp: Date.now() })
+        JSON.stringify({ data: items, timestamp: Date.now() }),
       );
     } catch (e) {}
 
@@ -1902,7 +1952,9 @@ async function loadDynamicContent(forceReload = false, silentRefresh = false) {
       },
     ];
 
-    const activeLoader = pageLoaders.find(({ matches }) => matches(currentPage));
+    const activeLoader = pageLoaders.find(({ matches }) =>
+      matches(currentPage),
+    );
     if (activeLoader) {
       debugLog(`Loading ${activeLoader.label}`);
       await activeLoader.handler(forceReload, silentRefresh);
@@ -1995,7 +2047,9 @@ function requestDynamicCacheClearFromServiceWorker() {
     .getRegistration()
     .then((registration) => {
       notify(
-        registration?.active || registration?.waiting || registration?.installing
+        registration?.active ||
+          registration?.waiting ||
+          registration?.installing,
       );
     })
     .catch(() => {});
@@ -2055,11 +2109,20 @@ function clearContentCachesForChange(changeType = "all") {
   if (dataCache && dataCache.forEach) {
     const specialsEndpoint = API_ENDPOINTS.SPECIALS || "";
     dataCache.forEach((_value, key) => {
-      if (type === "menu" && (key.includes(API_ENDPOINTS.MENU) || key.includes(getMenuOptionGroupsEndpoint()) || key.includes(getMenuOptionValuesEndpoint()))) {
+      if (
+        type === "menu" &&
+        (key.includes(API_ENDPOINTS.MENU) ||
+          key.includes(getMenuOptionGroupsEndpoint()) ||
+          key.includes(getMenuOptionValuesEndpoint()))
+      ) {
         dataCache.delete(key);
       } else if (type === "featured" && key.includes(API_ENDPOINTS.FEATURED)) {
         dataCache.delete(key);
-      } else if (type === "specials" && specialsEndpoint && key.includes(specialsEndpoint)) {
+      } else if (
+        type === "specials" &&
+        specialsEndpoint &&
+        key.includes(specialsEndpoint)
+      ) {
         dataCache.delete(key);
       }
     });
@@ -2138,13 +2201,17 @@ function resolveCardCtaLabel(item, context) {
 function renderProductCard(item, context = "specials", index = 0) {
   const contextKey = toSafeString(context, "specials").toLowerCase();
   const isMenuCard = contextKey === "menu";
-  const isDirectOrderCard = contextKey === "featured" || contextKey === "specials";
+  const isDirectOrderCard =
+    contextKey === "featured" || contextKey === "specials";
   const imageHints = getAdaptiveImageHints(index);
   const placeholder =
     PUBLIC_IMAGE_PLACEHOLDERS[contextKey] || PUBLIC_IMAGE_PLACEHOLDERS.specials;
   const discount = getComputedDiscount(item?.original_price, item?.price);
   const showRightBadge = parseBoolean(item?.is_special, false);
-  const badgeText = toSafeString(item?.badge_right_text, "SPECIAL").toUpperCase();
+  const badgeText = toSafeString(
+    item?.badge_right_text,
+    "SPECIAL",
+  ).toUpperCase();
   const ctaLabel = resolveCardCtaLabel(item, contextKey);
   const titleText = toSafeString(item?.title, "Product");
   const descriptionText = toSafeString(item?.description, "");
@@ -2158,8 +2225,8 @@ function renderProductCard(item, context = "specials", index = 0) {
     contextKey === "menu"
       ? "menu-item"
       : contextKey === "featured"
-      ? "featured-card"
-      : "specials-card";
+        ? "featured-card"
+        : "specials-card";
   card.className = `product-card ${contextClass}`;
   card.style.setProperty("--tb-stagger-index", String(index % 8));
   card.dataset.ripple = "true";
@@ -2381,7 +2448,10 @@ function ensureChatWidgetScriptLoaded() {
   script.dataset.tbChatWidgetScript = "true";
   script.addEventListener("load", () => {
     try {
-      if (window.TBChatWidget && typeof window.TBChatWidget.init === "function") {
+      if (
+        window.TBChatWidget &&
+        typeof window.TBChatWidget.init === "function"
+      ) {
         window.TBChatWidget.init();
       }
     } catch {}
@@ -2414,10 +2484,7 @@ function decodeHtml(value) {
 }
 
 function normalizeItemName(value) {
-  return decodeHtml(value)
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
+  return decodeHtml(value).trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function normalizeItemId(value) {
@@ -2431,7 +2498,7 @@ function normalizeSelectedOptionGroups(rawOptions) {
       const groupId = normalizeItemId(rawGroup?.group_id || rawGroup?.id);
       const groupName = toSafeString(
         rawGroup?.group_name || rawGroup?.name,
-        "Options"
+        "Options",
       );
       const groupType = normalizeOptionType(rawGroup?.type);
       const values = toArray(rawGroup?.values)
@@ -2477,9 +2544,9 @@ function getSelectedOptionsAdjustment(selectedOptions) {
       sum +
       group.values.reduce(
         (valueSum, value) => valueSum + moneyToCents(value.price_adjustment),
-        0
+        0,
       ),
-    0
+    0,
   );
   return centsToMoney(cents);
 }
@@ -2491,15 +2558,17 @@ function buildCartConfigurationKey({
   customMessage = "",
 }) {
   const productToken = normalizeItemId(id) || normalizeItemName(name) || "item";
-  const optionsToken = normalizeSelectedOptionGroups(selectedOptions).map((group) => ({
-    group_id: group.group_id || "",
-    group_name: group.group_name,
-    values: group.values.map((value) => ({
-      id: value.id || "",
-      name: value.name,
-      price_adjustment: toMoney(value.price_adjustment, 0).toFixed(2),
-    })),
-  }));
+  const optionsToken = normalizeSelectedOptionGroups(selectedOptions).map(
+    (group) => ({
+      group_id: group.group_id || "",
+      group_name: group.group_name,
+      values: group.values.map((value) => ({
+        id: value.id || "",
+        name: value.name,
+        price_adjustment: toMoney(value.price_adjustment, 0).toFixed(2),
+      })),
+    }),
+  );
   const messageToken = toSafeString(customMessage).trim().toLowerCase();
   return `${productToken}::${JSON.stringify(optionsToken)}::${messageToken}`;
 }
@@ -2526,12 +2595,15 @@ function getCartItemOptionAdjustment(item) {
 function getCartItemUnitPrice(item) {
   const explicit = Number(item?.unit_price ?? item?.price);
   if (Number.isFinite(explicit)) return toMoney(explicit, 0);
-  return addMoney(getCartItemBasePrice(item), getCartItemOptionAdjustment(item));
+  return addMoney(
+    getCartItemBasePrice(item),
+    getCartItemOptionAdjustment(item),
+  );
 }
 
 function normalizeCartEntry(rawItem = {}) {
   const normalizedOptions = normalizeSelectedOptionGroups(
-    rawItem.selected_options || rawItem.selectedOptions
+    rawItem.selected_options || rawItem.selectedOptions,
   );
   const optionAdjustment = getSelectedOptionsAdjustment(normalizedOptions);
   const quantity = Math.max(1, Math.floor(parseNumber(rawItem.quantity, 1)));
@@ -2539,13 +2611,16 @@ function normalizeCartEntry(rawItem = {}) {
   const rawBase = Number(rawItem.base_price);
   const basePrice = Number.isFinite(rawBase)
     ? toMoney(rawBase, 0)
-    : addMoney(parseNumber(rawItem.unit_price ?? rawItem.price, 0), -optionAdjustment);
+    : addMoney(
+        parseNumber(rawItem.unit_price ?? rawItem.price, 0),
+        -optionAdjustment,
+      );
   const unitPrice = toMoney(
     rawItem.unit_price ?? rawItem.price,
-    addMoney(basePrice, optionAdjustment)
+    addMoney(basePrice, optionAdjustment),
   );
   const customMessage = toSafeString(
-    rawItem.custom_message ?? rawItem.customMessage
+    rawItem.custom_message ?? rawItem.customMessage,
   );
 
   const normalized = {
@@ -2591,7 +2666,10 @@ function queueLiveOrderPayloadPrime(cartItems = []) {
     } catch {}
   };
 
-  if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+  if (
+    typeof window !== "undefined" &&
+    typeof window.requestIdleCallback === "function"
+  ) {
     window.requestIdleCallback(runPrime, { timeout: 1200 });
     return;
   }
@@ -2608,7 +2686,7 @@ function saveCart(cart) {
   // Let any page (including SPA-swapped pages) react immediately to cart changes
   try {
     window.dispatchEvent(
-      new CustomEvent("cart:updated", { detail: { cart: normalizedCart } })
+      new CustomEvent("cart:updated", { detail: { cart: normalizedCart } }),
     );
   } catch {}
 }
@@ -2630,7 +2708,12 @@ async function validateCartItems() {
     const currentMenu = await getMenuItems();
 
     if (!currentMenu || currentMenu.length === 0) {
-      return { valid: true, hasChanges: false, hasRemovals: false, results: [] };
+      return {
+        valid: true,
+        hasChanges: false,
+        hasRemovals: false,
+        results: [],
+      };
     }
 
     const validationResults = [];
@@ -2646,13 +2729,13 @@ async function validateCartItems() {
       // Prefer id match (more stable), fallback to normalized name match
       if (cartId) {
         currentItem = currentMenu.find(
-          (item) => normalizeItemId(item.id) === cartId
+          (item) => normalizeItemId(item.id) === cartId,
         );
       }
 
       if (!currentItem && cartName) {
         currentItem = currentMenu.find(
-          (item) => normalizeItemName(item.title) === cartName
+          (item) => normalizeItemName(item.title) === cartName,
         );
       }
 
@@ -2697,7 +2780,7 @@ async function validateCartItems() {
             name: cartItem.name,
             status: "price_changed",
             message: `Price updated from NGN ${formatPrice(
-              cartUnitPrice
+              cartUnitPrice,
             )} to NGN ${formatPrice(currentUnitPrice)}`,
             oldPrice: cartUnitPrice,
             newPrice: currentUnitPrice,
@@ -2788,7 +2871,7 @@ function getOrderItemOptionLines(item) {
     const valueLabel = group.values
       .map(
         (value) =>
-          `${value.name}${formatOptionPriceAdjustment(value.price_adjustment)}`
+          `${value.name}${formatOptionPriceAdjustment(value.price_adjustment)}`,
       )
       .join(", ");
     lines.push(`${group.group_name}: ${valueLabel}`);
@@ -2809,10 +2892,10 @@ function getOrderItemMessageLines(item) {
   const itemTotal = multiplyMoney(unitPrice, quantity);
   const baseLine = `- Product: ${name}`;
   const detailsLine = `  Quantity: ${quantity} | Unit Price: NGN ${formatPrice(
-    unitPrice
+    unitPrice,
   )} | Total: NGN ${formatPrice(itemTotal)}`;
   const optionLines = getOrderItemOptionLines(item).map(
-    (line) => `  Preferences: ${line}`
+    (line) => `  Preferences: ${line}`,
   );
   return [baseLine, ...optionLines, detailsLine];
 }
@@ -2995,122 +3078,143 @@ function showNotification(message, type = "success") {
     );
   };
   let DEFAULT_LOADER_LOGO = getLoaderLogo();
-  const MIN_VISIBLE_MS = 650;
+  const MIN_VISIBLE_MS = 1800; // Match full animation cycle + buffer to ensure carousel renders
   const MAX_VISIBLE_MS = 7000;
   const LOGO_READY_TIMEOUT_MS = 1800;
   let hidden = false;
-  let hardTimeout = null;
-  let revealCheckRaf = 0;
-  let revealFallbackTimer = null;
-  let revealFallbackAttempts = 0;
-  const MAX_REVEAL_FALLBACK_ATTEMPTS = 4;
-  let shownAt = 0;
-  let logoReady = !loaderImage;
+  let loaderHideScheduled = false;
+  let hideLoaderTimer = null;
+  let imagePaintFlushed = false;
 
   const isHomePage = () => {
     const page = window.location.pathname.split("/").pop() || "";
     return page === "" || page === "index.html" || page === "index";
   };
 
-  const isCarouselReady = () => window.__tokeCarouselReady === true;
-  const isThemeReady = () => {
-    const themeLink = document.getElementById("theme-stylesheet");
-    return (
-      !document.documentElement.classList.contains("theme-loading") ||
-      themeLink?.dataset?.loaded === "true"
-    );
-  };
-  const isInitialContentReady = () => window.__tbInitialContentReady === true;
-  const canRevealLoader = () => {
-    if (!logoReady) return false;
-    if (!isThemeReady()) return false;
-    if (!isInitialContentReady()) return false;
-    if (document.querySelector(".hero-carousel") && !isCarouselReady()) {
-      return false;
+  const tryHideLoader = () => {
+    if (hidden || loaderHideScheduled) return;
+
+    // Check readiness conditions
+    const isReady =
+      document.readyState === "complete" &&
+      window.__tbInitialContentReady === true &&
+      (!document.querySelector(".hero-carousel") ||
+        window.__tokeCarouselReady === true) &&
+      !document.documentElement.classList.contains("theme-loading");
+
+    if (!isReady) return;
+
+    loaderHideScheduled = true;
+    const shownAt = parseInt(loader.getAttribute("data-loader-shown") || "0");
+    const elapsed = Date.now() - shownAt;
+    const minRemaining = Math.max(0, MIN_VISIBLE_MS - elapsed);
+
+    if (minRemaining > 0) {
+      hideLoaderTimer = setTimeout(() => {
+        hidden = true;
+        hideLoaderTimer = null;
+        loaderHideScheduled = false;
+        loader.classList.add("fade-out");
+        loader.style.opacity = "0";
+        loader.style.pointerEvents = "none";
+
+        const finish = () => {
+          loader.style.display = "none";
+          loader.classList.remove("fade-out");
+        };
+
+        loader.addEventListener("transitionend", finish, { once: true });
+        setTimeout(finish, 360);
+      }, minRemaining);
+    } else {
+      hidden = true;
+      loaderHideScheduled = false;
+      loader.classList.add("fade-out");
+      loader.style.opacity = "0";
+      loader.style.pointerEvents = "none";
+
+      const finish = () => {
+        loader.style.display = "none";
+        loader.classList.remove("fade-out");
+      };
+
+      loader.addEventListener("transitionend", finish, { once: true });
+      setTimeout(finish, 360);
     }
-    return true;
+
+    try {
+      document.documentElement.setAttribute("data-loader-seen", "1");
+    } catch {}
   };
 
-  const ensureLoaderImageSource = () => {
+  const ensureLoaderImageLoaded = () => {
     if (!loaderImage) {
-      logoReady = true;
+      imagePaintFlushed = true;
       return Promise.resolve();
     }
 
-    logoReady = false;
-    loader.setAttribute("data-logo-ready", "0");
-    loaderImage.style.opacity = "0";
-    loaderImage.style.transition = "opacity 180ms ease";
-
-    const markReady = () => {
-      if (logoReady) return;
-      logoReady = true;
-      loader.setAttribute("data-logo-ready", "1");
-      loaderImage.style.opacity = "1";
-      try {
-        queueRevealCheck(0);
-      } catch {}
-    };
-
-    const fallbackToDefaultLogo = () => {
-      const current = (loaderImage.getAttribute("src") || "").trim();
-      DEFAULT_LOADER_LOGO = getLoaderLogo();
-      if (current === DEFAULT_LOADER_LOGO) return;
-      loaderImage.setAttribute("src", DEFAULT_LOADER_LOGO);
-    };
-
+    let settled = false;
     const currentSrc = (loaderImage.getAttribute("src") || "").trim();
     DEFAULT_LOADER_LOGO = getLoaderLogo();
+
     if (!currentSrc) {
       loaderImage.setAttribute("src", DEFAULT_LOADER_LOGO);
     }
 
-    if (loaderImage.complete && loaderImage.naturalWidth === 0) {
-      fallbackToDefaultLogo();
-    }
-
     return new Promise((resolve) => {
-      let settled = false;
       let timeoutId = null;
 
       const cleanup = () => {
-        loaderImage.removeEventListener("load", onLoad);
-        loaderImage.removeEventListener("error", onError);
+        if (loaderImage) {
+          loaderImage.removeEventListener("load", onLoad);
+          loaderImage.removeEventListener("error", onError);
+        }
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = null;
         }
       };
 
-      const finalize = () => {
+      const markImageReady = () => {
         if (settled) return;
         settled = true;
         cleanup();
-        markReady();
+
+        // Force paint of image before starting animation
+        if (loaderImage) {
+          loaderImage.style.opacity = "1";
+          // Flush DOM to ensure image is rendered
+          loaderImage.offsetHeight;
+        }
+        imagePaintFlushed = true;
         resolve();
       };
 
       const onLoad = () => {
-        if (typeof loaderImage.decode === "function") {
-          loaderImage.decode().catch(() => {}).finally(finalize);
+        if (typeof loaderImage?.decode === "function") {
+          loaderImage
+            .decode()
+            .catch(() => {})
+            .finally(markImageReady);
           return;
         }
-        finalize();
+        markImageReady();
       };
 
       const onError = () => {
-        const current = (loaderImage.getAttribute("src") || "").trim();
+        const current = (loaderImage?.getAttribute("src") || "").trim();
         if (current && current !== DEFAULT_LOADER_LOGO) {
-          fallbackToDefaultLogo();
+          loaderImage.setAttribute("src", DEFAULT_LOADER_LOGO);
           return;
         }
-        finalize();
+        markImageReady();
       };
 
       loaderImage.addEventListener("load", onLoad);
       loaderImage.addEventListener("error", onError);
-      timeoutId = setTimeout(finalize, LOGO_READY_TIMEOUT_MS);
+      timeoutId = setTimeout(markImageReady, LOGO_READY_TIMEOUT_MS);
 
+      // Check if already loaded
       if (loaderImage.complete && loaderImage.naturalWidth > 0) {
         onLoad();
       }
@@ -3118,134 +3222,116 @@ function showNotification(message, type = "success") {
   };
 
   const clearRevealCheck = () => {
-    if (revealCheckRaf) {
-      cancelAnimationFrame(revealCheckRaf);
-      revealCheckRaf = 0;
-    }
-    if (revealFallbackTimer) {
-      clearTimeout(revealFallbackTimer);
-      revealFallbackTimer = null;
-    }
+    // Removed - no longer used
   };
 
   const clearHardTimeout = () => {
-    if (!hardTimeout) return;
-    clearTimeout(hardTimeout);
-    hardTimeout = null;
+    // Removed - no longer used
   };
 
-  const hideLoader = ({ markSeen = true, force = false } = {}) => {
-    if (hidden) return;
-    if (!force) {
-      const elapsed = Date.now() - shownAt;
-      if (elapsed < MIN_VISIBLE_MS) {
-        const remaining = Math.max(0, MIN_VISIBLE_MS - elapsed);
-        setTimeout(() => hideLoader({ markSeen, force: true }), remaining);
-        return;
-      }
-    }
-    hidden = true;
-    clearRevealCheck();
-    clearHardTimeout();
-    if (markSeen) {
-      try {
-        document.documentElement.setAttribute("data-loader-seen", "1");
-      } catch {}
-    }
-    loader.classList.add("fade-out");
-    loader.style.opacity = "0";
-    loader.style.pointerEvents = "none";
-    const finish = () => {
-      loader.style.display = "none";
-      loader.classList.remove("fade-out");
-    };
-    loader.addEventListener("transitionend", finish, { once: true });
-    setTimeout(finish, 360);
+  const hideLoader = () => {
+    // Removed - use tryHideLoader instead
   };
 
   const maybeHideLoader = () => {
-    if (!isHomePage()) {
-      hideLoader({ markSeen: false, force: true });
-      return;
-    }
-    if (canRevealLoader()) {
-      hideLoader({ markSeen: true });
-    }
+    // Removed - no longer used
   };
 
-  const queueRevealCheck = (delayMs = 0) => {
-    if (hidden) return;
-
-    const runCheck = () => {
-      revealCheckRaf = 0;
-      revealFallbackTimer = null;
-      maybeHideLoader();
-      if (!hidden && revealFallbackAttempts < MAX_REVEAL_FALLBACK_ATTEMPTS) {
-        revealFallbackAttempts += 1;
-        queueRevealCheck(360);
-      }
-    };
-
-    if (delayMs > 0) {
-      if (revealFallbackTimer) return;
-      revealFallbackTimer = setTimeout(() => {
-        runCheck();
-      }, delayMs);
-      return;
-    }
-
-    if (revealCheckRaf) return;
-    revealCheckRaf = requestAnimationFrame(runCheck);
+  const queueRevealCheck = () => {
+    // Removed - no longer used
   };
 
   const showLoader = () => {
-    ensureLoaderImageSource();
+    // Removed - use initLoader instead
+  };
 
+  const initLoader = async () => {
+    // Only run on home page
     if (!isHomePage()) {
-      hideLoader({ markSeen: false, force: true });
+      hidden = true;
+      loader.style.display = "none";
       return;
     }
 
-    hidden = false;
-    shownAt = Date.now();
-    revealFallbackAttempts = 0;
-    clearRevealCheck();
-    clearHardTimeout();
-    try {
-      document.documentElement.removeAttribute("data-loader-seen");
-    } catch {}
-    loader.style.display = "flex";
-    loader.style.opacity = "1";
-    loader.style.pointerEvents = "auto";
-    loader.classList.remove("fade-out");
-    loader.style.transitionDuration = "";
+    // Mark loader shown time
+    loader.setAttribute("data-loader-shown", String(Date.now()));
 
-    queueRevealCheck(0);
-    queueRevealCheck(140);
-    queueRevealCheck(420);
+    // Initialize image
+    await ensureLoaderImageLoaded();
 
-    // Hard fail-safe: never keep loader too long on slow networks.
-    hardTimeout = setTimeout(
-      () => hideLoader({ markSeen: true, force: true }),
-      MAX_VISIBLE_MS
-    );
+    // Loader image is now ready - animation can start
+    if (loaderImage) {
+      loaderImage.style.transition = "";
+      loaderImage.style.opacity = "1";
+    }
   };
 
+  // Initialize loader on script load
+  initLoader().catch(() => {});
+
+  // Try to hide loader when DOMContentLoaded fires
+  if (document.readyState === "loading") {
+    document.addEventListener(
+      "DOMContentLoaded",
+      () => {
+        setTimeout(() => {
+          tryHideLoader();
+        }, 0);
+      },
+      { once: true },
+    );
+  } else {
+    // Already loaded
+    setTimeout(() => {
+      tryHideLoader();
+    }, 0);
+  }
+
+  // Try to hide when assets are ready
   window.addEventListener("carousel:ready", () => {
     window.__tokeCarouselReady = true;
-    queueRevealCheck();
+    setTimeout(() => tryHideLoader(), 0);
   });
-  window.addEventListener("theme:ready", () => queueRevealCheck());
-  window.addEventListener("tb:initial-content-ready", () => queueRevealCheck());
+
+  window.addEventListener("theme:ready", () => {
+    setTimeout(() => tryHideLoader(), 0);
+  });
+
+  window.addEventListener("tb:initial-content-ready", () => {
+    setTimeout(() => tryHideLoader(), 0);
+  });
+
   window.addEventListener("spa:navigated", () => {
-    if (isHomePage()) {
-      queueRevealCheck();
-    } else {
-      hideLoader({ markSeen: false, force: true });
+    if (!isHomePage()) {
+      hidden = true;
+      loaderHideScheduled = false;
+      if (hideLoaderTimer) {
+        clearTimeout(hideLoaderTimer);
+        hideLoaderTimer = null;
+      }
+      loader.style.display = "none";
+      loader.classList.remove("fade-out");
     }
   });
 
-  showLoader();
+  // Hard fail-safe: never keep loader past MAX_VISIBLE_MS
+  setTimeout(() => {
+    if (!hidden) {
+      hidden = true;
+      loaderHideScheduled = false;
+      if (hideLoaderTimer) {
+        clearTimeout(hideLoaderTimer);
+        hideLoaderTimer = null;
+      }
+      loader.classList.add("fade-out");
+      loader.style.opacity = "0";
+      loader.style.pointerEvents = "none";
+      setTimeout(() => {
+        loader.style.display = "none";
+        loader.classList.remove("fade-out");
+      }, 360);
+    }
+  }, MAX_VISIBLE_MS);
 })();
 
 /* ================== BULLETPROOF NAV HIGHLIGHT ================== */
@@ -3279,7 +3365,7 @@ function showNotification(message, type = "success") {
   if (currentPage === "") currentPage = "index";
 
   debugLog(
-    `Nav Debug: Current page="${currentPage}", Path="${loc.pathname}", Local=${isLocal}`
+    `Nav Debug: Current page="${currentPage}", Path="${loc.pathname}", Local=${isLocal}`,
   );
 
   navLinks.forEach((link, index) => {
@@ -3335,8 +3421,9 @@ function refreshCartCount() {
   const countEls = document.querySelectorAll("#cart-count");
   const cart = readCart();
   const totalItems = cart.reduce(
-    (sum, item) => sum + Math.max(1, Math.floor(parseNumber(item?.quantity, 1))),
-    0
+    (sum, item) =>
+      sum + Math.max(1, Math.floor(parseNumber(item?.quantity, 1))),
+    0,
   );
 
   countEls.forEach((el) => {
@@ -3379,7 +3466,9 @@ function setHomeMenuDismissedState(isDismissed) {
 function shouldAutoOpenHomeMenu() {
   const isMobileViewport =
     window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
-  return isMobileViewport && isHomePageRuntime() && !getHomeMenuDismissedState();
+  return (
+    isMobileViewport && isHomePageRuntime() && !getHomeMenuDismissedState()
+  );
 }
 
 function initMobileMenu() {
@@ -3429,7 +3518,8 @@ function initMobileMenu() {
           const currentNavList = document.querySelector(".navbar ul");
           if (!currentNavList) return;
           const mobileNow =
-            window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
+            window.matchMedia &&
+            window.matchMedia("(max-width: 768px)").matches;
           if (!mobileNow) {
             currentNavList.classList.remove("show");
             return;
@@ -3438,7 +3528,7 @@ function initMobileMenu() {
             currentNavList.classList.add("show");
           }
         },
-        { passive: true }
+        { passive: true },
       );
     }
 
@@ -3846,7 +3936,7 @@ function ensureProductConfiguratorDom() {
   productConfiguratorDom.qtyMinus.addEventListener("click", () => {
     productConfiguratorState.quantity = Math.max(
       1,
-      productConfiguratorState.quantity - 1
+      productConfiguratorState.quantity - 1,
     );
     renderConfiguratorTotals();
   });
@@ -3862,11 +3952,16 @@ function ensureProductConfiguratorDom() {
 
     const groupId = normalizeItemId(target.dataset.groupId);
     if (!groupId) return;
-    const group = productConfiguratorState.groups.find((item) => item.id === groupId);
+    const group = productConfiguratorState.groups.find(
+      (item) => item.id === groupId,
+    );
     if (!group) return;
 
     if (group.type === "single") {
-      productConfiguratorState.selectedSingle.set(groupId, normalizeItemId(target.value));
+      productConfiguratorState.selectedSingle.set(
+        groupId,
+        normalizeItemId(target.value),
+      );
       renderConfiguratorTotals();
       return;
     }
@@ -3876,9 +3971,14 @@ function ensureProductConfiguratorDom() {
     const valueId = normalizeItemId(target.value);
     if (target.checked) {
       const maxSelections = parseNumber(group.max_selections, null);
-      if (Number.isFinite(maxSelections) && currentSelection.size >= maxSelections) {
+      if (
+        Number.isFinite(maxSelections) &&
+        currentSelection.size >= maxSelections
+      ) {
         target.checked = false;
-        setConfiguratorError(`Maximum ${maxSelections} selections for ${group.name}.`);
+        setConfiguratorError(
+          `Maximum ${maxSelections} selections for ${group.name}.`,
+        );
         return;
       }
       currentSelection.add(valueId);
@@ -3920,7 +4020,10 @@ function initializeConfiguratorSelections(groups) {
   toArray(groups).forEach((group) => {
     if (group.type === "single") {
       if (group.required && group.values[0]) {
-        productConfiguratorState.selectedSingle.set(group.id, group.values[0].id);
+        productConfiguratorState.selectedSingle.set(
+          group.id,
+          group.values[0].id,
+        );
       }
       return;
     }
@@ -3936,10 +4039,10 @@ function getConfiguratorSelectedOptions() {
   productConfiguratorState.groups.forEach((group) => {
     if (group.type === "single") {
       const selectedValueId = normalizeItemId(
-        productConfiguratorState.selectedSingle.get(group.id)
+        productConfiguratorState.selectedSingle.get(group.id),
       );
       const selectedValue = group.values.find(
-        (value) => normalizeItemId(value.id) === selectedValueId
+        (value) => normalizeItemId(value.id) === selectedValueId,
       );
 
       if (!selectedValue) {
@@ -3951,7 +4054,7 @@ function getConfiguratorSelectedOptions() {
 
       adjustmentTotal = addMoney(
         adjustmentTotal,
-        toMoney(selectedValue.price_adjustment, 0)
+        toMoney(selectedValue.price_adjustment, 0),
       );
       selectedGroups.push({
         group_id: group.id,
@@ -3971,7 +4074,7 @@ function getConfiguratorSelectedOptions() {
     const selectedSet =
       productConfiguratorState.selectedMultiple.get(group.id) || new Set();
     const selectedValues = group.values.filter((value) =>
-      selectedSet.has(normalizeItemId(value.id))
+      selectedSet.has(normalizeItemId(value.id)),
     );
 
     if (group.required && selectedValues.length === 0) {
@@ -3982,7 +4085,7 @@ function getConfiguratorSelectedOptions() {
 
     const groupAdjustment = selectedValues.reduce(
       (sum, value) => addMoney(sum, toMoney(value.price_adjustment, 0)),
-      0
+      0,
     );
     adjustmentTotal = addMoney(adjustmentTotal, groupAdjustment);
     selectedGroups.push({
@@ -4032,10 +4135,12 @@ function renderConfiguratorGroupOptions() {
           const inputName = `pc-group-${group.id}`;
           const checked =
             group.type === "single"
-              ? normalizeItemId(productConfiguratorState.selectedSingle.get(group.id)) ===
-                valueId
+              ? normalizeItemId(
+                  productConfiguratorState.selectedSingle.get(group.id),
+                ) === valueId
               : (
-                  productConfiguratorState.selectedMultiple.get(group.id) || new Set()
+                  productConfiguratorState.selectedMultiple.get(group.id) ||
+                  new Set()
                 ).has(valueId);
           const adjustment = toMoney(value.price_adjustment, 0);
           const adjustmentLabel =
@@ -4147,7 +4252,7 @@ function buildConfiguredCartItem() {
   const item = productConfiguratorState.activeItem;
   const quantity = Math.max(1, productConfiguratorState.quantity);
   const customMessage = toSafeString(
-    productConfiguratorDom?.customMessage?.value
+    productConfiguratorDom?.customMessage?.value,
   ).trim();
   const { selectedGroups, adjustmentTotal } = getConfiguratorSelectedOptions();
   const basePrice = toMoney(item?.price, 0);
@@ -4181,7 +4286,7 @@ function submitConfiguredProduct(mode = "cart") {
   const { missingRequiredGroups } = getConfiguratorSelectedOptions();
   if (missingRequiredGroups.length > 0) {
     setConfiguratorError(
-      `Select required option(s): ${missingRequiredGroups.join(", ")}.`
+      `Select required option(s): ${missingRequiredGroups.join(", ")}.`,
     );
     return;
   }
@@ -4191,7 +4296,7 @@ function submitConfiguredProduct(mode = "cart") {
   if (mode === "cart") {
     const cart = readCart();
     const existing = cart.find(
-      (entry) => entry.configuration_key === configuredEntry.configuration_key
+      (entry) => entry.configuration_key === configuredEntry.configuration_key,
     );
 
     if (existing) {
@@ -4215,12 +4320,15 @@ function submitConfiguredProduct(mode = "cart") {
     trackSiteEvent("add_to_cart", {
       amount: multiplyMoney(
         configuredEntry.unit_price,
-        Math.max(1, Math.floor(parseNumber(configuredEntry.quantity, 1)))
+        Math.max(1, Math.floor(parseNumber(configuredEntry.quantity, 1))),
       ),
       metadata: {
         item_id: configuredEntry.id ?? null,
         item_name: configuredEntry.name || null,
-        quantity: Math.max(1, Math.floor(parseNumber(configuredEntry.quantity, 1))),
+        quantity: Math.max(
+          1,
+          Math.floor(parseNumber(configuredEntry.quantity, 1)),
+        ),
       },
     });
     showNotification("Item added to cart", "success");
@@ -4245,12 +4353,15 @@ function submitConfiguredProduct(mode = "cart") {
   trackSiteEvent("order_now", {
     amount: multiplyMoney(
       configuredEntry.unit_price,
-      Math.max(1, Math.floor(parseNumber(configuredEntry.quantity, 1)))
+      Math.max(1, Math.floor(parseNumber(configuredEntry.quantity, 1))),
     ),
     metadata: {
       item_id: configuredEntry.id ?? null,
       item_name: configuredEntry.name || null,
-      quantity: Math.max(1, Math.floor(parseNumber(configuredEntry.quantity, 1))),
+      quantity: Math.max(
+        1,
+        Math.floor(parseNumber(configuredEntry.quantity, 1)),
+      ),
     },
   });
 
@@ -4260,7 +4371,10 @@ function submitConfiguredProduct(mode = "cart") {
 
 function getProductItemFromElement(productCard) {
   if (!productCard) return null;
-  const context = toSafeString(productCard.dataset.context, "specials").toLowerCase();
+  const context = toSafeString(
+    productCard.dataset.context,
+    "specials",
+  ).toLowerCase();
   const itemId = normalizeItemId(productCard.dataset.id);
 
   if (itemId) {
@@ -4274,7 +4388,7 @@ function getProductItemFromElement(productCard) {
 
   const fallbackTitle = toSafeString(
     productCard.dataset.item || productCard.querySelector("h3")?.textContent,
-    "Special Offer"
+    "Special Offer",
   );
   return {
     id: itemId || null,
@@ -4314,10 +4428,12 @@ function initProductCardOrderInteractions() {
 
   const clickHandler = (event) => {
     const trigger = event.target.closest(
-      ".product-card-cta[data-order-direct='true']"
+      ".product-card-cta[data-order-direct='true']",
     );
     if (!trigger) return;
-    const productCard = trigger.closest(".product-card[data-order-item='true']");
+    const productCard = trigger.closest(
+      ".product-card[data-order-item='true']",
+    );
     if (!productCard) return;
 
     event.preventDefault();
@@ -4346,13 +4462,14 @@ function getMenuItemFromElement(menuItem) {
 
   const fallbackTitle = toSafeString(
     menuItem.dataset.item || menuItem.querySelector("h3")?.textContent,
-    "Menu Item"
+    "Menu Item",
   );
   return {
     id: itemId || null,
     title: fallbackTitle,
     description: toSafeString(
-      menuItem.dataset.description || menuItem.querySelector(".product-card-desc")?.textContent
+      menuItem.dataset.description ||
+        menuItem.querySelector(".product-card-desc")?.textContent,
     ),
     price: parseNumber(menuItem.dataset.price, 0),
     image: toSafeString(menuItem.querySelector("img")?.getAttribute("src")),
@@ -4421,7 +4538,9 @@ function buildOrderDataFromCart(cartItems = []) {
 }
 
 function updateLiveOrderSummaryState(cartItems = []) {
-  const safeCartItems = toArray(cartItems).map((item) => normalizeCartEntry(item));
+  const safeCartItems = toArray(cartItems).map((item) =>
+    normalizeCartEntry(item),
+  );
   if (!safeCartItems.length) {
     orderSummaryState.key = "";
     orderSummaryState.payload = null;
@@ -4466,7 +4585,7 @@ function initOrderFunctionality() {
       const cartContainer = document.getElementById("cart-container");
       if (cartContainer) {
         const existingMessage = cartContainer.querySelector(
-          ".empty-cart-message"
+          ".empty-cart-message",
         );
         if (!existingMessage) {
           const message = document.createElement("div");
@@ -4482,7 +4601,8 @@ function initOrderFunctionality() {
       return;
     }
 
-    const prepared = latestOrderSheetPayload || updateLiveOrderSummaryState(cart);
+    const prepared =
+      latestOrderSheetPayload || updateLiveOrderSummaryState(cart);
     showPreparedOrderOptions(prepared);
   };
 
@@ -4496,10 +4616,12 @@ function createOrderPrefillCacheKey(orderData) {
     name: toSafeString(it?.name, "Item"),
     qty: Math.max(1, Math.floor(parseNumber(it?.qty, 1))),
     price: toMoney(it?.price, 0),
-    options: normalizeSelectedOptionGroups(it?.selected_options).map((group) => ({
-      group_id: normalizeItemId(group.group_id),
-      values: toArray(group.values).map((value) => normalizeItemId(value.id)),
-    })),
+    options: normalizeSelectedOptionGroups(it?.selected_options).map(
+      (group) => ({
+        group_id: normalizeItemId(group.group_id),
+        values: toArray(group.values).map((value) => normalizeItemId(value.id)),
+      }),
+    ),
     custom_message: toSafeString(it?.custom_message).trim(),
   }));
 
@@ -4522,7 +4644,7 @@ function buildDefaultOrderPrefillTemplate() {
       "Delivery address:",
       "",
       "Please confirm availability and payment method.",
-    ].join("\n")
+    ].join("\n"),
   );
 }
 
@@ -4569,7 +4691,9 @@ function buildPreparedOrderPayload(orderData) {
     return addMoney(sum, itemTotal);
   }, 0);
 
-  const orderLines = safeItems.flatMap((item) => getOrderItemMessageLines(item));
+  const orderLines = safeItems.flatMap((item) =>
+    getOrderItemMessageLines(item),
+  );
   const commonContactLines = [
     "Name:",
     "Phone:",
@@ -4603,7 +4727,8 @@ function buildPreparedOrderPayload(orderData) {
   ];
 
   const defaultTemplate = buildDefaultOrderPrefillTemplate();
-  const gmailBody = encodeURIComponent(gmailLines.join("\n")) || defaultTemplate;
+  const gmailBody =
+    encodeURIComponent(gmailLines.join("\n")) || defaultTemplate;
   const waBody = encodeURIComponent(waLines.join("\n")) || defaultTemplate;
   const subject = encodeURIComponent(subjectRaw || "Order from website");
 
@@ -4615,7 +4740,7 @@ function buildPreparedOrderPayload(orderData) {
     summaryRows,
     subjectRaw,
     gmailUrl: `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
-      BUSINESS_EMAIL
+      BUSINESS_EMAIL,
     )}&su=${subject}&body=${gmailBody}`,
     waUrl: `https://wa.me/${BUSINESS_PHONE_WAME}?text=${waBody}`,
   };
@@ -4834,7 +4959,7 @@ function initBottomSheet() {
       if (!prepared) {
         showNotification(
           "Unable to build the order message. Please try again.",
-          "error"
+          "error",
         );
         return;
       }
@@ -4985,7 +5110,7 @@ async function renderCartOnOrderPage(shouldValidate = true) {
               isUnavailable ? "disabled" : ""
             }>+</button>
             <div style="margin-left:auto;font-weight:700;">NGN ${formatPrice(
-              multiplyMoney(unitPrice, quantity)
+              multiplyMoney(unitPrice, quantity),
             )}</div>
           </div>
         </div>
@@ -5033,7 +5158,7 @@ function initRipple(selector) {
       el.appendChild(ripple);
       setTimeout(() => ripple.remove(), 1050);
     },
-    { passive: true }
+    { passive: true },
   );
 }
 
@@ -5179,9 +5304,11 @@ function initModern3DInteractions() {
 
   const profile = getRuntimePerfProfile();
   const prefersReducedMotion =
-    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.matchMedia &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const canUseFinePointer =
-    window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+    window.matchMedia &&
+    window.matchMedia("(hover: hover) and (pointer: fine)").matches;
   const enable3D =
     canUseFinePointer &&
     !prefersReducedMotion &&
@@ -5208,7 +5335,7 @@ function initModern3DInteractions() {
         if (resizeTimer) clearTimeout(resizeTimer);
         resizeTimer = setTimeout(initModern3DInteractions, 120);
       },
-      { passive: true }
+      { passive: true },
     );
   }
 }
@@ -5295,13 +5422,19 @@ function ensureHomeEnhancementStyles() {
 
 function isHomePageRuntime() {
   const page = window.location.pathname.split("/").pop() || "index.html";
-  return page === "" || page === "/" || page === "index.html" || page === "index";
+  return (
+    page === "" || page === "/" || page === "index.html" || page === "index"
+  );
 }
 
 function setupHomeScrollReveal() {
   const hasRevealTargets = Boolean(
-    document.querySelector("#featured-container, #menu-container, #specials-container")
+    document.querySelector(
+      "#featured-container, #menu-container, #specials-container",
+    ),
   );
+
+  // Cleanup if no targets
   if (!hasRevealTargets) {
     if (homeRevealObserver) {
       homeRevealObserver.disconnect();
@@ -5315,15 +5448,16 @@ function setupHomeScrollReveal() {
     return;
   }
 
-  const conservativeMode = shouldUseConservativePerfMode();
-  const targets = [
-    document.querySelector(".about-preview"),
-    ...Array.from(document.querySelectorAll(".about-features .feature")),
-    document.querySelector(".hero-content"),
-    ...Array.from(document.querySelectorAll("#featured-container .featured-card")),
-    ...Array.from(document.querySelectorAll("#menu-container .menu-item")),
+  const conservativeMode = shouldUseConservativePerfMode(); 
+  const targets = [ 
+    document.querySelector(".about-preview"), 
+    ...Array.from(document.querySelectorAll(".about-features .feature")), 
+    ...Array.from( 
+      document.querySelectorAll("#featured-container .featured-card"), 
+    ), 
+    ...Array.from(document.querySelectorAll("#menu-container .menu-item")), 
     ...Array.from(
-      document.querySelectorAll("#specials-container .product-card")
+      document.querySelectorAll("#specials-container .product-card"),
     ),
   ].filter(Boolean);
 
@@ -5332,35 +5466,62 @@ function setupHomeScrollReveal() {
       homeRevealObserver.disconnect();
       homeRevealObserver = null;
     }
-    targets.forEach((el) => el.classList.add("is-visible"));
+    targets.forEach((el) => {
+      el.classList.add("reveal", "is-visible");
+    });
     return;
   }
 
-  if (!homeRevealObserver) {
-    homeRevealObserver = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          // Toggle so animations can replay when scrolling back up/down
-          entry.target.classList.toggle("is-visible", entry.isIntersecting);
-        });
-      },
-      { threshold: 0.15, rootMargin: "0px 0px -10% 0px" }
-    );
+  // Disconnect old observer to avoid memory leaks and double observations
+  if (homeRevealObserver) {
+    homeRevealObserver.disconnect();
   }
 
+  // Create new observer with one-time animation logic
+  homeRevealObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        // Only add is-visible once, never remove it (animations run once)
+        if (
+          entry.isIntersecting &&
+          !entry.target.classList.contains("is-visible")
+        ) {
+          entry.target.classList.add("is-visible");
+          // Stop observing after animation triggers
+          homeRevealObserver.unobserve(entry.target);
+        }
+      });
+    },
+    { threshold: 0.15, rootMargin: "0px 0px -10% 0px" },
+  );
+
   targets.forEach((el, idx) => {
+    // Skip if already revealed
+    if (el.classList.contains("is-visible")) {
+      return;
+    }
+
+    // Initialize reveal state
     if (el.getAttribute("data-reveal") !== "true") {
       el.setAttribute("data-reveal", "true");
       el.classList.add("reveal");
       el.style.transitionDelay = `${Math.min(idx * 60, 240)}ms`;
     }
 
+    // Check if element is already in viewport
     const rect = el.getBoundingClientRect();
-    const isInViewport = rect.top < window.innerHeight && rect.bottom > 0;
-    el.classList.toggle("is-visible", isInViewport);
-
-    homeRevealObserver.observe(el);
-  });
+    const isInViewport = rect.top < window.innerHeight && rect.bottom > 0; 
+ 
+    if (isInViewport) { 
+      // Element is already visible - animate immediately 
+      requestAnimationFrame(() => { 
+        el.classList.add("is-visible"); 
+      }); 
+    } else { 
+      // Element is below viewport - observe for scroll 
+      homeRevealObserver.observe(el); 
+    } 
+  }); 
 }
 
 function refreshHomeEnhancements() {
@@ -5379,8 +5540,12 @@ let cursorGlowLastY = -1;
 
 function shouldEnableCursorGlow() {
   if (!window.matchMedia) return false;
-  const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const finePointer = window.matchMedia(
+    "(hover: hover) and (pointer: fine)",
+  ).matches;
+  const reducedMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
   return Boolean(finePointer && !reducedMotion);
 }
 
@@ -5423,7 +5588,11 @@ function initCursorGlow() {
     const rx = Math.round(x);
     const ry = Math.round(y);
 
-    if (target === cursorGlowActiveEl && rx === cursorGlowLastX && ry === cursorGlowLastY) {
+    if (
+      target === cursorGlowActiveEl &&
+      rx === cursorGlowLastX &&
+      ry === cursorGlowLastY
+    ) {
       return;
     }
 
@@ -5442,7 +5611,7 @@ function initCursorGlow() {
         cursorGlowRaf = requestAnimationFrame(applyGlow);
       }
     },
-    { passive: true }
+    { passive: true },
   );
 }
 
@@ -5505,8 +5674,12 @@ function scheduleHomeScrollEffect() {
 function initHomeScrollEffect() {
   if (!homeScrollEffectBound) {
     homeScrollEffectBound = true;
-    window.addEventListener("scroll", scheduleHomeScrollEffect, { passive: true });
-    window.addEventListener("resize", scheduleHomeScrollEffect, { passive: true });
+    window.addEventListener("scroll", scheduleHomeScrollEffect, {
+      passive: true,
+    });
+    window.addEventListener("resize", scheduleHomeScrollEffect, {
+      passive: true,
+    });
     window.addEventListener("orientationchange", scheduleHomeScrollEffect, {
       passive: true,
     });
@@ -5607,7 +5780,7 @@ function isMobileInstallSurface() {
   const coarsePointer =
     window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
   const mobileUa = /android|iphone|ipad|ipod|mobile/.test(
-    String(window.navigator?.userAgent || "").toLowerCase()
+    String(window.navigator?.userAgent || "").toLowerCase(),
   );
   return Boolean(compactViewport || coarsePointer || mobileUa);
 }
@@ -5803,7 +5976,7 @@ function setupCartEventListeners() {
         // Do not allow quantity to drop below 1
         const currentQty = Math.max(
           1,
-          Math.floor(parseNumber(cart[index].quantity, 1))
+          Math.floor(parseNumber(cart[index].quantity, 1)),
         );
         if (currentQty > 1) {
           cart[index].quantity = currentQty - 1;
@@ -5905,7 +6078,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Initialize ripple - EXACT WORKING SELECTOR
   initRipple(
-    ".btn, .qty-btn, .order-option-btn, .remove-item, .theme-toggle, .menu-item, .featured-card, .product-card, .specials-card, .carousel-dot, .carousel-prev, .carousel-next, .pc-action-btn, .pc-qty-btn, [data-ripple]"
+    ".btn, .qty-btn, .order-option-btn, .remove-item, .theme-toggle, .menu-item, .featured-card, .product-card, .specials-card, .carousel-dot, .carousel-prev, .carousel-next, .pc-action-btn, .pc-qty-btn, [data-ripple]",
   );
 
   // STEP 4: Load dynamic content (this will use cache first)
