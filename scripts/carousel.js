@@ -225,12 +225,12 @@ class HeroCarousel {
 
     // Auto-play timers 
     this.autoPlayInterval = null; 
-    this.autoPlayDelay = 6000; 
+    this.autoPlayDelay = 4500; 
     this.autoPlayEnabled = true; 
     if ( 
       this.runtimeProfile.prefersReducedMotion 
     ) { 
-      this.autoPlayDelay = Math.max(this.autoPlayDelay, 9000); 
+      this.autoPlayDelay = Math.max(this.autoPlayDelay, 6500); 
     } 
     this.resumeTimeout = null; 
     this.resumeDelay = 3500; 
@@ -240,6 +240,7 @@ class HeroCarousel {
         ? 240 
         : 160; 
     this.lastPointerActivityAt = 0; 
+    this.isHovered = false; 
     this.preloadNeighborDepth = 
       this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.saveData 
         ? 0 
@@ -426,7 +427,9 @@ class HeroCarousel {
       this.intersectionObserver = new IntersectionObserver(
         (entries) => {
           const entry = entries && entries[0];
-          const inView = Boolean(entry && entry.isIntersecting);
+          if (!entry) return;
+          const ratio = Number(entry.intersectionRatio || 0);
+          const inView = Boolean(entry.isIntersecting || ratio > 0);
           this.isInView = inView;
 
           if (!this.autoPlayEnabled) return;
@@ -1035,6 +1038,21 @@ class HeroCarousel {
       this.navContainer.addEventListener("click", this.boundHandlers.navClick); 
     } 
 
+    // Pause autoplay on hover, then resume after a short idle delay.
+    this.boundHandlers.mouseEnter = () => {
+      this.isHovered = true;
+      this.stopAutoPlay();
+      this.clearResumeTimer();
+      this.scheduleAutoPlayResume(this.pointerIdleResumeDelay);
+    };
+    this.container.addEventListener("mouseenter", this.boundHandlers.mouseEnter);
+
+    this.boundHandlers.mouseLeave = () => {
+      this.isHovered = false;
+      this.scheduleAutoPlayResume(220);
+    };
+    this.container.addEventListener("mouseleave", this.boundHandlers.mouseLeave);
+
     // While user is actively moving/clicking inside carousel, pause briefly then auto-resume. 
     this.boundHandlers.mouseMove = () => { 
       const now = Date.now(); 
@@ -1137,6 +1155,12 @@ class HeroCarousel {
     if (this.navContainer && this.boundHandlers.navClick) { 
       this.navContainer.removeEventListener("click", this.boundHandlers.navClick); 
     } 
+    if (this.container && this.boundHandlers.mouseEnter) {
+      this.container.removeEventListener("mouseenter", this.boundHandlers.mouseEnter);
+    }
+    if (this.container && this.boundHandlers.mouseLeave) {
+      this.container.removeEventListener("mouseleave", this.boundHandlers.mouseLeave);
+    }
     if (this.container && this.boundHandlers.mouseMove) { 
       this.container.removeEventListener("mousemove", this.boundHandlers.mouseMove); 
     } 
@@ -1287,17 +1311,17 @@ class HeroCarousel {
   startAutoPlay() {
     if (
       this.slides.length <= 1 ||
-      !this.autoPlayEnabled ||
-      !this.isInView
+      !this.autoPlayEnabled
     )
       return;
 
     this.stopAutoPlay();
 
     this.autoPlayInterval = setInterval(() => {
-      if (!this.isTransitioning) {
-        this.nextSlide();
-      }
+      if (document.hidden) return;
+      if (!this.isInView) return;
+      if (this.isTransitioning) return;
+      this.nextSlide();
     }, this.autoPlayDelay);
   }
 
@@ -1317,7 +1341,6 @@ class HeroCarousel {
 
   scheduleAutoPlayResume(delay = this.resumeDelay) {
     if (!this.autoPlayEnabled) return;
-    if (!this.isInView) return;
     this.clearResumeTimer();
 
     this.resumeTimeout = setTimeout(() => {
