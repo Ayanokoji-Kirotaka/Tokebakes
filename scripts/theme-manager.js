@@ -25,6 +25,8 @@ const ThemeManager = {
   spaHooksBound: false,
   themeSyncUnsubscribe: null,
   themeLoadingTimer: null,
+  themeTransitionActivateTimer: null,
+  themeTransitionCleanupTimer: null,
   themeAutoUpdateTimer: null,
   themeVisibilityBound: false,
   systemModeMedia: null,
@@ -259,6 +261,9 @@ const ThemeManager = {
     );
     const resolvedLogo = this.resolveLogoFile(normalizedCssFile, logoFile);
 
+    const previousTheme = this.currentTheme;
+    const previousLogo = this.currentLogo;
+
     // ?? CRITICAL FIX: DO NOT modify the cssFile path here!
     this.currentTheme = normalizedCssFile;
     this.currentLogo = resolvedLogo;
@@ -266,6 +271,17 @@ const ThemeManager = {
     // Save to localStorage (exact path)
     let timestamp = localStorage.getItem(THEME_STORAGE_KEYS.globalUpdated) || "";
     const shouldPersist = saveToStorage || persist;
+    const previousStorageSnapshot = shouldPersist
+      ? {
+          legacyCss: localStorage.getItem(THEME_STORAGE_KEYS.legacyCss),
+          globalCss: localStorage.getItem(THEME_STORAGE_KEYS.globalCss),
+          legacyLogo: localStorage.getItem(THEME_STORAGE_KEYS.legacyLogo),
+          globalLogo: localStorage.getItem(THEME_STORAGE_KEYS.globalLogo),
+          legacyUpdated: localStorage.getItem(THEME_STORAGE_KEYS.legacyUpdated),
+          globalUpdated: localStorage.getItem(THEME_STORAGE_KEYS.globalUpdated),
+          localCheck: localStorage.getItem(THEME_STORAGE_KEYS.localCheck),
+        }
+      : null;
     if (shouldPersist) {
       localStorage.setItem(THEME_STORAGE_KEYS.legacyCss, normalizedCssFile);
       localStorage.setItem(THEME_STORAGE_KEYS.globalCss, normalizedCssFile);
@@ -291,64 +307,190 @@ const ThemeManager = {
       // Cross-device propagation is handled by update-sync after content_version bump.
     }
 
+    let deferLogoUpdateUntilThemeReady = false;
+
     // Apply theme CSS - Use exact path without modification
     try {
       const link = document.getElementById("theme-stylesheet");
       if (link) {
         const cacheSuffix = timestamp ? `?v=${timestamp}` : "";
         const nextHref = `${normalizedCssFile}${cacheSuffix}`;
+        const currentHref = (link.getAttribute("href") || "").trim();
+        const appliedCssFile = this.fixLegacyThemePath(
+          (currentHref.split("?")[0] || "").trim() || previousTheme || "styles/style.css"
+        );
+        const rollbackLogo =
+          previousStorageSnapshot?.globalLogo ||
+          previousLogo ||
+          this.getLogoForTheme(appliedCssFile);
 
-        if (link.getAttribute("href") !== nextHref) {
+        const prefersReducedMotion = Boolean(
+          window.matchMedia &&
+            window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        );
+        const overlayReady =
+          document.documentElement.getAttribute("data-overlay-ready") === "1";
+        const loaderSeen =
+          document.documentElement.getAttribute("data-loader-seen") === "1";
+        const shouldAnimateThemeChange =
+          (overlayReady || loaderSeen) && !prefersReducedMotion;
+
+        const beginThemeTransition = () => {
+          if (!shouldAnimateThemeChange) return;
+          if (this.themeTransitionActivateTimer) {
+            clearTimeout(this.themeTransitionActivateTimer);
+            this.themeTransitionActivateTimer = null;
+          }
+          if (this.themeTransitionCleanupTimer) {
+            clearTimeout(this.themeTransitionCleanupTimer);
+            this.themeTransitionCleanupTimer = null;
+          }
+          document.documentElement.classList.add("theme-transitioning");
+          this.themeTransitionActivateTimer = setTimeout(() => {
+            this.themeTransitionActivateTimer = null;
+            document.documentElement.classList.add("theme-transitioning-active");
+          }, 0);
+        };
+
+        const endThemeTransition = () => {
+          if (!shouldAnimateThemeChange) return;
+          if (this.themeTransitionActivateTimer) {
+            clearTimeout(this.themeTransitionActivateTimer);
+            this.themeTransitionActivateTimer = null;
+          }
+          if (this.themeTransitionCleanupTimer) {
+            clearTimeout(this.themeTransitionCleanupTimer);
+            this.themeTransitionCleanupTimer = null;
+          }
+          document.documentElement.classList.remove("theme-transitioning-active");
+          this.themeTransitionCleanupTimer = setTimeout(() => {
+            this.themeTransitionCleanupTimer = null;
+            document.documentElement.classList.remove("theme-transitioning");
+          }, 520);
+        };
+
+        const restorePreviousStorage = () => {
+          if (!previousStorageSnapshot) return;
+          const restoreKey = (key, value) => {
+            try {
+              if (value === null || value === undefined) {
+                localStorage.removeItem(key);
+              } else {
+                localStorage.setItem(key, value);
+              }
+            } catch {}
+          };
+          restoreKey(THEME_STORAGE_KEYS.legacyCss, previousStorageSnapshot.legacyCss);
+          restoreKey(THEME_STORAGE_KEYS.globalCss, previousStorageSnapshot.globalCss);
+          restoreKey(THEME_STORAGE_KEYS.legacyLogo, previousStorageSnapshot.legacyLogo);
+          restoreKey(THEME_STORAGE_KEYS.globalLogo, previousStorageSnapshot.globalLogo);
+          restoreKey(
+            THEME_STORAGE_KEYS.legacyUpdated,
+            previousStorageSnapshot.legacyUpdated
+          );
+          restoreKey(
+            THEME_STORAGE_KEYS.globalUpdated,
+            previousStorageSnapshot.globalUpdated
+          );
+          restoreKey(THEME_STORAGE_KEYS.localCheck, previousStorageSnapshot.localCheck);
+        };
+
+        // Cleanup any leftover pending link from an interrupted swap.
+        const orphanPending = document.getElementById("theme-stylesheet-pending");
+        if (orphanPending) {
+          try {
+            orphanPending.remove();
+          } catch {}
+        }
+
+        if (currentHref === nextHref) {
+          const stillLoading =
+            document.documentElement.classList.contains("theme-loading") &&
+            link.dataset.loaded !== "true";
+          if (this.themeLoadingTimer) {
+            clearTimeout(this.themeLoadingTimer);
+            this.themeLoadingTimer = null;
+          }
+          // Don't force-ready during the initial page bootstrap; allow the
+          // preload theme loader to reveal the UI when the CSS is truly loaded.
+          if (!stillLoading) {
+            link.dataset.loaded = "true";
+            document.documentElement.classList.remove("theme-loading");
+            window.dispatchEvent(new CustomEvent("theme:ready"));
+            endThemeTransition();
+          }
+        } else {
+          deferLogoUpdateUntilThemeReady = true;
+          beginThemeTransition();
           document.documentElement.classList.add("theme-loading");
-          link.dataset.loaded = "false";
 
-          const onLoad = () => {
+          const pending = document.createElement("link");
+          pending.rel = "stylesheet";
+          pending.id = "theme-stylesheet-pending";
+          pending.dataset.loaded = "false";
+          pending.setAttribute("href", nextHref);
+          link.insertAdjacentElement("afterend", pending);
+
+          let settled = false;
+          const finalize = (ok) => {
+            if (settled) return;
+            settled = true;
+
             if (this.themeLoadingTimer) {
               clearTimeout(this.themeLoadingTimer);
               this.themeLoadingTimer = null;
             }
-            link.dataset.loaded = "true";
-            document.documentElement.classList.remove("theme-loading");
-            window.dispatchEvent(new CustomEvent("theme:ready"));
-          };
-          const onError = () => {
-            if (this.themeLoadingTimer) {
-              clearTimeout(this.themeLoadingTimer);
-              this.themeLoadingTimer = null;
+
+            if (ok) {
+              try {
+                link.removeAttribute("id");
+              } catch {}
+              pending.id = "theme-stylesheet";
+              pending.dataset.loaded = "true";
+              this.updateThemeLogo(resolvedLogo);
+              try {
+                link.remove();
+              } catch {}
+              themeDebugLog("Theme CSS swapped to:", nextHref);
+            } else {
+              try {
+                pending.remove();
+              } catch {}
+              this.currentTheme = appliedCssFile;
+              this.currentLogo = rollbackLogo;
+              this.updateThemeLogo(rollbackLogo);
+              restorePreviousStorage();
+              themeDebugWarn("Theme CSS failed to load:", nextHref);
             }
-            link.dataset.loaded = "true";
+
             document.documentElement.classList.remove("theme-loading");
-            window.dispatchEvent(new CustomEvent("theme:ready"));
+            try {
+              window.dispatchEvent(new CustomEvent("theme:ready"));
+            } catch {}
+            endThemeTransition();
           };
 
-          link.addEventListener("load", onLoad, { once: true });
-          link.addEventListener("error", onError, { once: true });
-          link.href = nextHref;
+          pending.addEventListener("load", () => finalize(true), { once: true });
+          pending.addEventListener("error", () => finalize(false), { once: true });
 
           if (this.themeLoadingTimer) {
             clearTimeout(this.themeLoadingTimer);
           }
           this.themeLoadingTimer = setTimeout(() => {
-            document.documentElement.classList.remove("theme-loading");
             this.themeLoadingTimer = null;
-          }, 4000);
-          themeDebugLog("Theme CSS updated to:", nextHref);
-        } else {
-          if (this.themeLoadingTimer) {
-            clearTimeout(this.themeLoadingTimer);
-            this.themeLoadingTimer = null;
-          }
-          link.dataset.loaded = "true";
-          document.documentElement.classList.remove("theme-loading");
-          window.dispatchEvent(new CustomEvent("theme:ready"));
+            finalize(false);
+          }, 5000);
+          themeDebugLog("Theme CSS loading:", nextHref);
         }
       }
     } catch (error) {
       console.error("Error applying theme:", error);
     }
 
-    // Update theme logo
-    this.updateThemeLogo(resolvedLogo);
+    // Update theme logo (defer during cross-fade swaps to avoid mismatch flashes)
+    if (!deferLogoUpdateUntilThemeReady) {
+      this.updateThemeLogo(resolvedLogo);
+    }
 
     // Update footer to match current mode
     this.updateFooterTheme(this.currentMode);

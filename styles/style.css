@@ -4100,6 +4100,50 @@ html.preload-no-transitions *::after {
   transition: none !important;
 }
 
+/* ================== THEME TRANSITIONS ================== */
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
+  transition-property:
+    background-color,
+    color,
+    border-color,
+    outline-color,
+    box-shadow,
+    fill,
+    stroke,
+    text-decoration-color;
+  transition-duration: 720ms;
+  transition-timing-function: var(--ease-soft);
+}
+
+html.theme-transitioning::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.045);
+  opacity: 0;
+  transition: opacity 360ms var(--ease-soft);
+  z-index: 9998;
+}
+
+html.theme-transitioning.theme-transitioning-active::before {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.theme-transitioning *,
+  html.theme-transitioning *::before,
+  html.theme-transitioning *::after {
+    transition: none !important;
+  }
+
+  html.theme-transitioning::before {
+    display: none;
+  }
+}
+
 .tb-pwa-install-btn {
   position: fixed;
   left: 16px;
