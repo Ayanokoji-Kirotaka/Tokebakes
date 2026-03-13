@@ -5355,6 +5355,11 @@ function ensureHomeEnhancementStyles() {
       filter: blur(6px);
       transition: opacity 860ms ease, transform 860ms cubic-bezier(0.2, 0.9, 0.3, 1), filter 860ms ease;
     }
+    .reveal.reveal-lite {
+      filter: none;
+      transform: translateY(14px);
+      transition: opacity 700ms ease, transform 700ms cubic-bezier(0.2, 0.9, 0.3, 1);
+    }
     .reveal.is-visible {
       opacity: 1;
       transform: translateY(0);
@@ -5428,14 +5433,16 @@ function isHomePageRuntime() {
 }
 
 function setupHomeScrollReveal() {
-  const hasRevealTargets = Boolean(
-    document.querySelector(
-      "#featured-container, #menu-container, #specials-container",
-    ),
-  );
+  const targets = [
+    document.querySelector(".about-preview"),
+    ...Array.from(document.querySelectorAll(".about-features .feature")),
+    ...Array.from(document.querySelectorAll("#featured-container .featured-card")),
+    ...Array.from(document.querySelectorAll("#menu-container .menu-item")),
+    ...Array.from(document.querySelectorAll("#specials-container .product-card")),
+  ].filter(Boolean);
 
   // Cleanup if no targets
-  if (!hasRevealTargets) {
+  if (targets.length === 0) {
     if (homeRevealObserver) {
       homeRevealObserver.disconnect();
       homeRevealObserver = null;
@@ -5443,31 +5450,29 @@ function setupHomeScrollReveal() {
     document.querySelectorAll("[data-reveal='true']").forEach((el) => {
       el.removeAttribute("data-reveal");
       el.classList.remove("reveal", "is-visible");
+      el.classList.remove("reveal-lite");
       el.style.transitionDelay = "";
     });
     return;
   }
 
-  const conservativeMode = shouldUseConservativePerfMode(); 
-  const targets = [ 
-    document.querySelector(".about-preview"), 
-    ...Array.from(document.querySelectorAll(".about-features .feature")), 
-    ...Array.from( 
-      document.querySelectorAll("#featured-container .featured-card"), 
-    ), 
-    ...Array.from(document.querySelectorAll("#menu-container .menu-item")), 
-    ...Array.from(
-      document.querySelectorAll("#specials-container .product-card"),
-    ),
-  ].filter(Boolean);
+  const profile = getRuntimePerfProfile();
+  const prefersReducedMotion = Boolean(profile?.prefersReducedMotion);
+  const liteMotion = shouldUseConservativePerfMode(profile);
 
-  if (conservativeMode || !("IntersectionObserver" in window)) {
+  if (prefersReducedMotion || !("IntersectionObserver" in window)) {
     if (homeRevealObserver) {
       homeRevealObserver.disconnect();
       homeRevealObserver = null;
     }
     targets.forEach((el) => {
       el.classList.add("reveal", "is-visible");
+      if (liteMotion) {
+        el.classList.add("reveal-lite");
+      } else {
+        el.classList.remove("reveal-lite");
+      }
+      el.style.transitionDelay = "";
     });
     return;
   }
@@ -5492,7 +5497,10 @@ function setupHomeScrollReveal() {
         }
       });
     },
-    { threshold: 0.15, rootMargin: "0px 0px -10% 0px" },
+    {
+      threshold: liteMotion ? 0.12 : 0.15,
+      rootMargin: liteMotion ? "0px 0px -6% 0px" : "0px 0px -10% 0px",
+    },
   );
 
   targets.forEach((el, idx) => {
@@ -5505,13 +5513,20 @@ function setupHomeScrollReveal() {
     if (el.getAttribute("data-reveal") !== "true") {
       el.setAttribute("data-reveal", "true");
       el.classList.add("reveal");
-      el.style.transitionDelay = `${Math.min(idx * 60, 240)}ms`;
     }
+
+    if (liteMotion) {
+      el.classList.add("reveal-lite");
+    } else {
+      el.classList.remove("reveal-lite");
+    }
+
+    el.style.transitionDelay = `${Math.min(idx * (liteMotion ? 40 : 60), liteMotion ? 160 : 240)}ms`;
 
     // Check if element is already in viewport
     const rect = el.getBoundingClientRect();
     const isInViewport = rect.top < window.innerHeight && rect.bottom > 0; 
- 
+  
     if (isInViewport) { 
       // Element is already visible - animate immediately 
       requestAnimationFrame(() => { 
@@ -5643,10 +5658,11 @@ function applyHomeScrollEffect() {
   const prefersReducedMotion =
     window.matchMedia &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (prefersReducedMotion || shouldUseConservativePerfMode()) {
+  if (prefersReducedMotion) {
     resetHomeScrollEffect();
     return;
   }
+  const liteMotion = shouldUseConservativePerfMode();
 
   const hero = document.querySelector(".hero");
   const content = document.querySelector(".hero-content");
@@ -5656,10 +5672,10 @@ function applyHomeScrollEffect() {
   if (Math.abs(y - homeScrollLastY) < 1) return;
   homeScrollLastY = y;
 
-  const clamped = Math.min(y, 320);
-  const contentShift = Math.round(clamped * 0.11);
-  const overlayShift = Math.round(clamped * 0.06);
-  const opacity = Math.max(0.74, 1 - clamped / 900);
+  const clamped = Math.min(y, liteMotion ? 240 : 320);
+  const contentShift = Math.round(clamped * (liteMotion ? 0.085 : 0.11));
+  const overlayShift = Math.round(clamped * (liteMotion ? 0.045 : 0.06));
+  const opacity = Math.max(liteMotion ? 0.82 : 0.74, 1 - clamped / 900);
 
   content.style.transform = `translate3d(0, calc(-1vh - ${contentShift}px), 0)`;
   content.style.opacity = opacity.toFixed(3);
