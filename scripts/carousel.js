@@ -227,6 +227,10 @@ class HeroCarousel {
     this.autoPlayInterval = null; 
     this.autoPlayDelay = 4500; 
     this.autoPlayEnabled = true; 
+    this.autoPlayTickIntervalMs = this.runtimeProfile.lowEndDevice ? 400 : 250;
+    this.autoPlayNextAt = 0;
+    this.hoverPauseUntil = 0;
+    this.interactionPauseUntil = 0;
     if ( 
       this.runtimeProfile.prefersReducedMotion 
     ) { 
@@ -303,6 +307,7 @@ class HeroCarousel {
       this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.lowEndDevice
         ? 240
         : 160;
+    this.autoPlayTickIntervalMs = this.runtimeProfile.lowEndDevice ? 400 : 250;
     this.preloadNeighborDepth =
       this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.saveData
         ? 0
@@ -436,11 +441,12 @@ class HeroCarousel {
 
           if (!inView) {
             this.stopAutoPlay();
-            this.clearResumeTimer();
             return;
           }
 
-          this.scheduleAutoPlayResume(220);
+          // When the carousel comes back into view, restart autoplay with a fresh cadence.
+          this.autoPlayNextAt = Date.now() + this.autoPlayDelay;
+          this.startAutoPlay();
         },
         { root: null, threshold: 0.15 }
       );
@@ -532,12 +538,13 @@ class HeroCarousel {
 
     // Stop auto-play
     this.stopAutoPlay();
+    this.hoverPauseUntil = 0;
+    this.interactionPauseUntil = 0;
 
     // Clear any timeouts
     if (this.transitionTimeout) {
       clearTimeout(this.transitionTimeout);
     }
-    this.clearResumeTimer();
 
     // Remove event listeners
     this.teardownEventListeners();
@@ -1007,7 +1014,7 @@ class HeroCarousel {
       const index = parseInt(dot.dataset.index);
       if (!isNaN(index) && index !== this.currentIndex) {
         this.goToSlide(index);
-        this.pauseAutoPlay();
+        this.pauseAutoPlay("interaction", this.resumeDelay);
       }
     };
     this.dotsContainer.addEventListener("click", this.boundHandlers.dotsClick);
@@ -1033,7 +1040,7 @@ class HeroCarousel {
           this.nextSlide();
         }
 
-        this.pauseAutoPlay();
+        this.pauseAutoPlay("interaction", this.resumeDelay);
       };
       this.navContainer.addEventListener("click", this.boundHandlers.navClick); 
     } 
@@ -1041,15 +1048,16 @@ class HeroCarousel {
     // Pause autoplay on hover, then resume after a short idle delay.
     this.boundHandlers.mouseEnter = () => {
       this.isHovered = true;
-      this.stopAutoPlay();
-      this.clearResumeTimer();
-      this.scheduleAutoPlayResume(this.pointerIdleResumeDelay);
+      this.pauseAutoPlay("hover", this.pointerIdleResumeDelay);
     };
     this.container.addEventListener("mouseenter", this.boundHandlers.mouseEnter);
 
     this.boundHandlers.mouseLeave = () => {
       this.isHovered = false;
-      this.scheduleAutoPlayResume(220);
+      this.hoverPauseUntil = 0;
+      // Add a tiny grace window to avoid an instant slide jump when leaving.
+      this.autoPlayNextAt = Math.max(this.autoPlayNextAt, Date.now() + 600);
+      this.startAutoPlay();
     };
     this.container.addEventListener("mouseleave", this.boundHandlers.mouseLeave);
 
@@ -1058,7 +1066,7 @@ class HeroCarousel {
       const now = Date.now(); 
       if (now - this.lastPointerActivityAt < this.pointerActivityThrottleMs) return; 
       this.lastPointerActivityAt = now; 
-      this.pauseAutoPlay(this.pointerIdleResumeDelay);
+      this.pauseAutoPlay("hover", this.pointerIdleResumeDelay);
     };
     this.container.addEventListener("mousemove", this.boundHandlers.mouseMove, {
       passive: true,
@@ -1066,7 +1074,7 @@ class HeroCarousel {
 
     this.boundHandlers.pointerDown = (e) => {
       if (isInteractiveTarget(e?.target)) return;
-      this.pauseAutoPlay(this.pointerIdleResumeDelay);
+      this.pauseAutoPlay("interaction", this.pointerIdleResumeDelay);
     };
     this.container.addEventListener("pointerdown", this.boundHandlers.pointerDown, {
       passive: true,
@@ -1083,8 +1091,7 @@ class HeroCarousel {
       this.swipeBlocked = false;
       this.touchStartX = touch.screenX;
       this.touchStartY = touch.screenY;
-      this.stopAutoPlay();
-      this.clearResumeTimer();
+      this.pauseAutoPlay("interaction", this.pointerIdleResumeDelay);
     };
     this.container.addEventListener(
       "touchstart",
@@ -1095,7 +1102,7 @@ class HeroCarousel {
     this.boundHandlers.touchEnd = (e) => {
       if (this.swipeBlocked) {
         this.swipeBlocked = false;
-        this.scheduleAutoPlayResume(this.resumeDelay);
+        this.pauseAutoPlay("interaction", this.resumeDelay);
         return;
       }
       const touch = e.changedTouches && e.changedTouches[0];
@@ -1103,7 +1110,7 @@ class HeroCarousel {
       this.touchEndX = touch.screenX;
       this.touchEndY = touch.screenY;
       this.handleSwipe();
-      this.scheduleAutoPlayResume(this.resumeDelay + 1000);
+      this.pauseAutoPlay("interaction", this.resumeDelay + 1000);
     };
     this.container.addEventListener(
       "touchend",
@@ -1123,11 +1130,11 @@ class HeroCarousel {
       if (e.key === "ArrowLeft") {
         e.preventDefault();
         this.prevSlide();
-        this.pauseAutoPlay();
+        this.pauseAutoPlay("interaction", this.resumeDelay);
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
         this.nextSlide();
-        this.pauseAutoPlay();
+        this.pauseAutoPlay("interaction", this.resumeDelay);
       }
     };
     document.addEventListener("keydown", this.boundHandlers.keydown);
@@ -1137,10 +1144,10 @@ class HeroCarousel {
       if (!this.autoPlayEnabled) return;
       if (document.hidden) {
         this.stopAutoPlay();
-        this.clearResumeTimer();
         return;
       }
-      this.scheduleAutoPlayResume(220);
+      this.autoPlayNextAt = Date.now() + this.autoPlayDelay;
+      this.startAutoPlay();
     };
     document.addEventListener(
       "visibilitychange",
@@ -1307,6 +1314,13 @@ class HeroCarousel {
     this.goToSlide(prevIndex);
   }
 
+  getPausedUntil() {
+    return Math.max(
+      Number(this.hoverPauseUntil) || 0,
+      Number(this.interactionPauseUntil) || 0
+    );
+  }
+
   // Auto-play methods
   startAutoPlay() {
     if (
@@ -1315,14 +1329,25 @@ class HeroCarousel {
     )
       return;
 
-    this.stopAutoPlay();
+    if (this.autoPlayInterval) return;
+    this.autoPlayNextAt = Date.now() + this.autoPlayDelay;
 
     this.autoPlayInterval = setInterval(() => {
       if (document.hidden) return;
       if (!this.isInView) return;
       if (this.isTransitioning) return;
+
+      const now = Date.now();
+      if (now < this.getPausedUntil()) return;
+      if (!this.autoPlayNextAt) {
+        this.autoPlayNextAt = now + this.autoPlayDelay;
+        return;
+      }
+      if (now < this.autoPlayNextAt) return;
+
+      this.autoPlayNextAt = now + this.autoPlayDelay;
       this.nextSlide();
-    }, this.autoPlayDelay);
+    }, this.autoPlayTickIntervalMs);
   }
 
   stopAutoPlay() {
@@ -1332,28 +1357,21 @@ class HeroCarousel {
     }
   }
 
-  clearResumeTimer() {
-    if (this.resumeTimeout) {
-      clearTimeout(this.resumeTimeout);
-      this.resumeTimeout = null;
+  pauseAutoPlay(kind = "interaction", delay = this.resumeDelay) {
+    const now = Date.now();
+    const safeDelay = Math.max(0, Number(delay) || 0);
+    const until = now + safeDelay;
+
+    if (kind === "hover") {
+      this.hoverPauseUntil = until;
+    } else {
+      this.interactionPauseUntil = until;
+      // User-initiated interactions should "reset" the autoplay cadence so it
+      // doesn't advance immediately after a click/swipe.
+      this.autoPlayNextAt = now + this.autoPlayDelay;
     }
-  }
 
-  scheduleAutoPlayResume(delay = this.resumeDelay) {
-    if (!this.autoPlayEnabled) return;
-    this.clearResumeTimer();
-
-    this.resumeTimeout = setTimeout(() => {
-      this.resumeTimeout = null;
-      if (this.autoPlayEnabled) {
-        this.startAutoPlay();
-      }
-    }, delay);
-  }
-
-  pauseAutoPlay(delay = this.resumeDelay) {
-    this.stopAutoPlay();
-    this.scheduleAutoPlayResume(delay);
+    this.startAutoPlay();
   }
 
   toggleAutoPlay() {

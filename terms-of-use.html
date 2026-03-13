@@ -137,6 +137,11 @@
         }
 
         document.documentElement.setAttribute("data-theme", savedMode);
+        const page = window.location.pathname.split("/").pop() || "";
+        const isHomePage = page === "" || page === "index.html" || page === "index";
+        if (!isHomePage) {
+          document.documentElement.setAttribute("data-loader-seen", "1");
+        }
         document.documentElement.setAttribute("data-overlay-ready", "0");
         document.documentElement.classList.add("preload-no-transitions");
         try {
@@ -149,7 +154,7 @@
           preloadStyle = document.createElement("style");
           preloadStyle.id = "theme-preload-style";
           preloadStyle.textContent =
-            "html.theme-loading body > :not(#loader):not(#sync-status-indicator){visibility:hidden!important;}";
+            "html.theme-loading:not([data-loader-seen=1]) body > :not(#loader):not(#sync-status-indicator){visibility:hidden!important;}";
           document.head.appendChild(preloadStyle);
         }
         document.documentElement.classList.add("theme-loading");

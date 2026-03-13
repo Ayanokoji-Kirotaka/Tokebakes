@@ -13,7 +13,7 @@
   const SW_UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
   const SW_LAST_UPDATE_KEY = "toke_bakes_sw_last_update_detected_at";
 
-  let isRefreshing = false;
+  let controllerChangeNotified = false;
   let registrationRef = null;
   let updateTimer = null;
   let visibilityHandlerBound = false;
@@ -53,17 +53,30 @@
     } catch {}
   };
 
-  const reloadOnce = () => {
-    if (isRefreshing) return;
-    isRefreshing = true;
+  const handleControllerChange = () => {
+    const now = Date.now();
+    const wasControlling = Boolean(swStatus.controlling);
     updateSwStatus({
       controlling: true,
-      lastControllerChangeAt: Date.now(),
+      lastControllerChangeAt: now,
     });
-    window.location.reload();
+
+    // Avoid forced reloads (they feel random on desktop). Instead, nudge users
+    // to refresh when convenient after an update takes control.
+    if (wasControlling && !controllerChangeNotified) {
+      controllerChangeNotified = true;
+      const message = "Update available — refresh to get the latest version.";
+      try {
+        if (typeof window.showNotification === "function") {
+          window.showNotification(message, "info");
+        } else {
+          console.info(message);
+        }
+      } catch {}
+    }
   };
 
-  navigator.serviceWorker.addEventListener("controllerchange", reloadOnce);
+  navigator.serviceWorker.addEventListener("controllerchange", handleControllerChange);
 
   const checkForSwUpdates = () => {
     if (!registrationRef) return;
