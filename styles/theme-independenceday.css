@@ -1,57 +1,75 @@
-/* theme-independenceday.css - Variables only (imports base styles) */
+/* theme-independenceday.css - Nigerian Independence Theme */
 @import url("style.css");
 
 /* ================== LIGHT MODE ================== */
 :root {
-  --primary: #1e4db7;
-  --primary-strong: #3a86ff;
-  --primary-soft: rgba(30, 77, 183, 0.18);
 
-  --secondary: #d62828;
+  /* Nigerian Green */
+  --primary: #008751;
+  --primary-strong: #00a86b;
+  --primary-soft: rgba(0, 135, 81, 0.18);
 
-  --text: #0b132b;
-  --text-light: #2c375a;
+  /* Deep ceremonial green */
+  --secondary: #006b3f;
 
-  --background: #f8fbff;
-  --surface: rgba(255, 255, 255, 0.88);
-  --surface-2: rgba(248, 251, 255, 0.95);
+  /* Optional accent (subtle celebration glow) */
+  --accent: #e9f7f1;
+
+  /* Text */
+  --text: #0f1f17;
+  --text-light: #3a4f45;
+
+  /* Background system */
+  --background: #f6fffb;
+  --surface: rgba(255, 255, 255, 0.9);
+  --surface-2: rgba(246, 255, 251, 0.96);
   --surface-secondary: var(--surface-2);
 
-  --border: rgba(30, 77, 183, 0.18);
-  --border-strong: rgba(30, 77, 183, 0.32);
-  --border-subtle: rgba(30, 77, 183, 0.14);
+  /* Borders */
+  --border: rgba(0, 135, 81, 0.18);
+  --border-strong: rgba(0, 135, 81, 0.32);
+  --border-subtle: rgba(0, 135, 81, 0.12);
 
-  --shadow: rgba(46, 28, 18, 0.16);
+  /* Shadows */
+  --shadow: rgba(0, 60, 35, 0.16);
 
-  --focus-ring: 0 0 0 3px rgba(30, 77, 183, 0.35);
+  --focus-ring: 0 0 0 3px rgba(0, 168, 107, 0.35);
 
   --primary-color: var(--primary);
   --secondary-color: var(--primary-strong);
 }
 
+
 /* ================== DARK MODE ================== */
 [data-theme="dark"] {
-  --primary: #4d7cff;
-  --primary-strong: #7aa2ff;
-  --primary-soft: rgba(77, 124, 255, 0.18);
 
-  --secondary: #ff5a5f;
+  --primary: #00c27a;
+  --primary-strong: #3de6a2;
+  --primary-soft: rgba(0, 194, 122, 0.2);
 
-  --text: #f6f7fb;
-  --text-light: #cdd6f4;
+  --secondary: #009960;
 
-  --background: #0b1020;
-  --surface: rgba(17, 27, 51, 0.92);
-  --surface-2: rgba(22, 35, 64, 0.94);
+  --accent: #c8ffe5;
+
+  /* Text */
+  --text: #f3fff9;
+  --text-light: #c7e8da;
+
+  /* Night celebration background */
+  --background: #041b12;
+  --surface: rgba(10, 35, 24, 0.92);
+  --surface-2: rgba(14, 44, 30, 0.95);
   --surface-secondary: var(--surface-2);
 
-  --border: rgba(77, 124, 255, 0.22);
-  --border-strong: rgba(122, 162, 255, 0.34);
-  --border-subtle: rgba(77, 124, 255, 0.18);
+  /* Borders */
+  --border: rgba(0, 194, 122, 0.25);
+  --border-strong: rgba(0, 194, 122, 0.38);
+  --border-subtle: rgba(0, 194, 122, 0.15);
 
-  --shadow: rgba(0, 0, 0, 0.6);
+  /* Shadows */
+  --shadow: rgba(0, 0, 0, 0.55);
 
-  --focus-ring: 0 0 0 3px rgba(77, 124, 255, 0.45);
+  --focus-ring: 0 0 0 3px rgba(0, 194, 122, 0.45);
 
   --primary-color: var(--primary);
   --secondary-color: var(--primary-strong);

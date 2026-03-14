@@ -1,57 +1,75 @@
-/* theme-ramadan.css - Variables only (imports base styles) */
+/* theme-ramadan.css - Ramadan / Eid Theme */
 @import url("style.css");
 
 /* ================== LIGHT MODE ================== */
 :root {
-  --primary: #0b6b3a;
-  --primary-strong: #d4a017;
-  --primary-soft: rgba(11, 107, 58, 0.18);
 
-  --secondary: #0a3a2c;
+  /* Mosque emerald */
+  --primary: #0f7a44;
+  --primary-strong: #d6a520;
+  --primary-soft: rgba(15, 122, 68, 0.18);
 
-  --text: #1a2a22;
-  --text-light: #3b5246;
+  /* Deep prayer green */
+  --secondary: #0b4f36;
 
-  --background: #fdf7e8;
-  --surface: rgba(255, 255, 255, 0.88);
-  --surface-2: rgba(255, 250, 235, 0.95);
+  /* Lantern gold accent */
+  --accent: #f0c75e;
+
+  /* Text */
+  --text: #1b2b24;
+  --text-light: #465e53;
+
+  /* Warm lantern background */
+  --background: #fdf8ea;
+  --surface: rgba(255, 255, 255, 0.9);
+  --surface-2: rgba(255, 252, 240, 0.96);
   --surface-secondary: var(--surface-2);
 
-  --border: rgba(212, 160, 23, 0.24);
-  --border-strong: rgba(212, 160, 23, 0.38);
-  --border-subtle: rgba(212, 160, 23, 0.18);
+  /* Borders */
+  --border: rgba(214, 165, 32, 0.22);
+  --border-strong: rgba(214, 165, 32, 0.36);
+  --border-subtle: rgba(214, 165, 32, 0.14);
 
-  --shadow: rgba(46, 28, 18, 0.16);
+  /* Shadows */
+  --shadow: rgba(55, 35, 10, 0.16);
 
-  --focus-ring: 0 0 0 3px rgba(212, 160, 23, 0.35);
+  --focus-ring: 0 0 0 3px rgba(214, 165, 32, 0.35);
 
   --primary-color: var(--primary);
   --secondary-color: var(--primary-strong);
 }
 
+
 /* ================== DARK MODE ================== */
 [data-theme="dark"] {
+
   --primary: #2fd17a;
-  --primary-strong: #f5c542;
+  --primary-strong: #f2c94c;
   --primary-soft: rgba(47, 209, 122, 0.18);
 
-  --secondary: #0b6b3a;
+  --secondary: #0f7a44;
 
-  --text: #f3fff8;
-  --text-light: #c7e6d6;
+  --accent: #ffd97a;
 
-  --background: #071a13;
-  --surface: rgba(12, 35, 26, 0.92);
-  --surface-2: rgba(16, 46, 34, 0.94);
+  /* Text */
+  --text: #f4fff9;
+  --text-light: #cce6da;
+
+  /* Night sky Ramadan vibe */
+  --background: #041a14;
+  --surface: rgba(10, 38, 28, 0.92);
+  --surface-2: rgba(14, 48, 35, 0.95);
   --surface-secondary: var(--surface-2);
 
-  --border: rgba(245, 197, 66, 0.22);
-  --border-strong: rgba(245, 197, 66, 0.36);
-  --border-subtle: rgba(245, 197, 66, 0.18);
+  /* Borders */
+  --border: rgba(242, 201, 76, 0.24);
+  --border-strong: rgba(242, 201, 76, 0.38);
+  --border-subtle: rgba(242, 201, 76, 0.16);
 
+  /* Shadows */
   --shadow: rgba(0, 0, 0, 0.55);
 
-  --focus-ring: 0 0 0 3px rgba(245, 197, 66, 0.42);
+  --focus-ring: 0 0 0 3px rgba(242, 201, 76, 0.42);
 
   --primary-color: var(--primary);
   --secondary-color: var(--primary-strong);

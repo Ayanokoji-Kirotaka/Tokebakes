@@ -46,7 +46,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: var(--background, #1b140f);
+        background: var(--tb-loader-bg, var(--background, #1b140f));
         z-index: 9999;
         transition: opacity 0.6s ease;
       }
@@ -55,8 +55,8 @@
         height: 120px;
         border-radius: 50%;
         display: block;
-        background: rgba(230, 122, 0, 0.08);
-        box-shadow: 0 0 32px rgba(230, 122, 0, 0.38);
+        background: var(--tb-loader-img-bg, rgba(230, 122, 0, 0.08));
+        box-shadow: 0 0 32px var(--tb-loader-glow, rgba(230, 122, 0, 0.38));
         animation: loaderPulse 1.6s ease-in-out infinite;
         opacity: 1;
         transition: opacity 180ms ease;
@@ -72,19 +72,20 @@
       }
       #loader.fade-out img {
         animation-duration: 1.05s;
-        box-shadow: 0 0 26px rgba(230, 122, 0, 0.38);
+        box-shadow: 0 0 26px var(--tb-loader-glow, rgba(230, 122, 0, 0.38));
       }
       @keyframes loaderPulse {
         0%,
         100% {
           transform: scale(1);
           opacity: 0.92;
-          box-shadow: 0 0 28px rgba(230, 122, 0, 0.4);
+          box-shadow: 0 0 28px var(--tb-loader-glow, rgba(230, 122, 0, 0.4));
         }
         50% {
           transform: scale(1.16);
           opacity: 1;
-          box-shadow: 0 0 50px rgba(230, 122, 0, 0.6);
+          box-shadow: 0 0 50px
+            var(--tb-loader-glow-strong, rgba(230, 122, 0, 0.6));
         }
       }
     </style>
@@ -100,6 +101,9 @@
         object-fit: cover;
         border-radius: 50%;
         background: rgba(230, 122, 0, 0.08);
+      }
+      #loader img {
+        background: var(--tb-loader-img-bg, rgba(230, 122, 0, 0.08));
       }
       img.logo-sm {
         width: 48px;
@@ -118,6 +122,122 @@
         height: 120px;
       }
     </style>
+    <script>
+      (function initLoaderThemePreload() {
+        const normalizeAssetPath = (value) => {
+          if (value === null || value === undefined) return "";
+          return String(value)
+            .trim()
+            .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
+        };
+        const fixLegacyThemePath = (value) => {
+          const cssFile = normalizeAssetPath(value) || "styles/style.css";
+          const legacyMap = {
+            "style.css": "styles/style.css",
+            "theme-christmas.css": "styles/theme-christmas.css",
+            "theme-valentine.css": "styles/theme-valentine.css",
+            "theme-ramadan.css": "styles/theme-ramadan.css",
+            "theme-halloween.css": "styles/theme-halloween.css",
+            "theme-independenceday.css": "styles/theme-independenceday.css",
+            "theme-independence-day.css": "styles/theme-independenceday.css",
+          };
+          return legacyMap[cssFile] || cssFile;
+        };
+        const lsGet = (key) => {
+          try {
+            return localStorage.getItem(key);
+          } catch {
+            return null;
+          }
+        };
+        const hexToRgb = (hex) => {
+          const raw = String(hex || "").trim().replace("#", "");
+          if (!raw) return null;
+          const expanded =
+            raw.length === 3
+              ? raw
+                  .split("")
+                  .map((ch) => ch + ch)
+                  .join("")
+              : raw;
+          if (expanded.length !== 6) return null;
+          const n = Number.parseInt(expanded, 16);
+          if (!Number.isFinite(n)) return null;
+          const r = (n >> 16) & 255;
+          const g = (n >> 8) & 255;
+          const b = n & 255;
+          return [r, g, b];
+        };
+
+        const savedModeRaw = lsGet("toke_bakes_theme_mode");
+        const systemMode =
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        const mode =
+          savedModeRaw === "dark" || savedModeRaw === "light"
+            ? savedModeRaw
+            : systemMode;
+
+        const savedThemeRaw =
+          lsGet("toke_bakes_global_theme_css") ||
+          lsGet("toke_bakes_css_theme") ||
+          "styles/style.css";
+        const savedTheme = fixLegacyThemePath(savedThemeRaw);
+
+        const PALETTES = {
+          "styles/style.css": {
+            light: { background: "#fcf6f0", primary: "#e67a00" },
+            dark: { background: "#151210", primary: "#e67a00" },
+          },
+          "styles/theme-christmas.css": {
+            light: { background: "#fff7f5", primary: "#c62828" },
+            dark: { background: "#071a0b", primary: "#ff6b6b" },
+          },
+          "styles/theme-valentine.css": {
+            light: { background: "#fff4f7", primary: "#ff2d55" },
+            dark: { background: "#12060b", primary: "#ff5c8a" },
+          },
+          "styles/theme-ramadan.css": {
+            light: { background: "#fdf7e8", primary: "#0b6b3a" },
+            dark: { background: "#071a13", primary: "#2fd17a" },
+          },
+          "styles/theme-halloween.css": {
+            light: { background: "#f5f5f5", primary: "#ff7a00" },
+            dark: { background: "#0f0f0f", primary: "#ff9a3c" },
+          },
+          "styles/theme-independenceday.css": {
+            light: { background: "#f8fbff", primary: "#1e4db7" },
+            dark: { background: "#0b1020", primary: "#4d7cff" },
+          },
+        };
+
+        const palette =
+          PALETTES[savedTheme] || PALETTES["styles/style.css"] || null;
+        const colors = palette ? palette[mode] || palette.light : null;
+        if (!colors) return;
+
+        const rgb = hexToRgb(colors.primary) || [230, 122, 0];
+        const css = document.documentElement.style;
+        css.setProperty("--tb-loader-bg", colors.background);
+        css.setProperty(
+          "--tb-loader-img-bg",
+          `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.08)`
+        );
+        css.setProperty(
+          "--tb-loader-glow",
+          `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.38)`
+        );
+        css.setProperty(
+          "--tb-loader-glow-strong",
+          `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.6)`
+        );
+        try {
+          document.documentElement.style.backgroundColor = colors.background;
+        } catch {}
+      })();
+    </script>
     <link rel="stylesheet" href="styles/style.css" id="base-stylesheet" />
     <link rel="preload" href="images/logo.webp" as="image" fetchpriority="high" />
     <link rel="prefetch" href="images/christmas-logo.webp" as="image" />
@@ -221,8 +341,11 @@
         document.documentElement.classList.add("preload-no-transitions");
         try {
           document.documentElement.style.colorScheme = savedMode;
+          const preloadBg = (
+            document.documentElement.style.getPropertyValue("--tb-loader-bg") || ""
+          ).trim();
           document.documentElement.style.backgroundColor =
-            savedMode === "dark" ? "#1a1a1a" : "#ffffff";
+            preloadBg || (savedMode === "dark" ? "#1a1a1a" : "#ffffff");
         } catch {}
         let preloadStyle = document.getElementById("theme-preload-style");
         if (!preloadStyle) {
@@ -337,7 +460,7 @@
     <script src="scripts/theme-manager.js" defer></script>
   </head>
   <body>
-    <div id="loader" data-logo-ready="0">
+    <div id="loader" data-logo-ready="1">
       <img
         src="images/logo.webp"
         alt="Toke Bakes"
@@ -540,6 +663,13 @@
         if (!loader) return;
         const forceHide = () => {
           if (loader.style.display === "none") return;
+          try {
+            document.documentElement.setAttribute("data-loader-seen", "1");
+          } catch {}
+          try {
+            document.documentElement.classList.remove("theme-loading");
+            document.documentElement.setAttribute("data-overlay-ready", "1");
+          } catch {}
           loader.classList.add("fade-out");
           loader.style.opacity = "0";
           loader.style.pointerEvents = "none";
@@ -548,7 +678,7 @@
             loader.classList.remove("fade-out");
           }, 380);
         };
-        setTimeout(forceHide, 10000);
+        setTimeout(forceHide, 20000);
       })();
     </script>
     <script src="scripts/script.js" defer></script>

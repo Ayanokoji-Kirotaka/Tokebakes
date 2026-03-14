@@ -1,57 +1,75 @@
-/* theme-valentine.css - Variables only (imports base styles) */
+/* theme-valentine.css - Romantic Valentine Theme */
 @import url("style.css");
 
 /* ================== LIGHT MODE ================== */
 :root {
-  --primary: #ff2d55;
-  --primary-strong: #ff6b8b;
-  --primary-soft: rgba(255, 45, 85, 0.18);
 
+  /* Rose pink */
+  --primary: #e63961;
+  --primary-strong: #ff7a9b;
+  --primary-soft: rgba(230, 57, 97, 0.18);
+
+  /* Romantic violet */
   --secondary: #b5179e;
 
-  --text: #2b1a1f;
-  --text-light: #5e3a46;
+  /* Accent (soft love glow) */
+  --accent: #ffb3c6;
 
-  --background: #fff4f7;
-  --surface: rgba(255, 255, 255, 0.86);
-  --surface-2: rgba(255, 244, 250, 0.95);
+  /* Text */
+  --text: #2b1a1f;
+  --text-light: #6a4450;
+
+  /* Romantic soft background */
+  --background: #fff5f7;
+  --surface: rgba(255, 255, 255, 0.9);
+  --surface-2: rgba(255, 245, 250, 0.96);
   --surface-secondary: var(--surface-2);
 
-  --border: rgba(255, 45, 85, 0.18);
-  --border-strong: rgba(255, 45, 85, 0.32);
-  --border-subtle: rgba(255, 45, 85, 0.14);
+  /* Borders */
+  --border: rgba(230, 57, 97, 0.18);
+  --border-strong: rgba(230, 57, 97, 0.32);
+  --border-subtle: rgba(230, 57, 97, 0.12);
 
-  --shadow: rgba(46, 28, 18, 0.16);
+  /* Shadows */
+  --shadow: rgba(70, 20, 40, 0.16);
 
-  --focus-ring: 0 0 0 3px rgba(255, 45, 85, 0.35);
+  --focus-ring: 0 0 0 3px rgba(230, 57, 97, 0.35);
 
   --primary-color: var(--primary);
   --secondary-color: var(--primary-strong);
 }
 
+
 /* ================== DARK MODE ================== */
 [data-theme="dark"] {
-  --primary: #ff5c8a;
-  --primary-strong: #ff87ab;
-  --primary-soft: rgba(255, 92, 138, 0.18);
 
-  --secondary: #b5179e;
+  --primary: #ff6f9f;
+  --primary-strong: #ffa3bf;
+  --primary-soft: rgba(255, 111, 159, 0.2);
 
+  --secondary: #d946ef;
+
+  --accent: #ffc4d6;
+
+  /* Text */
   --text: #ffeef3;
   --text-light: #f2c7d5;
 
-  --background: #12060b;
-  --surface: rgba(31, 13, 21, 0.92);
-  --surface-2: rgba(44, 18, 32, 0.94);
+  /* Romantic night theme */
+  --background: #14070c;
+  --surface: rgba(34, 14, 24, 0.92);
+  --surface-2: rgba(46, 18, 32, 0.95);
   --surface-secondary: var(--surface-2);
 
-  --border: rgba(255, 92, 138, 0.22);
-  --border-strong: rgba(255, 135, 171, 0.35);
-  --border-subtle: rgba(255, 92, 138, 0.18);
+  /* Borders */
+  --border: rgba(255, 111, 159, 0.24);
+  --border-strong: rgba(255, 163, 191, 0.36);
+  --border-subtle: rgba(255, 111, 159, 0.16);
 
-  --shadow: rgba(0, 0, 0, 0.6);
+  /* Shadows */
+  --shadow: rgba(0, 0, 0, 0.55);
 
-  --focus-ring: 0 0 0 3px rgba(255, 92, 138, 0.45);
+  --focus-ring: 0 0 0 3px rgba(255, 111, 159, 0.45);
 
   --primary-color: var(--primary);
   --secondary-color: var(--primary-strong);

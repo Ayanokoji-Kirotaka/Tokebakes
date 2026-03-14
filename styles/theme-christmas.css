@@ -3,56 +3,73 @@
 
 /* ================== LIGHT MODE ================== */
 :root {
-  --primary: #c62828;
-  --primary-strong: #ff6b6b;
-  --primary-soft: rgba(198, 40, 40, 0.18);
 
-  --secondary: #2e7d32;
+  /* Festive colors */
+  --primary: #b71c1c;              /* deep christmas red */
+  --primary-strong: #e53935;       /* bright ornament red */
+  --primary-soft: rgba(183, 28, 28, 0.18);
 
-  --text: #2b1a15;
-  --text-light: #4a2e27;
+  --secondary: #1b5e20;            /* pine tree green */
+  --secondary-soft: rgba(27, 94, 32, 0.15);
 
-  --background: #fff7f5;
-  --surface: rgba(255, 255, 255, 0.82);
-  --surface-2: rgba(255, 250, 247, 0.94);
+  /* Gold accent for festive highlights */
+  --accent: #c9a227;
+
+  /* Text */
+  --text: #2c1b14;
+  --text-light: #5a3b31;
+
+  /* Backgrounds */
+  --background: #fffaf7;           /* warm snowy white */
+  --surface: rgba(255, 255, 255, 0.88);
+  --surface-2: rgba(255, 252, 248, 0.95);
   --surface-secondary: var(--surface-2);
 
-  --border: rgba(198, 40, 40, 0.18);
-  --border-strong: rgba(198, 40, 40, 0.32);
-  --border-subtle: rgba(198, 40, 40, 0.14);
+  /* Borders */
+  --border: rgba(183, 28, 28, 0.15);
+  --border-strong: rgba(183, 28, 28, 0.3);
+  --border-subtle: rgba(183, 28, 28, 0.1);
 
-  --shadow: rgba(46, 28, 18, 0.16);
+  /* Shadows */
+  --shadow: rgba(70, 40, 20, 0.18);
 
-  --focus-ring: 0 0 0 3px rgba(198, 40, 40, 0.35);
+  /* Focus */
+  --focus-ring: 0 0 0 3px rgba(229, 57, 53, 0.35);
 
+  /* Compatibility variables */
   --primary-color: var(--primary);
-  --secondary-color: var(--primary-strong);
+  --secondary-color: var(--secondary);
 }
+
 
 /* ================== DARK MODE ================== */
 [data-theme="dark"] {
-  --primary: #ff6b6b;
-  --primary-strong: #ff9b9b;
-  --primary-soft: rgba(255, 107, 107, 0.18);
 
-  --secondary: #57d26b;
+  --primary: #ff4d4d;
+  --primary-strong: #ff7a7a;
+  --primary-soft: rgba(255, 77, 77, 0.2);
+
+  --secondary: #2ecc71;            /* glowing christmas green */
+  --secondary-soft: rgba(46, 204, 113, 0.2);
+
+  --accent: #e6c35c;               /* warm gold */
 
   --text: #f4f7f4;
   --text-light: #cfe0d1;
 
-  --background: #071a0b;
-  --surface: rgba(14, 32, 18, 0.92);
-  --surface-2: rgba(20, 42, 24, 0.94);
+  --background: #08140c;           /* deep winter night */
+  --surface: rgba(14, 28, 18, 0.92);
+  --surface-2: rgba(18, 36, 22, 0.95);
   --surface-secondary: var(--surface-2);
 
-  --border: rgba(87, 210, 107, 0.22);
-  --border-strong: rgba(87, 210, 107, 0.38);
-  --border-subtle: rgba(87, 210, 107, 0.18);
+  --border: rgba(46, 204, 113, 0.22);
+  --border-strong: rgba(46, 204, 113, 0.38);
+  --border-subtle: rgba(46, 204, 113, 0.15);
 
-  --shadow: rgba(0, 0, 0, 0.55);
+  --shadow: rgba(0, 0, 0, 0.6);
 
-  --focus-ring: 0 0 0 3px rgba(255, 107, 107, 0.45);
+  --focus-ring: 0 0 0 3px rgba(255, 77, 77, 0.45);
 
   --primary-color: var(--primary);
-  --secondary-color: var(--primary-strong);
+  --secondary-color: var(--secondary);
 }
