@@ -4732,9 +4732,7 @@ function buildPreparedOrderPayload(orderData) {
     orderTotal,
     summaryRows,
     subjectRaw,
-    gmailUrl: `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
-      BUSINESS_EMAIL,
-    )}&su=${subject}&body=${gmailBody}`,
+    instagramUrl: "",
     waUrl: `https://wa.me/${BUSINESS_PHONE_WAME}?text=${waBody}`,
   };
 }
@@ -4901,7 +4899,7 @@ function initBottomSheet() {
         <h3>Place your order</h3>
         <div class="order-summary" aria-live="polite"></div>
         <div class="sheet-actions">
-          <button id="order-via-gmail" class="order-option-btn">Order via Gmail</button>
+          <button id="order-via-instagram" class="order-option-btn">Order via Instagram</button>
           <button id="order-via-whatsapp" class="order-option-btn">Order via WhatsApp</button>
         </div>
         <small class="sheet-note">We will open your chosen app with the order pre-filled. Please complete your contact details before sending.</small>
@@ -4943,10 +4941,10 @@ function initBottomSheet() {
       closeBottomSheet(sheet);
     }
 
-    const gmailBtn = e.target.closest("#order-via-gmail");
+    const instagramBtn = e.target.closest("#order-via-instagram");
     const waBtn = e.target.closest("#order-via-whatsapp");
 
-    if (gmailBtn || waBtn) {
+    if (instagramBtn || waBtn) {
       const prepared =
         sheet.__tbOrderPayload || latestOrderSheetPayload || null;
       if (!prepared) {
@@ -4957,10 +4955,10 @@ function initBottomSheet() {
         return;
       }
 
-      const activeBtn = gmailBtn || waBtn;
-      const isGmail = Boolean(gmailBtn);
-      const channel = isGmail ? "gmail" : "whatsapp";
-      const targetUrl = isGmail ? prepared.gmailUrl : prepared.waUrl;
+      const activeBtn = instagramBtn || waBtn;
+      const isInstagram = Boolean(instagramBtn);
+      const channel = isInstagram ? "instagram" : "whatsapp";
+      const targetUrl = isInstagram ? prepared.instagramUrl : prepared.waUrl;
 
       activeBtn.disabled = true;
       activeBtn.classList.add("is-opening");
@@ -5518,7 +5516,7 @@ function setupHomeScrollReveal() {
       el.classList.remove("reveal-lite");
     }
 
-    el.style.transitionDelay = `${Math.min(idx * (liteMotion ? 40 : 60), liteMotion ? 160 : 240)}ms`;
+    el.style.transitionDelay = "";
 
     // Check if element is already in viewport
     const rect = el.getBoundingClientRect();
