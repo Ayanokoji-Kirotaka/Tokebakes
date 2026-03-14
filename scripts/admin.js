@@ -24,7 +24,10 @@ class DataSyncManager {
       this.refreshUnsubscribe = this.syncBus.registerRefreshHandler(
         async (payload) => {
           const normalizedType = normalizeChangeType(
-            payload?.changeType || payload?.lastChangeType || payload?.itemType || "all"
+            payload?.changeType ||
+              payload?.lastChangeType ||
+              payload?.itemType ||
+              "all",
           );
           await refreshAdminUiFromSync(normalizedType, payload || {});
           return true;
@@ -33,8 +36,15 @@ class DataSyncManager {
           id: "admin-content-refresh",
           showIndicator: false,
           priority: 65,
-          changeTypes: ["all", "menu", "featured", "specials", "carousel", "theme"],
-        }
+          changeTypes: [
+            "all",
+            "menu",
+            "featured",
+            "specials",
+            "carousel",
+            "theme",
+          ],
+        },
       );
     }
 
@@ -45,7 +55,7 @@ class DataSyncManager {
         () => {
           this.destroy();
         },
-        { once: true }
+        { once: true },
       );
     }
   }
@@ -65,7 +75,7 @@ class DataSyncManager {
 
       if (typeof this.syncBus.requestServerCheck === "function") {
         Promise.resolve(
-          this.syncBus.requestServerCheck("admin-write", true)
+          this.syncBus.requestServerCheck("admin-write", true),
         ).catch(() => {});
       }
       return;
@@ -146,7 +156,10 @@ function initAdminSyncBadge() {
   const badge = getAdminSyncBadge();
   if (!badge) return;
 
-  if (window.TokeUpdateSync && typeof window.TokeUpdateSync.getStatus === "function") {
+  if (
+    window.TokeUpdateSync &&
+    typeof window.TokeUpdateSync.getStatus === "function"
+  ) {
     const status = window.TokeUpdateSync.getStatus();
     if (status?.applying) {
       setAdminSyncBadge("syncing", status);
@@ -246,7 +259,12 @@ const STORAGE_LIMITS_KB = {
 };
 
 const ITEM_TYPES = ["featured", "menu", "specials", "carousel"];
-const DISPLAY_ORDER_MANAGED_TYPES = new Set(["featured", "menu", "specials", "carousel"]);
+const DISPLAY_ORDER_MANAGED_TYPES = new Set([
+  "featured",
+  "menu",
+  "specials",
+  "carousel",
+]);
 const itemStateCache = ITEM_TYPES.reduce((acc, type) => {
   acc[type] = new Map();
   return acc;
@@ -254,12 +272,13 @@ const itemStateCache = ITEM_TYPES.reduce((acc, type) => {
 const loadedAdminTabs = new Set();
 const PRODUCT_OPTION_ENDPOINTS = {
   groups:
-    window.API_ENDPOINTS?.MENU_OPTION_GROUPS || "/rest/v1/product_option_groups",
+    window.API_ENDPOINTS?.MENU_OPTION_GROUPS ||
+    "/rest/v1/product_option_groups",
   values:
-    window.API_ENDPOINTS?.MENU_OPTION_VALUES || "/rest/v1/product_option_values",
+    window.API_ENDPOINTS?.MENU_OPTION_VALUES ||
+    "/rest/v1/product_option_values",
 };
-const SPECIALS_ENDPOINT =
-  window.API_ENDPOINTS?.SPECIALS || "/rest/v1/specials";
+const SPECIALS_ENDPOINT = window.API_ENDPOINTS?.SPECIALS || "/rest/v1/specials";
 const STATS_ENDPOINTS = {
   counts: "/rest/v1/rpc/get_site_stats_counts",
   daily: "/rest/v1/rpc/get_site_stats_daily",
@@ -316,7 +335,11 @@ function parseContentVersion(raw) {
   }
   if (raw && typeof raw === "object") {
     return parseContentVersion(
-      raw.get_content_version ?? raw.content_version ?? raw.value ?? raw.version ?? null
+      raw.get_content_version ??
+        raw.content_version ??
+        raw.value ??
+        raw.version ??
+        null,
     );
   }
   return null;
@@ -335,7 +358,9 @@ function normalizeChangeType(raw) {
   ) {
     return "menu";
   }
-  if (["menu", "featured", "specials", "carousel", "theme", "all"].includes(value)) {
+  if (
+    ["menu", "featured", "specials", "carousel", "theme", "all"].includes(value)
+  ) {
     return value;
   }
   return "all";
@@ -351,7 +376,7 @@ function parseUpdateSignalPayload(raw) {
   return {
     contentVersion: version,
     lastChangeType: normalizeChangeType(
-      row?.last_change_type || row?.change_type || row?.item_type || "all"
+      row?.last_change_type || row?.change_type || row?.item_type || "all",
     ),
     updatedAtTs: Number.isNaN(parsedTs) ? 0 : Math.trunc(parsedTs),
   };
@@ -359,7 +384,10 @@ function parseUpdateSignalPayload(raw) {
 
 function getStoredContentVersion() {
   try {
-    return parseContentVersion(localStorage.getItem(CONTENT_VERSION_STORAGE_KEY)) || 0;
+    return (
+      parseContentVersion(localStorage.getItem(CONTENT_VERSION_STORAGE_KEY)) ||
+      0
+    );
   } catch {
     return 0;
   }
@@ -376,7 +404,7 @@ function setStoredContentVersion(version) {
 function getStoredLastChangeType() {
   try {
     return normalizeChangeType(
-      localStorage.getItem(LAST_CHANGE_TYPE_STORAGE_KEY) || "all"
+      localStorage.getItem(LAST_CHANGE_TYPE_STORAGE_KEY) || "all",
     );
   } catch {
     return "all";
@@ -387,7 +415,7 @@ function setStoredLastChangeType(changeType) {
   try {
     localStorage.setItem(
       LAST_CHANGE_TYPE_STORAGE_KEY,
-      normalizeChangeType(changeType)
+      normalizeChangeType(changeType),
     );
   } catch {}
 }
@@ -409,33 +437,31 @@ function recordAdminError(type, message, details = null) {
 }
 
 function setControlsBusy(controls = [], isBusy = false) {
-  controls
-    .filter(Boolean)
-    .forEach((control) => {
-      if (!control || typeof control !== "object") return;
-      if (isBusy) {
-        if (!adminControlState.has(control)) {
-          adminControlState.set(control, {
-            disabled: Boolean(control.disabled),
-            ariaBusy: control.getAttribute("aria-busy"),
-          });
-        }
-        control.disabled = true;
-        control.setAttribute("aria-busy", "true");
-        control.classList.add("is-busy");
-        return;
+  controls.filter(Boolean).forEach((control) => {
+    if (!control || typeof control !== "object") return;
+    if (isBusy) {
+      if (!adminControlState.has(control)) {
+        adminControlState.set(control, {
+          disabled: Boolean(control.disabled),
+          ariaBusy: control.getAttribute("aria-busy"),
+        });
       }
+      control.disabled = true;
+      control.setAttribute("aria-busy", "true");
+      control.classList.add("is-busy");
+      return;
+    }
 
-      const previous = adminControlState.get(control);
-      control.disabled = previous ? previous.disabled : false;
-      if (!previous || previous.ariaBusy === null) {
-        control.removeAttribute("aria-busy");
-      } else {
-        control.setAttribute("aria-busy", previous.ariaBusy);
-      }
-      control.classList.remove("is-busy");
-      adminControlState.delete(control);
-    });
+    const previous = adminControlState.get(control);
+    control.disabled = previous ? previous.disabled : false;
+    if (!previous || previous.ariaBusy === null) {
+      control.removeAttribute("aria-busy");
+    } else {
+      control.setAttribute("aria-busy", previous.ariaBusy);
+    }
+    control.classList.remove("is-busy");
+    adminControlState.delete(control);
+  });
 }
 
 function beginAdminAction(actionKey, controls = []) {
@@ -571,7 +597,9 @@ function ensureAdminCrudProgressUi() {
   adminCrudProgressState.fill = root.querySelector(".tb-admin-progress-fill");
   adminCrudProgressState.value = root.querySelector(".tb-admin-progress-value");
   adminCrudProgressState.title = root.querySelector(".tb-admin-progress-title");
-  adminCrudProgressState.status = root.querySelector(".tb-admin-progress-status");
+  adminCrudProgressState.status = root.querySelector(
+    ".tb-admin-progress-status",
+  );
   adminCrudProgressState.progress = 0;
   return adminCrudProgressState;
 }
@@ -585,7 +613,10 @@ function setAdminCrudProgress(nextValue, statusText = "") {
   if (statusText && ui.status) ui.status.textContent = statusText;
 }
 
-function startAdminCrudProgress(titleText, statusText = "Preparing request...") {
+function startAdminCrudProgress(
+  titleText,
+  statusText = "Preparing request...",
+) {
   const ui = ensureAdminCrudProgressUi();
   if (ui.timer) {
     clearInterval(ui.timer);
@@ -633,7 +664,7 @@ function clearFieldError(field) {
   if (!field) return;
   field.classList.remove("tb-field-invalid");
   const messageEl = field.parentElement?.querySelector(
-    `[data-field-error-for="${field.id}"]`
+    `[data-field-error-for="${field.id}"]`,
   );
   if (messageEl) {
     messageEl.remove();
@@ -712,7 +743,9 @@ function requestAdminDynamicCacheClear() {
     .getRegistration()
     .then((registration) => {
       notify(
-        registration?.active || registration?.waiting || registration?.installing
+        registration?.active ||
+          registration?.waiting ||
+          registration?.installing,
       );
     })
     .catch(() => {});
@@ -740,7 +773,11 @@ function requestServiceWorkerMessage(type) {
   return navigator.serviceWorker
     .getRegistration()
     .then((registration) =>
-      send(registration?.active || registration?.waiting || registration?.installing)
+      send(
+        registration?.active ||
+          registration?.waiting ||
+          registration?.installing,
+      ),
     )
     .catch(() => false);
 }
@@ -808,7 +845,7 @@ async function fetchServerUpdateSignal() {
         retries: 2,
         timeout: 9000,
         suppressNotifications: true,
-      }
+      },
     );
     const parsed = parseUpdateSignalPayload(result);
     if (parsed && Number.isFinite(parsed.contentVersion)) {
@@ -828,7 +865,7 @@ async function fetchServerUpdateSignal() {
         retries: 2,
         timeout: 9000,
         suppressNotifications: true,
-      }
+      },
     );
     const parsedVersion = parseContentVersion(legacyResult);
     if (Number.isFinite(parsedVersion) && parsedVersion >= 0) {
@@ -860,7 +897,7 @@ async function bumpServerUpdateSignal(changeType = "all") {
         retries: 2,
         timeout: 10000,
         suppressNotifications: true,
-      }
+      },
     );
     const parsed = parseContentVersion(result);
     if (Number.isFinite(parsed) && parsed >= 0) {
@@ -880,7 +917,7 @@ async function bumpServerUpdateSignal(changeType = "all") {
         retries: 1,
         timeout: 9000,
         suppressNotifications: true,
-      }
+      },
     );
     const parsedLegacy = parseContentVersion(legacyBump);
     if (Number.isFinite(parsedLegacy) && parsedLegacy >= 0) {
@@ -908,7 +945,7 @@ async function bumpServerUpdateSignal(changeType = "all") {
         authRequired: true,
         headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
         suppressNotifications: true,
-      }
+      },
     );
   } catch {}
 
@@ -920,7 +957,7 @@ async function bumpServerUpdateSignal(changeType = "all") {
 async function ensureContentVersionAfterWrite(
   previousVersion = null,
   changeType = "all",
-  forceIncrement = false
+  forceIncrement = false,
 ) {
   const before =
     Number.isFinite(previousVersion) && previousVersion >= 0
@@ -1237,7 +1274,7 @@ async function loadStatsPanel(force = false) {
           authRequired: true,
           suppressNotifications: true,
           timeout: 22000,
-        }
+        },
       ),
       secureRequest(
         STATS_ENDPOINTS.daily,
@@ -1247,7 +1284,7 @@ async function loadStatsPanel(force = false) {
           authRequired: true,
           suppressNotifications: true,
           timeout: 22000,
-        }
+        },
       ),
     ]);
 
@@ -1272,7 +1309,7 @@ async function loadStatsPanel(force = false) {
     console.error("Failed to load stats panel:", error);
     setStatsStatus(
       "Unable to load stats. Confirm supabase-stats.sql has been applied.",
-      true
+      true,
     );
   } finally {
     statsPanelState.refreshing = false;
@@ -1285,8 +1322,7 @@ async function loadStatsPanel(force = false) {
 
 function getActiveAdminTabId() {
   return (
-    document.querySelector(".admin-tab.active")?.dataset?.tab ||
-    "featured"
+    document.querySelector(".admin-tab.active")?.dataset?.tab || "featured"
   );
 }
 
@@ -1330,8 +1366,8 @@ async function refreshAdminUiFromSync(changeType = "all", payload = {}) {
           window.ThemeManager &&
             typeof window.ThemeManager.checkForThemeUpdates === "function"
             ? window.ThemeManager.checkForThemeUpdates(true)
-            : null
-        )
+            : null,
+        ),
       );
     }
     tasks.push(updateItemCounts());
@@ -1364,13 +1400,16 @@ async function runGlobalRefreshFromStats() {
       const baselineVersion = Number(baselineSignal?.contentVersion || 0) || 0;
 
       setAdminCrudProgress(20, "Clearing local caches...");
-      await Promise.allSettled([clearThemeCachesSafely(), clearAppCachesSafely()]);
+      await Promise.allSettled([
+        clearThemeCachesSafely(),
+        clearAppCachesSafely(),
+      ]);
 
       setAdminCrudProgress(46, "Bumping global content version...");
       let contentVersion = await ensureContentVersionAfterWrite(
         baselineVersion,
         "all",
-        true
+        true,
       );
       const verifiedSignal = await fetchServerUpdateSignal();
       if (
@@ -1393,7 +1432,7 @@ async function runGlobalRefreshFromStats() {
       ) {
         await window.TokeUpdateSync.requestServerCheck(
           "admin-global-refresh",
-          true
+          true,
         );
       }
 
@@ -1413,12 +1452,9 @@ async function runGlobalRefreshFromStats() {
       ? `v${actionResult.value}`
       : "latest version";
     setStatsStatus(
-      `Global refresh published (${versionLabel}). Active devices will sync automatically.`
+      `Global refresh published (${versionLabel}). Active devices will sync automatically.`,
     );
-    showNotification(
-      `Global refresh sent (${versionLabel}).`,
-      "success"
-    );
+    showNotification(`Global refresh sent (${versionLabel}).`, "success");
     return;
   }
 
@@ -1550,7 +1586,7 @@ async function fetchAdminUpdateSignal() {
       "/rest/v1/rpc/get_update_signal",
       "POST",
       {},
-      { authRequired: true, suppressNotifications: true }
+      { authRequired: true, suppressNotifications: true },
     );
     return parseUpdateSignalPayload(result);
   } catch {
@@ -1568,7 +1604,7 @@ async function fetchAdminStateSnapshot() {
       "/rest/v1/rpc/get_site_state_snapshot",
       "POST",
       {},
-      { authRequired: true, suppressNotifications: true }
+      { authRequired: true, suppressNotifications: true },
     );
   } catch {
     return null;
@@ -1591,7 +1627,7 @@ function renderDebugErrorLog() {
           <td>${escapeHtml(entry.type)}</td>
           <td>${escapeHtml(entry.message)}</td>
         </tr>
-      `
+      `,
     )
     .join("");
 }
@@ -1610,7 +1646,7 @@ function renderDebugMetricsRows(rows = []) {
           <td>${escapeHtml(toSafeString(row.label))}</td>
           <td>${escapeHtml(toSafeString(row.value))}</td>
         </tr>
-      `
+      `,
     )
     .join("");
 }
@@ -1626,7 +1662,9 @@ async function loadDebugStatePanel(countsRow = {}) {
         getCacheHealthSnapshot(),
         window.ThemeManager &&
         typeof window.ThemeManager.fetchActiveThemeFromDatabase === "function"
-          ? window.ThemeManager.fetchActiveThemeFromDatabase(true).catch(() => null)
+          ? window.ThemeManager.fetchActiveThemeFromDatabase(true).catch(
+              () => null,
+            )
           : Promise.resolve(null),
       ]);
     const stateSnapshot = Array.isArray(rawStateSnapshot)
@@ -1634,7 +1672,8 @@ async function loadDebugStatePanel(countsRow = {}) {
       : rawStateSnapshot;
 
     const syncStatus =
-      window.TokeUpdateSync && typeof window.TokeUpdateSync.getStatus === "function"
+      window.TokeUpdateSync &&
+      typeof window.TokeUpdateSync.getStatus === "function"
         ? window.TokeUpdateSync.getStatus()
         : null;
     const localVersion = getStoredContentVersion();
@@ -1642,8 +1681,10 @@ async function loadDebugStatePanel(countsRow = {}) {
     const lastSyncCheck =
       Number(localStorage.getItem(LAST_SYNC_CHECK_STORAGE_KEY) || "0") || 0;
     const lastAppliedThemeTs = Math.max(
-      Number(localStorage.getItem("toke_bakes_global_theme_updated_at") || "0") || 0,
-      Number(localStorage.getItem("toke_bakes_theme_last_update") || "0") || 0
+      Number(
+        localStorage.getItem("toke_bakes_global_theme_updated_at") || "0",
+      ) || 0,
+      Number(localStorage.getItem("toke_bakes_theme_last_update") || "0") || 0,
     );
 
     const localThemePath =
@@ -1663,11 +1704,11 @@ async function loadDebugStatePanel(countsRow = {}) {
     setDebugValue("debug-last-change-type", signal?.lastChangeType || "all");
     setDebugValue(
       "debug-sync-mode",
-      syncStatus ? `${syncStatus.mode} (${syncStatus.status})` : "fallback"
+      syncStatus ? `${syncStatus.mode} (${syncStatus.status})` : "fallback",
     );
     setDebugValue(
       "debug-poll-interval",
-      syncStatus?.pollIntervalMs ? `${syncStatus.pollIntervalMs}ms` : "-"
+      syncStatus?.pollIntervalMs ? `${syncStatus.pollIntervalMs}ms` : "-",
     );
     setDebugValue("debug-last-sync-check", formatDebugDate(lastSyncCheck));
     setDebugValue(
@@ -1676,31 +1717,41 @@ async function loadDebugStatePanel(countsRow = {}) {
         ? `${swSnapshot.registered ? "registered" : "not-registered"} / ${
             swSnapshot.controlling ? "controlling" : "not-controlling"
           }`
-        : "unsupported"
+        : "unsupported",
     );
     setDebugValue(
       "debug-sw-version",
-      `${swSnapshot.version} | ${swSnapshot.cacheNames.length} caches`
+      `${swSnapshot.version} | ${swSnapshot.cacheNames.length} caches`,
     );
     setDebugValue(
       "debug-sw-update-time",
-      formatDebugDate(swSnapshot.lastUpdateDetectedAt)
+      formatDebugDate(swSnapshot.lastUpdateDetectedAt),
     );
-    setDebugValue("debug-local-version", `${localVersion} (${localChangeType})`);
+    setDebugValue(
+      "debug-local-version",
+      `${localVersion} (${localChangeType})`,
+    );
 
     const mismatchFlags = [];
     if (localVersion !== Number(signal?.contentVersion || 0)) {
       mismatchFlags.push("version");
     }
-    if (normalizeChangeType(localChangeType) !== normalizeChangeType(signal?.lastChangeType)) {
+    if (
+      normalizeChangeType(localChangeType) !==
+      normalizeChangeType(signal?.lastChangeType)
+    ) {
       mismatchFlags.push("change-type");
     }
-    if (dbTheme?.css_file && localThemePath && dbTheme.css_file !== localThemePath) {
+    if (
+      dbTheme?.css_file &&
+      localThemePath &&
+      dbTheme.css_file !== localThemePath
+    ) {
       mismatchFlags.push("theme");
     }
     setDebugValue(
       "debug-mismatch-flags",
-      mismatchFlags.length ? mismatchFlags.join(", ") : "None"
+      mismatchFlags.length ? mismatchFlags.join(", ") : "None",
     );
 
     const cacheBreakdown = cacheSnapshot.counts.length
@@ -1734,19 +1785,19 @@ async function loadDebugStatePanel(countsRow = {}) {
       {
         label: "Menu/Featured table updated",
         value: `${formatDebugDate(stateSnapshot?.menu_last_updated_at)} / ${formatDebugDate(
-          stateSnapshot?.featured_last_updated_at
+          stateSnapshot?.featured_last_updated_at,
         )}`,
       },
       {
         label: "Specials/Carousel updated",
         value: `${formatDebugDate(stateSnapshot?.specials_last_updated_at)} / ${formatDebugDate(
-          stateSnapshot?.carousel_last_updated_at
+          stateSnapshot?.carousel_last_updated_at,
         )}`,
       },
       {
         label: "Theme/Options updated",
         value: `${formatDebugDate(stateSnapshot?.themes_last_updated_at)} / ${formatDebugDate(
-          stateSnapshot?.options_last_updated_at
+          stateSnapshot?.options_last_updated_at,
         )}`,
       },
       {
@@ -1784,7 +1835,9 @@ async function loadDebugStatePanel(countsRow = {}) {
     ];
     renderDebugMetricsRows(metricsRows);
     renderDebugErrorLog();
-    setDebugStatusLine(`Diagnostics refreshed at ${new Date().toLocaleTimeString()}.`);
+    setDebugStatusLine(
+      `Diagnostics refreshed at ${new Date().toLocaleTimeString()}.`,
+    );
   } catch (error) {
     recordAdminError("debug", "Failed to load diagnostics panel", {
       message: error?.message || "",
@@ -1864,14 +1917,14 @@ class ModernConfirmationDialog {
           ${
             itemDetails.price
               ? `<p><strong>Price:</strong> \u20A6${formatPrice(
-                  itemDetails.price
+                  itemDetails.price,
                 )}</p>`
               : ""
           }
           ${
             itemDetails.created
               ? `<p><small>Created: ${new Date(
-                  itemDetails.created
+                  itemDetails.created,
                 ).toLocaleDateString()}</small></p>`
               : ""
           }
@@ -1976,7 +2029,9 @@ function toArray(value) {
 }
 
 function normalizeOptionType(value) {
-  const raw = String(value || "single").trim().toLowerCase();
+  const raw = String(value || "single")
+    .trim()
+    .toLowerCase();
   return raw === "multiple" ? "multiple" : "single";
 }
 
@@ -2072,7 +2127,7 @@ function buildMenuAdminCardElement(item = {}) {
   if (!id) return null;
   const imgSrc = resolveImageForDisplay(
     resolveRecordImage(item),
-    ADMIN_IMAGE_PLACEHOLDERS.menu
+    ADMIN_IMAGE_PLACEHOLDERS.menu,
   );
   const title = toSafeString(item.title, "Menu Item");
   const description = toSafeString(item.description);
@@ -2114,7 +2169,7 @@ function buildSpecialsAdminCardElement(item = {}, badgeOrder = null) {
   if (!id) return null;
   const imgSrc = resolveImageForDisplay(
     resolveRecordImage(item),
-    ADMIN_IMAGE_PLACEHOLDERS.specials
+    ADMIN_IMAGE_PLACEHOLDERS.specials,
   );
   const title = toSafeString(item.title || item.alt, "Special Offer");
   const price = toMoney(item.price, 0);
@@ -2143,7 +2198,7 @@ function buildSpecialsAdminCardElement(item = {}, badgeOrder = null) {
       <p><strong>Price:</strong> \u20A6${escapeHtml(formatPrice(price))}${
         Number.isFinite(originalPrice) && originalPrice > price
           ? ` <span style="text-decoration:line-through;opacity:.75;">(Was \u20A6${escapeHtml(
-              formatPrice(originalPrice)
+              formatPrice(originalPrice),
             )})</span>`
           : ""
       }</p>
@@ -2208,8 +2263,10 @@ function buildCarouselAdminCardElement(item = {}, badgeOrder = null) {
 
 function buildAdminCardElement(itemType, item, badgeOrder = null) {
   if (itemType === "menu") return buildMenuAdminCardElement(item);
-  if (itemType === "specials") return buildSpecialsAdminCardElement(item, badgeOrder);
-  if (itemType === "carousel") return buildCarouselAdminCardElement(item, badgeOrder);
+  if (itemType === "specials")
+    return buildSpecialsAdminCardElement(item, badgeOrder);
+  if (itemType === "carousel")
+    return buildCarouselAdminCardElement(item, badgeOrder);
   return null;
 }
 
@@ -2217,7 +2274,7 @@ function refreshOrderBadges(itemType) {
   const container = getAdminListContainer(itemType);
   if (!container) return;
   const cards = Array.from(container.children).filter(
-    (child) => child && child.dataset && child.dataset.id
+    (child) => child && child.dataset && child.dataset.id,
   );
   cards.forEach((card, index) => {
     const badgeValue = String(index + 1);
@@ -2243,7 +2300,7 @@ function syncCachedListAfterUpsert(itemType, item) {
   if (listCache && Array.isArray(listCache.data)) {
     const nextList = listCache.data.slice();
     const existingIndex = nextList.findIndex(
-      (entry) => String(entry?.id || "") === id
+      (entry) => String(entry?.id || "") === id,
     );
     if (existingIndex >= 0) {
       nextList[existingIndex] = item;
@@ -2283,14 +2340,16 @@ function upsertItemCardInUi(itemType, item) {
   }
 
   const cards = Array.from(container.children).filter(
-    (child) => child && child.dataset && child.dataset.id
+    (child) => child && child.dataset && child.dataset.id,
   );
   if (cards.length > 1) {
     cards.sort((a, b) => {
       const aOrder = parseDisplayOrderValue(a.dataset.order, 0);
       const bOrder = parseDisplayOrderValue(b.dataset.order, 0);
       if (aOrder !== bOrder) return aOrder - bOrder;
-      return String(a.dataset.id || "").localeCompare(String(b.dataset.id || ""));
+      return String(a.dataset.id || "").localeCompare(
+        String(b.dataset.id || ""),
+      );
     });
     const fragment = document.createDocumentFragment();
     cards.forEach((card) => fragment.appendChild(card));
@@ -2326,7 +2385,7 @@ async function normalizeDisplayOrderConflicts(itemType, itemId, desiredOrder) {
         retries: 1,
         timeout: 9000,
         suppressNotifications: true,
-      }
+      },
     );
 
     if (!Array.isArray(conflictRows) || conflictRows.length === 0) {
@@ -2342,7 +2401,7 @@ async function normalizeDisplayOrderConflicts(itemType, itemId, desiredOrder) {
         retries: 1,
         timeout: 12000,
         suppressNotifications: true,
-      }
+      },
     );
 
     if (!Array.isArray(rows) || rows.length === 0) {
@@ -2361,7 +2420,7 @@ async function normalizeDisplayOrderConflicts(itemType, itemId, desiredOrder) {
       rows.map((row) => [
         String(row?.id || "").trim(),
         parseDisplayOrderValue(row?.display_order, 0),
-      ])
+      ]),
     );
 
     const changedRows = orderedIds
@@ -2372,7 +2431,7 @@ async function normalizeDisplayOrderConflicts(itemType, itemId, desiredOrder) {
       .filter(
         (row) =>
           currentById.has(row.id) &&
-          currentById.get(row.id) !== row.display_order
+          currentById.get(row.id) !== row.display_order,
       );
 
     if (!changedRows.length) {
@@ -2390,9 +2449,9 @@ async function normalizeDisplayOrderConflicts(itemType, itemId, desiredOrder) {
             retries: 1,
             timeout: 12000,
             suppressNotifications: true,
-          }
-        )
-      )
+          },
+        ),
+      ),
     );
 
     invalidateEndpointCache(endpoint);
@@ -2483,7 +2542,8 @@ async function deleteItemByType(id, itemType) {
       progressTitle: `Deleting ${label.toLowerCase()}`,
       progressText: "Removing item...",
       task: async (progress) => {
-        const baselineVersion = (await fetchServerUpdateSignal()).contentVersion;
+        const baselineVersion = (await fetchServerUpdateSignal())
+          .contentVersion;
         await secureRequest(`${endpoint}?id=eq.${id}`, "DELETE", null, {
           authRequired: true,
         });
@@ -2492,7 +2552,10 @@ async function deleteItemByType(id, itemType) {
         try {
           await deleteFromStorage(bucket, storagePath);
         } catch (storageError) {
-          console.error("Storage cleanup failed after DB delete:", storageError);
+          console.error(
+            "Storage cleanup failed after DB delete:",
+            storageError,
+          );
         }
 
         tempImageCache.delete(id);
@@ -2509,15 +2572,15 @@ async function deleteItemByType(id, itemType) {
 
         const contentVersion = await ensureContentVersionAfterWrite(
           baselineVersion,
-          itemType
+          itemType,
         );
 
         const refreshPromise = refreshListAfterDelete(itemType, true);
         refreshPromise.catch((error) =>
-          console.error(`Background refresh failed (${itemType}):`, error)
+          console.error(`Background refresh failed (${itemType}):`, error),
         );
         Promise.resolve(updateItemCounts()).catch((error) =>
-          console.error("Update counts failed:", error)
+          console.error("Update counts failed:", error),
         );
 
         dataSync.notifyDataChanged("delete", itemType, { contentVersion });
@@ -2563,7 +2626,7 @@ function generateSessionToken() {
   const array = new Uint8Array(32);
   crypto.getRandomValues(array);
   return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join(
-    ""
+    "",
   );
 }
 
@@ -2652,7 +2715,9 @@ function escapeHtml(text) {
 
 function toSafeString(value, fallback = "") {
   if (value === null || value === undefined) return fallback;
-  const text = String(value).replace(/\u0000/g, "").trim();
+  const text = String(value)
+    .replace(/\u0000/g, "")
+    .trim();
   return text || fallback;
 }
 
@@ -2669,7 +2734,7 @@ function resolveRecordImage(record) {
       record.image_url ||
       record.imageUrl ||
       record.src ||
-      record.url
+      record.url,
   );
 }
 
@@ -2701,7 +2766,8 @@ function looksLikeImageSrc(value) {
 function getAdminAssetVersionToken() {
   try {
     const contentVersion =
-      parseContentVersion(localStorage.getItem(CONTENT_VERSION_STORAGE_KEY)) || 0;
+      parseContentVersion(localStorage.getItem(CONTENT_VERSION_STORAGE_KEY)) ||
+      0;
     const themeUpdateTs =
       Number(localStorage.getItem("toke_bakes_theme_last_update") || "0") || 0;
     if (contentVersion <= 0 && themeUpdateTs <= 0) return "";
@@ -3087,7 +3153,7 @@ async function compressImage(file, maxSizeKB = 300) {
     if (!file.type.startsWith("image/")) {
       showNotification(
         "Please select an image file (JPEG, PNG, WebP, etc.).",
-        "error"
+        "error",
       );
       reject(new Error("File is not an image"));
       return;
@@ -3103,7 +3169,7 @@ async function compressImage(file, maxSizeKB = 300) {
     if (unsupportedFormats.includes(file.type.toLowerCase())) {
       showNotification(
         "Please convert HEIC/TIFF/RAW images to JPEG or PNG first.",
-        "error"
+        "error",
       );
       reject(new Error("Unsupported image format"));
       return;
@@ -3161,7 +3227,7 @@ async function compressImage(file, maxSizeKB = 300) {
             // 3. WEBP-OPTIMIZED COMPRESSION WITH SMART QUALITY ADJUSTMENT
             showNotification(
               "Adjusting quality for optimal file size...",
-              "info"
+              "info",
             );
 
             const compressionResult = optimizeImage(canvas, maxSizeKB);
@@ -3169,7 +3235,7 @@ async function compressImage(file, maxSizeKB = 300) {
             // 4. SUCCESS NOTIFICATION WITH DETAILED STATS
             const originalKB = (file.size / 1024).toFixed(1);
             const compressedKB = (compressionResult.data.length / 1024).toFixed(
-              1
+              1,
             );
             const savings = (
               (1 - compressionResult.data.length / file.size) *
@@ -3206,7 +3272,7 @@ async function compressImage(file, maxSizeKB = 300) {
               `Food image compressed: ${originalKB}KB -> ${compressedKB}KB (${savings}% saved) ` +
                 `as ${compressionResult.format.toUpperCase()} at ${(
                   compressionResult.quality * 100
-                ).toFixed(0)}% quality`
+                ).toFixed(0)}% quality`,
             );
 
             resolve(result);
@@ -3214,7 +3280,7 @@ async function compressImage(file, maxSizeKB = 300) {
             // 6. PROCESSING ERROR WITH HELPFUL GUIDANCE
             showNotification(
               "Failed to process image. Try a different format or smaller size.",
-              "error"
+              "error",
             );
             console.error("Image processing failed:", error);
             reject(new Error(`Image processing failed: ${error.message}`));
@@ -3225,7 +3291,7 @@ async function compressImage(file, maxSizeKB = 300) {
       img.onerror = () => {
         showNotification(
           "Could not load image. The file may be corrupted.",
-          "error"
+          "error",
         );
         reject(new Error("Failed to load image"));
       };
@@ -3236,7 +3302,7 @@ async function compressImage(file, maxSizeKB = 300) {
     reader.onerror = () => {
       showNotification(
         "Error reading file. Please try selecting the image again.",
-        "error"
+        "error",
       );
       reject(new Error("Failed to read file"));
     };
@@ -3288,7 +3354,7 @@ function optimizeImage(canvas, maxSizeKB) {
     // Secondary: WebP failed, use JPEG fallback (5% of users)
     showNotification(
       "Using standard format for maximum compatibility.",
-      "info"
+      "info",
     );
     quality = 0.82;
     base64 = canvas.toDataURL("image/jpeg", quality);
@@ -3361,7 +3427,7 @@ async function uploadToStorage(bucket, path, blob) {
         "x-upsert": "true",
       },
       body: blob,
-    }
+    },
   );
 
   if (!response.ok) {
@@ -3407,7 +3473,7 @@ async function getNextDisplayOrder(endpoint) {
     `${endpoint}?select=display_order&order=display_order.desc&limit=1`,
     "GET",
     null,
-    { authRequired: true }
+    { authRequired: true },
   );
 
   const maxValue =
@@ -3706,10 +3772,7 @@ async function refreshSessionIfNeeded(session) {
   if (!session || !session.refresh_token) return session;
 
   const now = Math.floor(Date.now() / 1000);
-  if (
-    session.expires_at &&
-    session.expires_at - now > SESSION_SKEW_SECONDS
-  ) {
+  if (session.expires_at && session.expires_at - now > SESSION_SKEW_SECONDS) {
     return session;
   }
 
@@ -3723,7 +3786,7 @@ async function refreshSessionIfNeeded(session) {
           apikey: SUPABASE_CONFIG.ANON_KEY,
         },
         body: JSON.stringify({ refresh_token: session.refresh_token }),
-      }
+      },
     );
 
     if (!response.ok) {
@@ -3769,7 +3832,7 @@ async function secureRequest(
   endpoint,
   method = "GET",
   data = null,
-  options = {}
+  options = {},
 ) {
   const normalizedMethod = toSafeString(method, "GET").toUpperCase();
   const {
@@ -3851,7 +3914,7 @@ async function secureRequest(
     }
     return Math.min(
       10000,
-      Math.pow(2, attempt) * 700 + Math.floor(Math.random() * 250)
+      Math.pow(2, attempt) * 700 + Math.floor(Math.random() * 250),
     );
   };
 
@@ -3879,14 +3942,18 @@ async function secureRequest(
     }
 
     try {
-      const response = await fetch(`${SUPABASE_CONFIG.URL}${safeEndpoint}`, config);
+      const response = await fetch(
+        `${SUPABASE_CONFIG.URL}${safeEndpoint}`,
+        config,
+      );
       if (timeoutId) clearTimeout(timeoutId);
 
       if (response.status === 429) {
-        const retryAfter = Number(response.headers.get("Retry-After") || 1) || 1;
+        const retryAfter =
+          Number(response.headers.get("Retry-After") || 1) || 1;
         if (attempt < retries) {
           await new Promise((resolve) =>
-            setTimeout(resolve, getRetryDelayMs(attempt, retryAfter))
+            setTimeout(resolve, getRetryDelayMs(attempt, retryAfter)),
           );
           continue;
         }
@@ -3903,7 +3970,7 @@ async function secureRequest(
           if (!suppressNotifications) {
             showNotification(
               "Authentication failed. Please login again.",
-              "error"
+              "error",
             );
           }
           logoutAdmin();
@@ -3916,7 +3983,7 @@ async function secureRequest(
           if (!suppressNotifications) {
             showNotification(
               "Permission denied. Please contact administrator.",
-              "error"
+              "error",
             );
           }
           const permissionError = new Error("Permission denied");
@@ -3928,7 +3995,7 @@ async function secureRequest(
           if (!suppressNotifications) {
             showNotification(
               "Image file is too large. Please use a smaller image.",
-              "error"
+              "error",
             );
           }
           const sizeError = new Error("File too large");
@@ -3937,14 +4004,14 @@ async function secureRequest(
         }
 
         const httpError = new Error(
-          `HTTP ${response.status}: ${errorData.substring(0, 200)}`
+          `HTTP ${response.status}: ${errorData.substring(0, 200)}`,
         );
         httpError.status = response.status;
         httpError.responseBody = errorData;
 
         if (attempt < retries && isRetryableStatus(response.status)) {
           await new Promise((resolve) =>
-            setTimeout(resolve, getRetryDelayMs(attempt))
+            setTimeout(resolve, getRetryDelayMs(attempt)),
           );
           continue;
         }
@@ -3986,7 +4053,7 @@ async function secureRequest(
 
       if (canRetry) {
         await new Promise((resolve) =>
-          setTimeout(resolve, getRetryDelayMs(attempt))
+          setTimeout(resolve, getRetryDelayMs(attempt)),
         );
         continue;
       }
@@ -3994,7 +4061,11 @@ async function secureRequest(
       if (!suppressNotifications) {
         console.error("API request failed after retries:", error);
       } else {
-        debugWarn("API request failed after retries:", safeEndpoint, error?.message);
+        debugWarn(
+          "API request failed after retries:",
+          safeEndpoint,
+          error?.message,
+        );
       }
       recordAdminError("fetch", `Request failed: ${safeEndpoint}`, {
         method: normalizedMethod,
@@ -4006,21 +4077,21 @@ async function secureRequest(
         if (error?.name === "AbortError") {
           showNotification(
             "Request timed out while contacting the server. Please try again.",
-            "error"
+            "error",
           );
         } else if (
           toSafeString(error?.message).toLowerCase().includes("failed to fetch")
         ) {
           showNotification(
             "Network error. Please check your connection.",
-            "error"
+            "error",
           );
         } else if (
           toSafeString(error?.message).toLowerCase().includes("cors")
         ) {
           showNotification(
             "Cross-origin request blocked. Please check configuration.",
-            "error"
+            "error",
           );
         } else {
           showNotification(`Operation failed: ${error.message}`, "error");
@@ -4157,7 +4228,10 @@ function ensureChatWidgetScriptLoaded() {
   script.dataset.tbChatWidgetScript = "true";
   script.addEventListener("load", () => {
     try {
-      if (window.TBChatWidget && typeof window.TBChatWidget.init === "function") {
+      if (
+        window.TBChatWidget &&
+        typeof window.TBChatWidget.init === "function"
+      ) {
         window.TBChatWidget.init();
       }
     } catch {}
@@ -4191,7 +4265,7 @@ async function requestAuthSession(email, password) {
         apikey: SUPABASE_CONFIG.ANON_KEY,
       },
       body: JSON.stringify({ email, password }),
-    }
+    },
   );
 
   if (!response.ok) {
@@ -4217,12 +4291,9 @@ async function requestAuthSession(email, password) {
 }
 
 async function checkIsAdmin() {
-  const result = await secureRequest(
-    "/rest/v1/rpc/is_admin",
-    "POST",
-    null,
-    { authRequired: true }
-  );
+  const result = await secureRequest("/rest/v1/rpc/is_admin", "POST", null, {
+    authRequired: true,
+  });
 
   if (Array.isArray(result)) {
     return Boolean(result[0]);
@@ -4235,18 +4306,18 @@ async function checkLogin(email, password) {
     debugLog("Login attempt for:", email);
 
     const storedAttempts = JSON.parse(
-      sessionStorage.getItem("login_attempts") || '{"count":0,"timestamp":0}'
+      sessionStorage.getItem("login_attempts") || '{"count":0,"timestamp":0}',
     );
 
     if (storedAttempts.count >= MAX_LOGIN_ATTEMPTS) {
       const timeSinceFirstAttempt = Date.now() - storedAttempts.timestamp;
       if (timeSinceFirstAttempt < LOCKOUT_TIME) {
         const remainingMinutes = Math.ceil(
-          (LOCKOUT_TIME - timeSinceFirstAttempt) / 60000
+          (LOCKOUT_TIME - timeSinceFirstAttempt) / 60000,
         );
         showNotification(
           `Too many login attempts. Try again in ${remainingMinutes} minutes.`,
-          "error"
+          "error",
         );
         return false;
       } else {
@@ -4271,7 +4342,10 @@ async function checkLogin(email, password) {
 
     if (!isSessionTokenUsable(authResult.session)) {
       clearSession();
-      showNotification("Invalid session returned. Please try logging in again.", "error");
+      showNotification(
+        "Invalid session returned. Please try logging in again.",
+        "error",
+      );
       return false;
     }
 
@@ -4280,10 +4354,7 @@ async function checkLogin(email, password) {
     const isAdmin = await checkIsAdmin();
     if (!isAdmin) {
       clearSession();
-      showNotification(
-        "Access denied. Your account is not an admin.",
-        "error"
-      );
+      showNotification("Access denied. Your account is not an admin.", "error");
       return false;
     }
 
@@ -4304,10 +4375,13 @@ function startSessionTimeout() {
     clearTimeout(sessionTimeout);
   }
 
-  sessionTimeout = setTimeout(() => {
-    showNotification("Session expired. Please log in again.", "warning");
-    logoutAdmin();
-  }, SESSION_TIMEOUT_MINUTES * 60 * 1000);
+  sessionTimeout = setTimeout(
+    () => {
+      showNotification("Session expired. Please log in again.", "warning");
+      logoutAdmin();
+    },
+    SESSION_TIMEOUT_MINUTES * 60 * 1000,
+  );
 }
 
 function clearSessionTimeout() {
@@ -4493,7 +4567,7 @@ async function saveItem(itemType, formData, options = {}) {
         `${endpoint}?id=eq.${editingId}`,
         "PATCH",
         payload,
-        { authRequired: true, retries: 2, timeout: 15000 }
+        { authRequired: true, retries: 2, timeout: 15000 },
       );
       debugLog(`${itemType} item updated successfully!`);
     } else {
@@ -4509,12 +4583,12 @@ async function saveItem(itemType, formData, options = {}) {
     const savedRecord = Array.isArray(writeResult)
       ? writeResult[0] || null
       : writeResult && typeof writeResult === "object"
-      ? writeResult
-      : null;
+        ? writeResult
+        : null;
 
     const contentVersion = await ensureContentVersionAfterWrite(
       baselineVersion,
-      itemType
+      itemType,
     );
 
     // Clear cache for this endpoint
@@ -4551,7 +4625,7 @@ async function renderFeaturedItems(forceRefresh = false) {
     const items = await loadDataFromSupabase(
       API_ENDPOINTS.FEATURED,
       null,
-      forceRefresh
+      forceRefresh,
     );
 
     if (!items || items.length === 0) {
@@ -4569,7 +4643,7 @@ async function renderFeaturedItems(forceRefresh = false) {
       .map((item) => {
         const imgSrc = resolveImageForDisplay(
           resolveRecordImage(item),
-          ADMIN_IMAGE_PLACEHOLDERS.featured
+          ADMIN_IMAGE_PLACEHOLDERS.featured,
         );
         return `
       <div class="item-card" data-id="${item.id}">
@@ -4657,7 +4731,9 @@ async function saveFeaturedItem(e) {
   const actionResult = await runAdminAction({
     actionKey: isUpdate ? `featured-update-${itemId}` : "featured-create",
     controls: [submitBtn],
-    progressTitle: isUpdate ? "Updating featured item" : "Creating featured item",
+    progressTitle: isUpdate
+      ? "Updating featured item"
+      : "Creating featured item",
     progressText: "Preparing featured data...",
     task: async (progress) => {
       let displayOrder;
@@ -4672,7 +4748,11 @@ async function saveFeaturedItem(e) {
         throw new Error("Display order must be 0 or higher");
       }
 
-      const upload = await processImageUpload("featured", imageFile, existingUrl);
+      const upload = await processImageUpload(
+        "featured",
+        imageFile,
+        existingUrl,
+      );
 
       const formData = {
         title,
@@ -4693,7 +4773,9 @@ async function saveFeaturedItem(e) {
       }
 
       const recordCandidate =
-        result.record && typeof result.record === "object" ? result.record : null;
+        result.record && typeof result.record === "object"
+          ? result.record
+          : null;
       const savedRecord = {
         ...(recordCandidate || {}),
         ...formData,
@@ -4703,7 +4785,7 @@ async function saveFeaturedItem(e) {
       const normalization = await normalizeDisplayOrderConflicts(
         "featured",
         savedId,
-        displayOrder
+        displayOrder,
       );
 
       await finalizeImageReplacement(upload);
@@ -4714,7 +4796,7 @@ async function saveFeaturedItem(e) {
       if (normalization.normalized) {
         showNotification(
           "Featured item saved and display order normalized successfully.",
-          "success"
+          "success",
         );
       } else {
         showNotification("Featured item saved successfully!", "success");
@@ -4730,7 +4812,7 @@ async function saveFeaturedItem(e) {
     console.error("Error saving featured item:", actionResult.error);
     showNotification(
       actionResult.error?.message || "Failed to save featured item",
-      "error"
+      "error",
     );
   }
 }
@@ -4791,7 +4873,7 @@ async function renderMenuItems(forceRefresh = false) {
     const items = await loadDataFromSupabase(
       API_ENDPOINTS.MENU,
       null,
-      forceRefresh
+      forceRefresh,
     );
     const sortedItems = Array.isArray(items)
       ? items.slice().sort(compareRecordsByDisplayOrder)
@@ -4839,7 +4921,10 @@ async function renderMenuItems(forceRefresh = false) {
   }
 }
 
-async function populateFeaturedMenuSelect(selectedId = null, forceRefresh = false) {
+async function populateFeaturedMenuSelect(
+  selectedId = null,
+  forceRefresh = false,
+) {
   const select = document.getElementById("featured-menu-item");
   if (!select) return;
 
@@ -4847,14 +4932,14 @@ async function populateFeaturedMenuSelect(selectedId = null, forceRefresh = fals
     const items = await loadDataFromSupabase(
       API_ENDPOINTS.MENU,
       null,
-      forceRefresh
+      forceRefresh,
     );
     const currentValue = selectedId ?? select.value;
 
     select.innerHTML = `<option value="">None</option>${items
       .map(
         (item) =>
-          `<option value="${item.id}">${escapeHtml(item.title)}</option>`
+          `<option value="${item.id}">${escapeHtml(item.title)}</option>`,
       )
       .join("")}`;
 
@@ -4889,7 +4974,8 @@ async function saveMenuItem(e) {
   const description = toSafeString(descriptionField?.value).trim();
   const rawPriceValue = Number(priceField?.value);
   const priceValue = toMoney(rawPriceValue, 0);
-  const category = toSafeString(categoryField?.value, "pastries").trim() || "pastries";
+  const category =
+    toSafeString(categoryField?.value, "pastries").trim() || "pastries";
   const tagsRaw = toSafeString(tagsField?.value);
   const isAvailable = availableField?.value === "true";
   const displayOrderInput = toSafeString(displayOrderField?.value).trim();
@@ -4897,7 +4983,9 @@ async function saveMenuItem(e) {
   const imageFile = imageField?.files?.[0] || null;
   const itemId = toSafeString(idField?.value).trim();
   const isUpdate = Boolean(itemId);
-  const existingUrl = isUpdate ? getExistingImageUrlForItem("menu", itemId) : "";
+  const existingUrl = isUpdate
+    ? getExistingImageUrlForItem("menu", itemId)
+    : "";
 
   if (!title || title.length > 100) {
     setFieldError(titleField, "Title must be 1-100 characters.");
@@ -4941,7 +5029,8 @@ async function saveMenuItem(e) {
         throw new Error("Display order must be 0 or higher");
       }
 
-      const calories = caloriesInput === "" ? null : parseInt(caloriesInput, 10);
+      const calories =
+        caloriesInput === "" ? null : parseInt(caloriesInput, 10);
       if (calories !== null && (!Number.isFinite(calories) || calories < 0)) {
         setFieldError(caloriesField, "Calories must be a positive number.");
         throw new Error("Calories must be a positive number");
@@ -4969,7 +5058,9 @@ async function saveMenuItem(e) {
       }
 
       const recordCandidate =
-        result.record && typeof result.record === "object" ? result.record : null;
+        result.record && typeof result.record === "object"
+          ? result.record
+          : null;
       const savedRecord = {
         ...(recordCandidate || {}),
         ...formData,
@@ -4979,21 +5070,26 @@ async function saveMenuItem(e) {
       const normalization = await normalizeDisplayOrderConflicts(
         "menu",
         savedId,
-        displayOrder
+        displayOrder,
       );
 
       await finalizeImageReplacement(upload);
       resetMenuForm();
-      const updatedInPlace = savedId ? upsertItemCardInUi("menu", savedRecord) : false;
+      const updatedInPlace = savedId
+        ? upsertItemCardInUi("menu", savedRecord)
+        : false;
       if (normalization.normalized || !updatedInPlace) {
         await withPreservedScroll(() => renderMenuItems(true));
       }
-      await Promise.all([populateFeaturedMenuSelect(null, true), updateItemCounts()]);
+      await Promise.all([
+        populateFeaturedMenuSelect(null, true),
+        updateItemCounts(),
+      ]);
       progress.complete("Menu item saved");
       if (normalization.normalized) {
         showNotification(
           "Menu item saved and display order normalized successfully.",
-          "success"
+          "success",
         );
       } else {
         showNotification("Menu item saved successfully!", "success");
@@ -5009,7 +5105,7 @@ async function saveMenuItem(e) {
     console.error("Error saving menu item:", actionResult.error);
     showNotification(
       actionResult.error?.message || "Failed to save menu item",
-      "error"
+      "error",
     );
   }
 }
@@ -5096,6 +5192,7 @@ function buildOptionValueRow(value = {}) {
         placeholder="e.g., Chocolate"
         value="${valueName}"
         required
+        style="font-size:1.1rem;min-width:120px;padding:0.5rem 0.7rem;"
       />
       <input
         type="number"
@@ -5103,6 +5200,7 @@ function buildOptionValueRow(value = {}) {
         step="0.01"
         placeholder="0"
         value="${priceAdjustment}"
+        style="font-size:1.1rem;min-width:90px;padding:0.5rem 0.7rem;"
       />
       <button type="button" class="btn btn-danger remove-option-value-row" aria-label="Remove value">
         <i class="fas fa-trash"></i>
@@ -5176,8 +5274,8 @@ function renderMenuOptionGroupsList() {
         .map(
           (value) =>
             `<li>${escapeHtml(value.name)} <strong>${formatOptionAdjustmentLabel(
-              value.price_adjustment
-            )}</strong></li>`
+              value.price_adjustment,
+            )}</strong></li>`,
         )
         .join("");
 
@@ -5186,18 +5284,21 @@ function renderMenuOptionGroupsList() {
           <h4>${escapeHtml(group.name)}</h4>
           <div class="option-group-meta">
             ${pills
-              .map((pill) => `<span class="option-meta-pill">${escapeHtml(pill)}</span>`)
+              .map(
+                (pill) =>
+                  `<span class="option-meta-pill">${escapeHtml(pill)}</span>`,
+              )
               .join("")}
           </div>
           <ul class="option-group-values">${valuesHtml}</ul>
           <div class="option-group-actions">
             <button type="button" class="btn btn-secondary edit-option-group" data-group-id="${escapeHtml(
-              group.id
+              group.id,
             )}">
               <i class="fas fa-edit"></i> Edit
             </button>
             <button type="button" class="btn btn-danger delete-option-group" data-group-id="${escapeHtml(
-              group.id
+              group.id,
             )}">
               <i class="fas fa-trash"></i> Delete
             </button>
@@ -5217,11 +5318,11 @@ async function loadMenuOptionGroups(forceRefresh = false) {
     const productId = String(menuOptionManagerState.menuItemId).trim();
     const groups = await secureRequest(
       `${PRODUCT_OPTION_ENDPOINTS.groups}?select=*&product_id=eq.${encodeURIComponent(
-        productId
+        productId,
       )}&order=created_at.asc`,
       "GET",
       null,
-      { authRequired: true }
+      { authRequired: true },
     );
 
     const normalizedGroups = Array.isArray(groups)
@@ -5239,7 +5340,7 @@ async function loadMenuOptionGroups(forceRefresh = false) {
           .join(",")})&order=created_at.asc`,
         "GET",
         null,
-        { authRequired: true }
+        { authRequired: true },
       );
     }
 
@@ -5255,7 +5356,7 @@ async function loadMenuOptionGroups(forceRefresh = false) {
     menuOptionManagerState.groups = normalizedGroups.map((group) => ({
       ...group,
       values: (valuesByGroup.get(group.id) || []).sort((a, b) =>
-        a.name.localeCompare(b.name)
+        a.name.localeCompare(b.name),
       ),
     }));
     renderMenuOptionGroupsList();
@@ -5292,7 +5393,9 @@ function fillOptionGroupForm(group) {
   syncOptionGroupTypeUi();
 
   const values = group.values && group.values.length ? group.values : [{}];
-  els.valuesEditor.innerHTML = values.map((value) => buildOptionValueRow(value)).join("");
+  els.valuesEditor.innerHTML = values
+    .map((value) => buildOptionValueRow(value))
+    .join("");
   if (els.groupsStatus) {
     els.groupsStatus.textContent = `Editing "${group.name}"`;
   }
@@ -5301,7 +5404,7 @@ function fillOptionGroupForm(group) {
 function collectOptionValueRows() {
   const els = getMenuOptionManagerElements();
   const rows = Array.from(
-    els.valuesEditor.querySelectorAll(".option-value-row")
+    els.valuesEditor.querySelectorAll(".option-value-row"),
   );
   const values = [];
 
@@ -5371,10 +5474,11 @@ async function saveOptionGroup(e) {
     controls: [els.saveGroupBtn],
     progressTitle: groupId ? "Updating option group" : "Creating option group",
     progressText: "Saving options...",
-      task: async (progress) => {
-        setMenuOptionLoading(true, "Saving option group...");
-        try {
-          const baselineVersion = (await fetchServerUpdateSignal()).contentVersion;
+    task: async (progress) => {
+      setMenuOptionLoading(true, "Saving option group...");
+      try {
+        const baselineVersion = (await fetchServerUpdateSignal())
+          .contentVersion;
         const groupPayload = {
           product_id: menuOptionManagerState.menuItemId,
           name,
@@ -5387,11 +5491,11 @@ async function saveOptionGroup(e) {
         if (savedGroupId) {
           await secureRequest(
             `${PRODUCT_OPTION_ENDPOINTS.groups}?id=eq.${encodeURIComponent(
-              savedGroupId
+              savedGroupId,
             )}`,
             "PATCH",
             groupPayload,
-            { authRequired: true }
+            { authRequired: true },
           );
         } else {
           const created = await secureRequest(
@@ -5403,7 +5507,7 @@ async function saveOptionGroup(e) {
               headers: {
                 Prefer: "return=representation",
               },
-            }
+            },
           );
           savedGroupId = Array.isArray(created) ? created[0]?.id : created?.id;
           savedGroupId = String(savedGroupId || "").trim();
@@ -5414,14 +5518,16 @@ async function saveOptionGroup(e) {
 
         const existingValues = await secureRequest(
           `${PRODUCT_OPTION_ENDPOINTS.values}?select=id&group_id=eq.${encodeURIComponent(
-            savedGroupId
+            savedGroupId,
           )}`,
           "GET",
           null,
-          { authRequired: true }
+          { authRequired: true },
         );
         const existingIds = new Set(
-          toArray(existingValues).map((record) => String(record.id || "").trim())
+          toArray(existingValues).map((record) =>
+            String(record.id || "").trim(),
+          ),
         );
         const incomingIds = new Set();
 
@@ -5435,11 +5541,11 @@ async function saveOptionGroup(e) {
             incomingIds.add(String(value.id));
             await secureRequest(
               `${PRODUCT_OPTION_ENDPOINTS.values}?id=eq.${encodeURIComponent(
-                value.id
+                value.id,
               )}`,
               "PATCH",
               payload,
-              { authRequired: true }
+              { authRequired: true },
             );
           } else {
             const createdValue = await secureRequest(
@@ -5451,7 +5557,7 @@ async function saveOptionGroup(e) {
                 headers: {
                   Prefer: "return=representation",
                 },
-              }
+              },
             );
             const createdId = Array.isArray(createdValue)
               ? createdValue[0]?.id
@@ -5461,14 +5567,14 @@ async function saveOptionGroup(e) {
         }
 
         const deleteIds = Array.from(existingIds).filter(
-          (id) => !incomingIds.has(id)
+          (id) => !incomingIds.has(id),
         );
         for (const id of deleteIds) {
           await secureRequest(
             `${PRODUCT_OPTION_ENDPOINTS.values}?id=eq.${encodeURIComponent(id)}`,
             "DELETE",
             null,
-            { authRequired: true }
+            { authRequired: true },
           );
         }
 
@@ -5477,7 +5583,7 @@ async function saveOptionGroup(e) {
         markPublicContentCacheDirty();
         const contentVersion = await ensureContentVersionAfterWrite(
           baselineVersion,
-          "menu"
+          "menu",
         );
         dataSync.notifyDataChanged(groupId ? "update" : "create", "menu", {
           contentVersion,
@@ -5525,12 +5631,13 @@ async function deleteOptionGroup(groupId) {
     task: async (progress) => {
       setMenuOptionLoading(true, "Deleting option group...");
       try {
-        const baselineVersion = (await fetchServerUpdateSignal()).contentVersion;
+        const baselineVersion = (await fetchServerUpdateSignal())
+          .contentVersion;
         await secureRequest(
           `${PRODUCT_OPTION_ENDPOINTS.groups}?id=eq.${encodeURIComponent(id)}`,
           "DELETE",
           null,
-          { authRequired: true }
+          { authRequired: true },
         );
 
         invalidateEndpointCache(PRODUCT_OPTION_ENDPOINTS.groups);
@@ -5538,7 +5645,7 @@ async function deleteOptionGroup(groupId) {
         markPublicContentCacheDirty();
         const contentVersion = await ensureContentVersionAfterWrite(
           baselineVersion,
-          "menu"
+          "menu",
         );
         dataSync.notifyDataChanged("delete", "menu", { contentVersion });
         showNotification("Option group deleted.", "success");
@@ -5603,7 +5710,10 @@ async function openMenuOptionsManager(menuItemId) {
   }
 
   menuOptionManagerState.menuItemId = id;
-  menuOptionManagerState.menuItemTitle = toSafeString(menuItem.title, "Menu Item");
+  menuOptionManagerState.menuItemTitle = toSafeString(
+    menuItem.title,
+    "Menu Item",
+  );
   menuOptionManagerState.open = true;
   menuOptionManagerState.groups = [];
 
@@ -5622,7 +5732,11 @@ async function renderSpecialsItems(forceRefresh = false) {
   if (!container) return;
 
   try {
-    const items = await loadDataFromSupabase(SPECIALS_ENDPOINT, null, forceRefresh);
+    const items = await loadDataFromSupabase(
+      SPECIALS_ENDPOINT,
+      null,
+      forceRefresh,
+    );
     const sortedItems = Array.isArray(items)
       ? items.slice().sort(compareRecordsByDisplayOrder)
       : [];
@@ -5704,7 +5818,9 @@ async function saveSpecialsItem(e) {
   const imageFile = imageField?.files?.[0] || null;
   const itemId = toSafeString(idField?.value).trim();
   const isUpdate = Boolean(itemId);
-  const existingUrl = isUpdate ? getExistingImageUrlForItem("specials", itemId) : "";
+  const existingUrl = isUpdate
+    ? getExistingImageUrlForItem("specials", itemId)
+    : "";
 
   if (!title || title.length > 120) {
     setFieldError(titleField, "Title must be 1-120 characters.");
@@ -5718,7 +5834,10 @@ async function saveSpecialsItem(e) {
     return;
   }
 
-  if (originalPriceRaw !== "" && (!Number.isFinite(originalPrice) || originalPrice < 0)) {
+  if (
+    originalPriceRaw !== "" &&
+    (!Number.isFinite(originalPrice) || originalPrice < 0)
+  ) {
     setFieldError(originalPriceField, "Original price must be 0 or higher.");
     showNotification("Original price must be 0 or higher", "error");
     return;
@@ -5748,7 +5867,11 @@ async function saveSpecialsItem(e) {
         throw new Error("Display order must be 0 or higher");
       }
 
-      const upload = await processImageUpload("specials", imageFile, existingUrl);
+      const upload = await processImageUpload(
+        "specials",
+        imageFile,
+        existingUrl,
+      );
 
       const formData = {
         title,
@@ -5779,7 +5902,9 @@ async function saveSpecialsItem(e) {
       }
 
       const recordCandidate =
-        result.record && typeof result.record === "object" ? result.record : null;
+        result.record && typeof result.record === "object"
+          ? result.record
+          : null;
       const savedRecord = {
         ...(recordCandidate || {}),
         ...formData,
@@ -5789,12 +5914,14 @@ async function saveSpecialsItem(e) {
       const normalization = await normalizeDisplayOrderConflicts(
         "specials",
         savedId,
-        displayOrder
+        displayOrder,
       );
 
       await finalizeImageReplacement(upload);
       resetSpecialsForm();
-      const updatedInPlace = savedId ? upsertItemCardInUi("specials", savedRecord) : false;
+      const updatedInPlace = savedId
+        ? upsertItemCardInUi("specials", savedRecord)
+        : false;
       if (normalization.normalized || !updatedInPlace) {
         await withPreservedScroll(() => renderSpecialsItems(true));
       }
@@ -5803,7 +5930,7 @@ async function saveSpecialsItem(e) {
       if (normalization.normalized) {
         showNotification(
           "Special saved and display order normalized successfully.",
-          "success"
+          "success",
         );
       } else {
         showNotification("Special saved successfully!", "success");
@@ -5819,7 +5946,7 @@ async function saveSpecialsItem(e) {
     console.error("Error saving special:", actionResult.error);
     showNotification(
       actionResult.error?.message || "Failed to save special",
-      "error"
+      "error",
     );
   }
 }
@@ -5835,7 +5962,7 @@ async function editSpecialsItem(id) {
 
     document.getElementById("specials-id").value = item.id;
     document.getElementById("specials-title").value = toSafeString(
-      item.title || item.alt
+      item.title || item.alt,
     );
     document.getElementById("specials-price").value = toMoney(item.price, 0);
     document.getElementById("specials-original-price").value =
@@ -5844,25 +5971,25 @@ async function editSpecialsItem(id) {
         : toMoney(item.original_price, 0);
     document.getElementById("specials-special-flag").value = parseRecordBoolean(
       item.is_special,
-      false
+      false,
     )
       ? "true"
       : "false";
     document.getElementById("specials-badge-right-text").value = toSafeString(
       item.badge_right_text,
-      "SPECIAL"
+      "SPECIAL",
     );
     document.getElementById("specials-badge-right-icon").value = toSafeString(
       item.badge_right_icon,
-      "\uD83D\uDD25"
+      "\uD83D\uDD25",
     );
     document.getElementById("specials-cta-label").value = toSafeString(
       item.cta_label,
-      "Order Now"
+      "Order Now",
     );
     document.getElementById("specials-active").value = parseRecordBoolean(
       item.is_active,
-      true
+      true,
     )
       ? "true"
       : "false";
@@ -5902,7 +6029,7 @@ async function renderCarouselItems(forceRefresh = false) {
     const items = await loadDataFromSupabase(
       API_ENDPOINTS.CAROUSEL,
       null,
-      forceRefresh
+      forceRefresh,
     );
     const sortedItems = Array.isArray(items)
       ? items.slice().sort(compareRecordsByDisplayOrder)
@@ -5979,7 +6106,9 @@ async function saveCarouselItem(e) {
   const imageFile = imageField?.files?.[0] || null;
   const itemId = toSafeString(idField?.value).trim();
   const isUpdate = Boolean(itemId);
-  const existingUrl = isUpdate ? getExistingImageUrlForItem("carousel", itemId) : "";
+  const existingUrl = isUpdate
+    ? getExistingImageUrlForItem("carousel", itemId)
+    : "";
 
   if (!alt || alt.length > 255) {
     setFieldError(altField, "Alt text must be 1-255 characters.");
@@ -6014,7 +6143,9 @@ async function saveCarouselItem(e) {
   const actionResult = await runAdminAction({
     actionKey: isUpdate ? `carousel-update-${itemId}` : "carousel-create",
     controls: [submitBtn],
-    progressTitle: isUpdate ? "Updating carousel slide" : "Creating carousel slide",
+    progressTitle: isUpdate
+      ? "Updating carousel slide"
+      : "Creating carousel slide",
     progressText: "Preparing carousel data...",
     task: async (progress) => {
       let displayOrder;
@@ -6038,7 +6169,11 @@ async function saveCarouselItem(e) {
         }
       }
 
-      const upload = await processImageUpload("carousel", imageFile, existingUrl);
+      const upload = await processImageUpload(
+        "carousel",
+        imageFile,
+        existingUrl,
+      );
 
       const formData = {
         alt,
@@ -6059,7 +6194,9 @@ async function saveCarouselItem(e) {
       }
 
       const recordCandidate =
-        result.record && typeof result.record === "object" ? result.record : null;
+        result.record && typeof result.record === "object"
+          ? result.record
+          : null;
       const savedRecord = {
         ...(recordCandidate || {}),
         ...formData,
@@ -6069,7 +6206,7 @@ async function saveCarouselItem(e) {
       const normalization = await normalizeDisplayOrderConflicts(
         "carousel",
         savedId,
-        displayOrder
+        displayOrder,
       );
 
       await finalizeImageReplacement(upload);
@@ -6085,7 +6222,7 @@ async function saveCarouselItem(e) {
       if (normalization.normalized) {
         showNotification(
           "Carousel image saved and display order normalized successfully.",
-          "success"
+          "success",
         );
       } else {
         showNotification("Carousel image saved successfully!", "success");
@@ -6101,7 +6238,7 @@ async function saveCarouselItem(e) {
     console.error("Error saving carousel item:", actionResult.error);
     showNotification(
       actionResult.error?.message || "Failed to save carousel item",
-      "error"
+      "error",
     );
   }
 }
@@ -6162,15 +6299,35 @@ async function updateStorageUsage() {
 
     const allItems = [...featured, ...menu, ...specials, ...carousel];
     let totalBytes = 0;
-    let hasUnknown = false;
+    const unknownItems = [];
 
     allItems.forEach((item) => {
       if (Number.isFinite(item.file_size)) {
         totalBytes += Number(item.file_size);
       } else if (resolveRecordImage(item)) {
-        hasUnknown = true;
+        unknownItems.push(item);
       }
     });
+
+    // Fetch sizes for unknown items
+    if (unknownItems.length > 0) {
+      const sizePromises = unknownItems.map(async (item) => {
+        const imageUrl = resolveRecordImage(item);
+        if (imageUrl) {
+          try {
+            const response = await fetch(imageUrl, { method: "HEAD" });
+            const contentLength = response.headers.get("content-length");
+            return contentLength ? parseInt(contentLength, 10) : 0;
+          } catch (error) {
+            console.warn("Failed to fetch image size for", imageUrl, error);
+            return 0; // Estimate or skip
+          }
+        }
+        return 0;
+      });
+      const sizes = await Promise.all(sizePromises);
+      sizes.forEach((size) => (totalBytes += size));
+    }
 
     const mbUsed = (totalBytes / (1024 * 1024)).toFixed(2);
     const percentage = Math.min((mbUsed / 500) * 100, 100).toFixed(1);
@@ -6183,9 +6340,7 @@ async function updateStorageUsage() {
     if (storageUsedEl) storageUsedEl.textContent = mbUsed;
     if (storageFillEl) storageFillEl.style.width = `${percentage}%`;
     if (storageInfoEl) {
-      storageInfoEl.textContent = hasUnknown
-        ? `${mbUsed} MB / 500 MB (approx)`
-        : `${mbUsed} MB / 500 MB`;
+      storageInfoEl.textContent = `${mbUsed} MB / 500 MB`;
     }
 
     // Add warnings
@@ -6194,7 +6349,7 @@ async function updateStorageUsage() {
     } else if (mbUsed > 400) {
       showNotification(
         `Warning: Storage usage is high (${mbUsed}MB).`,
-        "warning"
+        "warning",
       );
     }
 
@@ -6318,29 +6473,45 @@ async function importData(file) {
       progressTitle: "Importing data",
       progressText: "Uploading backup payload...",
       task: async (progress) => {
-        const baselineVersion = (await fetchServerUpdateSignal()).contentVersion;
+        const baselineVersion = (await fetchServerUpdateSignal())
+          .contentVersion;
 
         await Promise.all([
-          secureRequest(`${API_ENDPOINTS.FEATURED}?id=not.is.null`, "DELETE", null, {
-            authRequired: true,
-            suppressNotifications: true,
-            timeout: 26000,
-          }),
-          secureRequest(`${API_ENDPOINTS.MENU}?id=not.is.null`, "DELETE", null, {
-            authRequired: true,
-            suppressNotifications: true,
-            timeout: 26000,
-          }),
+          secureRequest(
+            `${API_ENDPOINTS.FEATURED}?id=not.is.null`,
+            "DELETE",
+            null,
+            {
+              authRequired: true,
+              suppressNotifications: true,
+              timeout: 26000,
+            },
+          ),
+          secureRequest(
+            `${API_ENDPOINTS.MENU}?id=not.is.null`,
+            "DELETE",
+            null,
+            {
+              authRequired: true,
+              suppressNotifications: true,
+              timeout: 26000,
+            },
+          ),
           secureRequest(`${SPECIALS_ENDPOINT}?id=not.is.null`, "DELETE", null, {
             authRequired: true,
             suppressNotifications: true,
             timeout: 26000,
           }),
-          secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=not.is.null`, "DELETE", null, {
-            authRequired: true,
-            suppressNotifications: true,
-            timeout: 26000,
-          }),
+          secureRequest(
+            `${API_ENDPOINTS.CAROUSEL}?id=not.is.null`,
+            "DELETE",
+            null,
+            {
+              authRequired: true,
+              suppressNotifications: true,
+              timeout: 26000,
+            },
+          ),
         ]);
         setAdminCrudProgress(28, "Importing records...");
 
@@ -6357,7 +6528,10 @@ async function importData(file) {
             imported++;
             const ratio = totalItems > 0 ? imported / totalItems : 1;
             const nextProgress = Math.min(90, Math.round(28 + ratio * 62));
-            setAdminCrudProgress(nextProgress, `Imported ${imported}/${totalItems}`);
+            setAdminCrudProgress(
+              nextProgress,
+              `Imported ${imported}/${totalItems}`,
+            );
             await new Promise((resolve) => setTimeout(resolve, 70));
           }
         };
@@ -6371,7 +6545,7 @@ async function importData(file) {
         markPublicContentCacheDirty();
         const contentVersion = await ensureContentVersionAfterWrite(
           baselineVersion,
-          "all"
+          "all",
         );
 
         await Promise.all([
@@ -6618,7 +6792,10 @@ function setupEventListeners() {
           window.TokeUpdateSync &&
           typeof window.TokeUpdateSync.requestServerCheck === "function"
         ) {
-          await window.TokeUpdateSync.requestServerCheck("admin-debug-force", true);
+          await window.TokeUpdateSync.requestServerCheck(
+            "admin-debug-force",
+            true,
+          );
         }
         await loadStatsPanel(true);
         showNotification("Version recheck completed.", "success");
@@ -6631,7 +6808,9 @@ function setupEventListeners() {
     });
   }
 
-  const debugForceRefetchBtn = document.getElementById("debug-force-refetch-btn");
+  const debugForceRefetchBtn = document.getElementById(
+    "debug-force-refetch-btn",
+  );
   if (debugForceRefetchBtn) {
     debugForceRefetchBtn.addEventListener("click", async () => {
       try {
@@ -6655,26 +6834,30 @@ function setupEventListeners() {
     });
   }
 
-  const debugClearThemeCacheBtn = document.getElementById("debug-clear-theme-cache-btn");
+  const debugClearThemeCacheBtn = document.getElementById(
+    "debug-clear-theme-cache-btn",
+  );
   if (debugClearThemeCacheBtn) {
     debugClearThemeCacheBtn.addEventListener("click", async () => {
       const ok = await clearThemeCachesSafely();
       await loadStatsPanel(true);
       showNotification(
         ok ? "Theme cache cleared." : "Theme cache clear failed.",
-        ok ? "success" : "error"
+        ok ? "success" : "error",
       );
     });
   }
 
-  const debugClearAppCacheBtn = document.getElementById("debug-clear-app-cache-btn");
+  const debugClearAppCacheBtn = document.getElementById(
+    "debug-clear-app-cache-btn",
+  );
   if (debugClearAppCacheBtn) {
     debugClearAppCacheBtn.addEventListener("click", async () => {
       const ok = await clearAppCachesSafely();
       await loadStatsPanel(true);
       showNotification(
         ok ? "App caches cleared." : "App cache clear failed.",
-        ok ? "success" : "error"
+        ok ? "success" : "error",
       );
     });
   }
@@ -6693,9 +6876,7 @@ function setupEventListeners() {
       e.preventDefault();
       debugLog("Login form submitted");
 
-      const email = sanitizeInput(
-        document.getElementById("admin-email").value
-      );
+      const email = sanitizeInput(document.getElementById("admin-email").value);
       const password = document.getElementById("admin-password").value;
       const submitBtn = loginForm.querySelector("button[type='submit']");
 
@@ -6863,7 +7044,7 @@ function setupEventListeners() {
           "/rest/v1/app_admins",
           "POST",
           { user_id: userId },
-          { authRequired: true }
+          { authRequired: true },
         );
         showNotification("Admin access granted.", "success");
         addAdminForm.reset();
@@ -6889,7 +7070,7 @@ function setupEventListeners() {
         .getElementById("featured-form-container")
         .scrollIntoView({ behavior: "smooth" });
       Promise.resolve(
-        prefillNextDisplayOrder("featured", "featured-display-order")
+        prefillNextDisplayOrder("featured", "featured-display-order"),
       ).catch(() => {});
     });
   }
@@ -6901,9 +7082,9 @@ function setupEventListeners() {
       document
         .getElementById("menu-form-container")
         .scrollIntoView({ behavior: "smooth" });
-      Promise.resolve(prefillNextDisplayOrder("menu", "menu-display-order")).catch(
-        () => {}
-      );
+      Promise.resolve(
+        prefillNextDisplayOrder("menu", "menu-display-order"),
+      ).catch(() => {});
     });
   }
 
@@ -6916,7 +7097,7 @@ function setupEventListeners() {
         formContainer.scrollIntoView({ behavior: "smooth" });
       }
       Promise.resolve(
-        prefillNextDisplayOrder("specials", "specials-display-order")
+        prefillNextDisplayOrder("specials", "specials-display-order"),
       ).catch(() => {});
     });
   }
@@ -6931,7 +7112,7 @@ function setupEventListeners() {
         .getElementById("carousel-form-container")
         .scrollIntoView({ behavior: "smooth" });
       Promise.resolve(
-        prefillNextDisplayOrder("carousel", "carousel-display-order")
+        prefillNextDisplayOrder("carousel", "carousel-display-order"),
       ).catch(() => {});
     });
   }
@@ -7021,28 +7202,49 @@ function setupEventListeners() {
           progressTitle: "Resetting all data",
           progressText: "Deleting existing records...",
           task: async (progress) => {
-            const baselineVersion = (await fetchServerUpdateSignal()).contentVersion;
+            const baselineVersion = (await fetchServerUpdateSignal())
+              .contentVersion;
             await Promise.all([
-              secureRequest(`${API_ENDPOINTS.FEATURED}?id=not.is.null`, "DELETE", null, {
-                authRequired: true,
-                suppressNotifications: true,
-                timeout: 26000,
-              }),
-              secureRequest(`${API_ENDPOINTS.MENU}?id=not.is.null`, "DELETE", null, {
-                authRequired: true,
-                suppressNotifications: true,
-                timeout: 26000,
-              }),
-              secureRequest(`${SPECIALS_ENDPOINT}?id=not.is.null`, "DELETE", null, {
-                authRequired: true,
-                suppressNotifications: true,
-                timeout: 26000,
-              }),
-              secureRequest(`${API_ENDPOINTS.CAROUSEL}?id=not.is.null`, "DELETE", null, {
-                authRequired: true,
-                suppressNotifications: true,
-                timeout: 26000,
-              }),
+              secureRequest(
+                `${API_ENDPOINTS.FEATURED}?id=not.is.null`,
+                "DELETE",
+                null,
+                {
+                  authRequired: true,
+                  suppressNotifications: true,
+                  timeout: 26000,
+                },
+              ),
+              secureRequest(
+                `${API_ENDPOINTS.MENU}?id=not.is.null`,
+                "DELETE",
+                null,
+                {
+                  authRequired: true,
+                  suppressNotifications: true,
+                  timeout: 26000,
+                },
+              ),
+              secureRequest(
+                `${SPECIALS_ENDPOINT}?id=not.is.null`,
+                "DELETE",
+                null,
+                {
+                  authRequired: true,
+                  suppressNotifications: true,
+                  timeout: 26000,
+                },
+              ),
+              secureRequest(
+                `${API_ENDPOINTS.CAROUSEL}?id=not.is.null`,
+                "DELETE",
+                null,
+                {
+                  authRequired: true,
+                  suppressNotifications: true,
+                  timeout: 26000,
+                },
+              ),
             ]);
 
             setAdminCrudProgress(80, "Refreshing dashboard...");
@@ -7051,7 +7253,7 @@ function setupEventListeners() {
             const contentVersion = await ensureContentVersionAfterWrite(
               baselineVersion,
               "all",
-              true
+              true,
             );
 
             await Promise.all([
@@ -7097,7 +7299,10 @@ function setupPasswordVisibilityToggle(inputId, toggleId) {
   const updateUi = () => {
     const isVisible = input.type === "text";
     toggle.setAttribute("aria-pressed", isVisible ? "true" : "false");
-    toggle.setAttribute("aria-label", isVisible ? "Hide password" : "Show password");
+    toggle.setAttribute(
+      "aria-label",
+      isVisible ? "Hide password" : "Show password",
+    );
     if (!icon) return;
     icon.classList.toggle("fa-eye", !isVisible);
     icon.classList.toggle("fa-eye-slash", isVisible);
@@ -7179,7 +7384,7 @@ function setupAdminErrorMonitor() {
     const reason = event?.reason;
     recordAdminError(
       "promise",
-      reason?.message || String(reason || "Unhandled promise rejection")
+      reason?.message || String(reason || "Unhandled promise rejection"),
     );
   });
 }
@@ -7189,5 +7394,3 @@ setupConnectionMonitor();
 setupAdminErrorMonitor();
 
 debugLog("Toke Bakes Admin Panel v2.1 - WITH CAROUSEL SUCCESS");
-
-

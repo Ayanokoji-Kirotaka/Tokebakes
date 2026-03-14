@@ -1,76 +1,77 @@
-/* theme-independenceday.css - Nigerian Independence Theme */
+/* theme-nigeria.css - The "Giant of Africa" Edition */
 @import url("style.css");
 
-/* ================== LIGHT MODE ================== */
+/* ================== LIGHT MODE (National Pride) ================== */
 :root {
+  /* Official Nigerian Flag Green */
+  --primary: #008751; /* authentic flag green */
+  --primary-strong: #00a86b; /* super eagles vibrant green */
+  --primary-soft: rgba(0, 135, 81, 0.1);
 
-  /* Nigerian Green */
-  --primary: #008751;
-  --primary-strong: #00a86b;
-  --primary-soft: rgba(0, 135, 81, 0.18);
+  /* Clean White Contrast */
+  --secondary: #ffffff; /* pure white flag center */
+  --secondary-soft: rgba(0, 135, 81, 0.05);
 
-  /* Deep ceremonial green */
-  --secondary: #006b3f;
+  /* Optional Gold Accent for the National Coat of Arms */
+  --accent: #f9d71c; /* Eagle Gold */
+  --accent-glow: rgba(249, 215, 28, 0.3);
 
-  /* Optional accent (subtle celebration glow) */
-  --accent: #e9f7f1;
+  /* Text - High Contrast Charcoal */
+  --text: #06120d; /* deep forest charcoal */
+  --text-light: #415a4e;
 
-  /* Text */
-  --text: #0f1f17;
-  --text-light: #3a4f45;
+  /* Backgrounds - Pure and Bright */
+  --background: #ffffff; /* stark white for that GWG look */
+  --surface: #f7fdfa; /* extremely light mint wash */
+  --surface-2: #ffffff;
+  --surface-secondary: #008751; /* used for bold headers/stats */
 
-  /* Background system */
-  --background: #f6fffb;
-  --surface: rgba(255, 255, 255, 0.9);
-  --surface-2: rgba(246, 255, 251, 0.96);
-  --surface-secondary: var(--surface-2);
-
-  /* Borders */
-  --border: rgba(0, 135, 81, 0.18);
-  --border-strong: rgba(0, 135, 81, 0.32);
-  --border-subtle: rgba(0, 135, 81, 0.12);
+  /* Borders - Sharp Flag Lines */
+  --border: #008751; /* solid green borders */
+  --border-strong: #004d2e;
+  --border-subtle: rgba(0, 135, 81, 0.2);
 
   /* Shadows */
-  --shadow: rgba(0, 60, 35, 0.16);
+  --shadow: rgba(0, 50, 30, 0.12);
 
-  --focus-ring: 0 0 0 3px rgba(0, 168, 107, 0.35);
+  /* Focus - "National Glow" */
+  --focus-ring: 0 0 0 4px rgba(0, 168, 107, 0.4);
 
   --primary-color: var(--primary);
-  --secondary-color: var(--primary-strong);
+  --secondary-color: var(--secondary);
 }
 
-
-/* ================== DARK MODE ================== */
+/* ================== DARK MODE (October 1st Night) ================== */
 [data-theme="dark"] {
+  /* Electric Green Palette */
+  --primary: #00ff8f; /* glowing neon flag green */
+  --primary-strong: #33ffaa;
+  --primary-soft: rgba(0, 255, 143, 0.15);
 
-  --primary: #00c27a;
-  --primary-strong: #3de6a2;
-  --primary-soft: rgba(0, 194, 122, 0.2);
+  --secondary: #ffffff; /* white still pops in dark mode */
+  --secondary-soft: rgba(255, 255, 255, 0.1);
 
-  --secondary: #009960;
+  --accent: #ffd700; /* ceremonial gold */
 
-  --accent: #c8ffe5;
+  /* Text - Frosted White */
+  --text: #f0fff8;
+  --text-light: #a8c7b9;
 
-  /* Text */
-  --text: #f3fff9;
-  --text-light: #c7e8da;
+  /* Backgrounds - Deep Jungle Night */
+  --background: #020d08; /* pitch black-green */
+  --surface: rgba(4, 28, 18, 0.9); /* deep forest density */
+  --surface-2: rgba(8, 40, 26, 0.95);
+  --surface-secondary: rgba(0, 135, 81, 0.3);
 
-  /* Night celebration background */
-  --background: #041b12;
-  --surface: rgba(10, 35, 24, 0.92);
-  --surface-2: rgba(14, 44, 30, 0.95);
-  --surface-secondary: var(--surface-2);
+  /* Borders - Neon Green */
+  --border: rgba(0, 255, 143, 0.3);
+  --border-strong: #00ff8f;
+  --border-subtle: rgba(255, 255, 255, 0.1);
 
-  /* Borders */
-  --border: rgba(0, 194, 122, 0.25);
-  --border-strong: rgba(0, 194, 122, 0.38);
-  --border-subtle: rgba(0, 194, 122, 0.15);
+  --shadow: rgba(0, 0, 0, 0.7);
 
-  /* Shadows */
-  --shadow: rgba(0, 0, 0, 0.55);
-
-  --focus-ring: 0 0 0 3px rgba(0, 194, 122, 0.45);
+  --focus-ring: 0 0 0 4px rgba(0, 255, 143, 0.5);
 
   --primary-color: var(--primary);
-  --secondary-color: var(--primary-strong);
+  --secondary-color: var(--secondary);
 }

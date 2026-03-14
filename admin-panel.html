@@ -1,11 +1,17 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Panel | Toke Bakes</title>
-    <meta name="description" content="Administrative panel for managing Toke Bakes website content." />
-    <meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex" />
+    <meta
+      name="description"
+      content="Administrative panel for managing Toke Bakes website content."
+    />
+    <meta
+      name="robots"
+      content="noindex,nofollow,noarchive,nosnippet,noimageindex"
+    />
     <link
       rel="preconnect"
       href="https://lmqoflcikfcxoeyinjus.supabase.co"
@@ -135,9 +141,15 @@
             ? savedModeRaw
             : systemMode;
 
-        const savedThemeRaw = lsGet("toke_bakes_global_theme_css") || lsGet("toke_bakes_css_theme") || "styles/style.css";
+        const savedThemeRaw =
+          lsGet("toke_bakes_global_theme_css") ||
+          lsGet("toke_bakes_css_theme") ||
+          "styles/style.css";
         const savedTheme = fixLegacyThemePath(savedThemeRaw);
-        const themeVersion = lsGet("toke_bakes_global_theme_updated_at") || lsGet("toke_bakes_theme_last_update") || "";
+        const themeVersion =
+          lsGet("toke_bakes_global_theme_updated_at") ||
+          lsGet("toke_bakes_theme_last_update") ||
+          "";
 
         if (savedThemeRaw !== savedTheme) {
           lsSet("toke_bakes_css_theme", savedTheme);
@@ -200,21 +212,24 @@
           revealAdminUi();
         };
 
-        const applyThemeHref = (cssFile, useStoredVersion = true, cacheBust = false) => {
+        const applyThemeHref = (
+          cssFile,
+          useStoredVersion = true,
+          cacheBust = false,
+        ) => {
           const normalized = fixLegacyThemePath(cssFile || DEFAULT_THEME_CSS);
-          const suffix = useStoredVersion && themeVersion
-            ? `?v=${themeVersion}`
-            : cacheBust
-              ? `?v=${Date.now()}`
-              : "";
+          const suffix =
+            useStoredVersion && themeVersion
+              ? `?v=${themeVersion}`
+              : cacheBust
+                ? `?v=${Date.now()}`
+                : "";
           link.href = `${normalized}${suffix}`;
         };
 
-        link.addEventListener(
-          "load",
-          () => finalizeThemeReady(),
-          { once: true }
-        );
+        link.addEventListener("load", () => finalizeThemeReady(), {
+          once: true,
+        });
         link.addEventListener(
           "error",
           () => {
@@ -225,7 +240,7 @@
             }
             finalizeThemeReady();
           },
-          { once: true }
+          { once: true },
         );
         if (baseStylesheet) {
           const markBaseStylesReady = () => {
@@ -271,7 +286,10 @@
       rel="preload"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
       as="style"
-      onload="this.onload=null;this.rel='stylesheet'"
+      onload="
+        this.onload = null;
+        this.rel = 'stylesheet';
+      "
     />
     <link
       rel="stylesheet"
@@ -521,7 +539,12 @@
               </li>
             </ul>
 
-            <div id="admin-sync-badge" class="admin-sync-badge" role="status" aria-live="polite">
+            <div
+              id="admin-sync-badge"
+              class="admin-sync-badge"
+              role="status"
+              aria-live="polite"
+            >
               Sync: ready
             </div>
 
@@ -568,7 +591,7 @@
         <div class="storage-status">
           <div class="storage-info">
             <i class="fas fa-database"></i>
-            <span>Storage: <span id="storage-used">0</span>MB / 500MB</span>
+            <span>Storage: <span id="storage-used">0.00</span> MB / 500 MB</span>
           </div>
           <div class="storage-bar">
             <div class="storage-fill" id="storage-fill"></div>
@@ -633,7 +656,8 @@
                       <option value="">None</option>
                     </select>
                     <small class="form-help"
-                      >Optional: connect to a menu item for quick updates.</small
+                      >Optional: connect to a menu item for quick
+                      updates.</small
                     >
                   </div>
                   <div class="form-group">
@@ -922,7 +946,8 @@
                   </div>
                   <div class="form-group">
                     <label for="specials-original-price"
-                      ><i class="fas fa-tags"></i> Original Price (Optional)</label
+                      ><i class="fas fa-tags"></i> Original Price
+                      (Optional)</label
                     >
                     <input
                       type="number"
@@ -932,7 +957,8 @@
                       step="0.01"
                     />
                     <small class="form-help"
-                      >Discount chip auto-computes from original vs current price.</small
+                      >Discount chip auto-computes from original vs current
+                      price.</small
                     >
                   </div>
                 </div>
@@ -972,7 +998,8 @@
                 <div class="form-row">
                   <div class="form-group">
                     <label for="specials-cta-label"
-                      ><i class="fas fa-bullhorn"></i> CTA Label (Optional)</label
+                      ><i class="fas fa-bullhorn"></i> CTA Label
+                      (Optional)</label
                     >
                     <input
                       type="text"
@@ -1017,7 +1044,10 @@
                     <small class="form-help"
                       >Max 500KB. Images are stored in the cloud.</small
                     >
-                    <div class="image-preview" id="specials-image-preview"></div>
+                    <div
+                      class="image-preview"
+                      id="specials-image-preview"
+                    ></div>
                   </div>
                 </div>
 
@@ -1212,12 +1242,19 @@
             <!-- Themes Grid -->
             <div class="themes-grid" id="themes-grid">
               <!-- DEFAULT THEME -->
-              <div class="theme-card active" data-theme-file="styles/style.css" data-theme-logo="images/logo.webp">
+              <div
+                class="theme-card active"
+                data-theme-file="styles/style.css"
+                data-theme-logo="images/logo.webp"
+              >
                 <div class="theme-preview">
                   <img
-                    src="images/theme-preview-default.jpg"
+                    src="images/default-theme-preview.webp"
                     alt="Default Theme Preview"
-                    onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkRFRkFVTFQgVEhFTUU8L3RleHQ+PC9zdmc+'"
+                    onerror="
+                      this.src =
+                        'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkRFRkFVTFQgVEhFTUU8L3RleHQ+PC9zdmc+'
+                    "
                   />
                 </div>
 
@@ -1248,9 +1285,12 @@
               >
                 <div class="theme-preview">
                   <img
-                    src="images/theme-preview-valentine.jpg"
+                    src="images/valatine-theme-preview.webp"
                     alt="Valentine Theme Preview"
-                    onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjhjY2NjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFmaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlZBTEVOVElORSBUSEVNRTwvdGV4dD48L3N2Zz4='"
+                    onerror="
+                      this.src =
+                        'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjhjY2NjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFmaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlZBTEVOVElORSBUSEVNRTwvdGV4dD48L3N2Zz4='
+                    "
                   />
                 </div>
 
@@ -1283,7 +1323,10 @@
                   <img
                     src="images/theme-preview-ramadan.jpg"
                     alt="Ramadan Theme Preview"
-                    onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmRmNWI1Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlJBTUFEQU4gVEhFTUU8L3RleHQ+PC9zdmc+'"
+                    onerror="
+                      this.src =
+                        'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmRmNWI1Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlJBTUFEQU4gVEhFTUU8L3RleHQ+PC9zdmc+'
+                    "
                   />
                 </div>
 
@@ -1316,7 +1359,10 @@
                   <img
                     src="images/theme-preview-christmas.jpg"
                     alt="Christmas Theme Preview"
-                    onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZDMzMmYyIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkNIUklTVE1BUyBUSEVNRTwvdGV4dD48L3N2Zz4='"
+                    onerror="
+                      this.src =
+                        'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZDMzMmYyIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkNIUklTVE1BUyBUSEVNRTwvdGV4dD48L3N2Zz4='
+                    "
                   />
                 </div>
 
@@ -1349,7 +1395,10 @@
                   <img
                     src="images/theme-preview-halloween.jpg"
                     alt="Halloween Theme Preview"
-                    onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmY2ZjAwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkhBTExPV0VFTiBUSEVNRTwvdGV4dD48L3N2Zz4='"
+                    onerror="
+                      this.src =
+                        'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmY2ZjAwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkhBTExPV0VFTiBUSEVNRTwvdGV4dD48L3N2Zz4='
+                    "
                   />
                 </div>
 
@@ -1382,7 +1431,10 @@
                   <img
                     src="images/theme-preview-independenceday.jpg"
                     alt="Independence Day Theme Preview"
-                    onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMDA4NzUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPklOREVQRU5ERU5DRSBEQVk8L3RleHQ+PC9zdmc+'"
+                    onerror="
+                      this.src =
+                        'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMDA4NzUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPklOREVQRU5ERU5DRSBEQVk8L3RleHQ+PC9zdmc+'
+                    "
                   />
                 </div>
 
@@ -1614,12 +1666,19 @@
                   <i class="fas fa-sync"></i> Force Recheck Version
                 </button>
                 <button class="btn btn-secondary" id="debug-force-refetch-btn">
-                  <i class="fas fa-cloud-download-alt"></i> Force Refetch Content
+                  <i class="fas fa-cloud-download-alt"></i> Force Refetch
+                  Content
                 </button>
-                <button class="btn btn-secondary" id="debug-clear-theme-cache-btn">
+                <button
+                  class="btn btn-secondary"
+                  id="debug-clear-theme-cache-btn"
+                >
                   <i class="fas fa-paint-roller"></i> Clear Theme Cache
                 </button>
-                <button class="btn btn-secondary" id="debug-clear-app-cache-btn">
+                <button
+                  class="btn btn-secondary"
+                  id="debug-clear-app-cache-btn"
+                >
                   <i class="fas fa-broom"></i> Clear App Caches
                 </button>
                 <button class="btn btn-secondary" id="debug-soft-reload-btn">
@@ -1806,8 +1865,8 @@
         </div>
         <div class="footer-bottom">
           <p class="copyright">
-            &copy; <span id="admin-year" data-auto-year>2026</span> Toke Bakes Admin Panel. All
-            rights reserved.
+            &copy; <span id="admin-year" data-auto-year>2026</span> Toke Bakes
+            Admin Panel. All rights reserved.
           </p>
         </div>
       </footer>
@@ -1870,8 +1929,8 @@
               </div>
               <div class="form-group">
                 <label for="option-group-max"
-                  ><i class="fas fa-layer-group"></i> Max Selections
-                  (multiple only)</label
+                  ><i class="fas fa-layer-group"></i> Max Selections (multiple
+                  only)</label
                 >
                 <input
                   type="number"
@@ -1892,10 +1951,18 @@
               <i class="fas fa-plus"></i> Add Option Value
             </button>
             <div class="form-actions">
-              <button type="submit" class="btn btn-admin" id="save-option-group">
+              <button
+                type="submit"
+                class="btn btn-admin"
+                id="save-option-group"
+              >
                 <i class="fas fa-save"></i> Save Group
               </button>
-              <button type="button" class="btn btn-secondary" id="reset-option-group">
+              <button
+                type="button"
+                class="btn btn-secondary"
+                id="reset-option-group"
+              >
                 <i class="fas fa-undo"></i> Clear
               </button>
             </div>
@@ -1913,4 +1980,3 @@
     <script src="scripts/admin.js" defer></script>
   </body>
 </html>
-

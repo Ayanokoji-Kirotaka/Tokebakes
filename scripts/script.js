@@ -2321,19 +2321,11 @@ function renderProductCard(item, context = "specials", index = 0) {
   } else {
     const priceLine = document.createElement("p");
     priceLine.className = "product-card-current";
-    priceLine.textContent =
-      priceValue > 0 ? formatNairaValue(priceValue) : "Price on request";
+    priceLine.textContent = priceValue > 0 ? formatNairaValue(priceValue) : "";
     pricing.appendChild(priceLine);
   }
   body.appendChild(pricing);
 
-  const cta = document.createElement("button");
-  cta.type = "button";
-  cta.className = "product-card-cta";
-  cta.textContent = ctaLabel;
-  cta.dataset.orderDirect = isDirectOrderCard ? "true" : "false";
-  cta.dataset.context = contextKey;
-  body.appendChild(cta);
 
   card.appendChild(body);
   return card;
@@ -4156,6 +4148,7 @@ function renderConfiguratorGroupOptions() {
                 value="${escapeHtml(valueId)}"
                 data-group-id="${escapeHtml(group.id)}"
                 ${checked ? "checked" : ""}
+                onclick="if(this.type==='radio' && this.checked && this.getAttribute('waschecked')){this.checked=false;this.removeAttribute('waschecked');}else if(this.type==='radio'){this.setAttribute('waschecked','true');}"
               />
               <span class="pc-option-label">${escapeHtml(value.name)}</span>
               <span class="pc-option-price">${adjustmentLabel}</span>
@@ -5436,9 +5429,13 @@ function setupHomeScrollReveal() {
   const targets = [
     document.querySelector(".about-preview"),
     ...Array.from(document.querySelectorAll(".about-features .feature")),
-    ...Array.from(document.querySelectorAll("#featured-container .featured-card")),
+    ...Array.from(
+      document.querySelectorAll("#featured-container .featured-card"),
+    ),
     ...Array.from(document.querySelectorAll("#menu-container .menu-item")),
-    ...Array.from(document.querySelectorAll("#specials-container .product-card")),
+    ...Array.from(
+      document.querySelectorAll("#specials-container .product-card"),
+    ),
   ].filter(Boolean);
 
   // Cleanup if no targets
@@ -5498,8 +5495,8 @@ function setupHomeScrollReveal() {
       });
     },
     {
-      threshold: liteMotion ? 0.12 : 0.15,
-      rootMargin: liteMotion ? "0px 0px -6% 0px" : "0px 0px -10% 0px",
+      threshold: 0,
+      rootMargin: "0px",
     },
   );
 
@@ -5525,18 +5522,18 @@ function setupHomeScrollReveal() {
 
     // Check if element is already in viewport
     const rect = el.getBoundingClientRect();
-    const isInViewport = rect.top < window.innerHeight && rect.bottom > 0; 
-  
-    if (isInViewport) { 
-      // Element is already visible - animate immediately 
-      requestAnimationFrame(() => { 
-        el.classList.add("is-visible"); 
-      }); 
-    } else { 
-      // Element is below viewport - observe for scroll 
-      homeRevealObserver.observe(el); 
-    } 
-  }); 
+    const isInViewport = rect.top < window.innerHeight && rect.bottom > 0;
+
+    if (isInViewport) {
+      // Element is already visible - animate immediately
+      requestAnimationFrame(() => {
+        el.classList.add("is-visible");
+      });
+    } else {
+      // Element is below viewport - observe for scroll
+      homeRevealObserver.observe(el);
+    }
+  });
 }
 
 function refreshHomeEnhancements() {

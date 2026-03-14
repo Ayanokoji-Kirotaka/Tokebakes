@@ -1,74 +1,73 @@
-/* theme-christmas.css - Variables only (imports base styles) */
+/* theme-christmas.css - The "North Pole" Edition */
 @import url("style.css");
 
-/* ================== LIGHT MODE ================== */
+/* ================== LIGHT MODE (Santa's Workshop) ================== */
 :root {
+  /* High-energy Festive Palette */
+  --primary: #d32f2f; /* classic santa red */
+  --primary-strong: #ff1744; /* bright ribbon red */
+  --primary-soft: rgba(211, 47, 47, 0.12);
 
-  /* Festive colors */
-  --primary: #b71c1c;              /* deep christmas red */
-  --primary-strong: #e53935;       /* bright ornament red */
-  --primary-soft: rgba(183, 28, 28, 0.18);
+  --secondary: #2e7d32; /* deep holly green */
+  --secondary-soft: rgba(46, 125, 50, 0.1);
 
-  --secondary: #1b5e20;            /* pine tree green */
-  --secondary-soft: rgba(27, 94, 32, 0.15);
+  /* Metallic Gold accent for buttons/links */
+  --accent: #fbc02d; /* star-on-the-tree gold */
+  --accent-glow: rgba(251, 192, 45, 0.4);
 
-  /* Gold accent for festive highlights */
-  --accent: #c9a227;
+  /* Text - Chocolate and Cinnamon tones */
+  --text: #3e2723; /* gingerbread brown */
+  --text-light: #795548;
 
-  /* Text */
-  --text: #2c1b14;
-  --text-light: #5a3b31;
+  /* Backgrounds - Snowy and Crisp */
+  --background: #fdfdfd; /* fresh snow */
+  --surface: rgba(255, 255, 255, 0.9);
+  --surface-2: #fff5f5; /* very faint candy-cane pink tint */
+  --surface-secondary: #edf7ed; /* faint mistletoe green tint */
 
-  /* Backgrounds */
-  --background: #fffaf7;           /* warm snowy white */
-  --surface: rgba(255, 255, 255, 0.88);
-  --surface-2: rgba(255, 252, 248, 0.95);
-  --surface-secondary: var(--surface-2);
+  /* Borders - Wrapping paper vibes */
+  --border: #ffcdd2; /* soft red border */
+  --border-strong: #c62828;
+  --border-subtle: rgba(46, 125, 50, 0.15);
 
-  /* Borders */
-  --border: rgba(183, 28, 28, 0.15);
-  --border-strong: rgba(183, 28, 28, 0.3);
-  --border-subtle: rgba(183, 28, 28, 0.1);
+  /* Shadows - Warm hearth glow */
+  --shadow: rgba(93, 64, 55, 0.15);
 
-  /* Shadows */
-  --shadow: rgba(70, 40, 20, 0.18);
+  /* Focus - "Twinkling Light" effect */
+  --focus-ring: 0 0 0 4px rgba(251, 192, 45, 0.5);
 
-  /* Focus */
-  --focus-ring: 0 0 0 3px rgba(229, 57, 53, 0.35);
-
-  /* Compatibility variables */
   --primary-color: var(--primary);
   --secondary-color: var(--secondary);
 }
 
-
-/* ================== DARK MODE ================== */
+/* ================== DARK MODE (Midnight Blizzard) ================== */
 [data-theme="dark"] {
+  /* Neon Festive Palette */
+  --primary: #ff5252; /* glowing red ornament */
+  --primary-strong: #ff8a80;
+  --primary-soft: rgba(255, 82, 82, 0.25);
 
-  --primary: #ff4d4d;
-  --primary-strong: #ff7a7a;
-  --primary-soft: rgba(255, 77, 77, 0.2);
+  --secondary: #4caf50; /* bright pine needles */
+  --secondary-soft: rgba(76, 175, 80, 0.2);
 
-  --secondary: #2ecc71;            /* glowing christmas green */
-  --secondary-soft: rgba(46, 204, 113, 0.2);
+  --accent: #ffd740; /* sparkling fairy lights */
 
-  --accent: #e6c35c;               /* warm gold */
+  --text: #e8f5e9; /* frosted leaf white */
+  --text-light: #a5d6a7;
 
-  --text: #f4f7f4;
-  --text-light: #cfe0d1;
+  /* Backgrounds - Night Sky & Winter Forest */
+  --background: #050f0a; /* deep spruce forest at night */
+  --surface: rgba(10, 25, 15, 0.85);
+  --surface-2: rgba(20, 40, 25, 0.9);
+  --surface-secondary: rgba(45, 15, 15, 0.6); /* dark cherry wood tint */
 
-  --background: #08140c;           /* deep winter night */
-  --surface: rgba(14, 28, 18, 0.92);
-  --surface-2: rgba(18, 36, 22, 0.95);
-  --surface-secondary: var(--surface-2);
+  --border: rgba(255, 82, 82, 0.3);
+  --border-strong: #4caf50;
+  --border-subtle: rgba(255, 255, 255, 0.1);
 
-  --border: rgba(46, 204, 113, 0.22);
-  --border-strong: rgba(46, 204, 113, 0.38);
-  --border-subtle: rgba(46, 204, 113, 0.15);
+  --shadow: rgba(0, 0, 0, 0.8);
 
-  --shadow: rgba(0, 0, 0, 0.6);
-
-  --focus-ring: 0 0 0 3px rgba(255, 77, 77, 0.45);
+  --focus-ring: 0 0 0 4px rgba(76, 175, 80, 0.6);
 
   --primary-color: var(--primary);
   --secondary-color: var(--secondary);
