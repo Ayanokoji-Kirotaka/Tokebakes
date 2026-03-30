@@ -1,0 +1,75 @@
+/* theme-ramadan-gradient.css - Celestial Transitions */
+@import url("style.css");
+
+/* ================== LIGHT MODE (The Horizon) ================== */
+:root {
+  /* Spiritual Indigo & Twilight Gradients */
+  --primary-stop-1: #4338ca;
+  --primary-stop-2: #6366f1;
+  --primary-gradient: linear-gradient(135deg, #4338ca 0%, #6366f1 100%);
+
+  --accent-gradient: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+
+  --primary: #4338ca;
+  --primary-strong: #3730a3;
+  --primary-soft: rgba(67, 56, 202, 0.08);
+
+  --secondary: #d97706;
+  --secondary-soft: rgba(217, 119, 6, 0.1);
+
+  --accent: #ca8a04;
+
+  /* Text & Surface */
+  --text: #1e1b4b;
+  --text-light: #475569;
+
+  /* The "Silk" Gradient Background */
+  --background: #f8fafc;
+  --bg-gradient: linear-gradient(180deg, #ffffff 0%, #eef2ff 100%);
+
+  --surface: rgba(255, 255, 255, 0.9);
+  --surface-2: #f1f5f9;
+  --surface-secondary: #e0e7ff;
+
+  --border: #c7d2fe;
+  --shadow: rgba(30, 27, 75, 0.08);
+
+  --focus-ring: 0 0 0 4px rgba(217, 119, 6, 0.4);
+
+  --primary-color: var(--primary);
+  --secondary-color: var(--secondary);
+}
+
+/* ================== DARK MODE (Deep Night / Laylat al-Qadr) ================== */
+[data-theme="dark"] {
+  /* Glowing Lantern & Midnight Gradients */
+  --primary-gradient: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+  --secondary-gradient: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+
+  /* The "Celestial" Body Gradient */
+  --bg-gradient: radial-gradient(circle at top right, #1e1b4b 0%, #0f172a 100%);
+
+  --primary: #fbbf24; /* lantern gold */
+  --primary-strong: #fcd34d;
+  --primary-soft: rgba(251, 191, 36, 0.15);
+
+  --secondary: #818cf8; /* soft starlight */
+  --secondary-soft: rgba(129, 140, 248, 0.1);
+
+  --accent: #f59e0b;
+
+  --text: #eef2ff;
+  --text-light: #a5b4fc;
+
+  --background: #0f172a; /* deep navy base */
+  --surface: rgba(30, 41, 59, 0.7);
+  --surface-2: rgba(15, 23, 42, 0.9);
+
+  --border: rgba(251, 191, 36, 0.2);
+  --shadow: rgba(0, 0, 0, 0.6);
+
+  --focus-ring: 0 0 0 4px rgba(251, 191, 36, 0.5);
+
+  --primary-color: var(--primary);
+  --secondary-color: var(--secondary);
+}

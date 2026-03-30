@@ -1,0 +1,1663 @@
+﻿/* ================== carousel.js - SPA-ENHANCED VERSION ================== */
+
+const CAROUSEL_DEBUG = false;
+const CAROUSEL_CACHE_TTL_MS = 60 * 1000; // 1 minute
+const CAROUSEL_READY_TIMEOUT_MS = 450;
+const CAROUSEL_FETCH_TIMEOUT_MS = 12000;
+const CAROUSEL_CACHE_VERSION = 2;
+const CAROUSEL_CACHE_VERSION_KEY = "hero_carousel_cache_version";
+const CAROUSEL_FALLBACK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
+const CAROUSEL_LAST_UPDATE_KEY = "toke_bakes_last_update";
+const CAROUSEL_LAST_PAYLOAD_KEY = "toke_bakes_last_update_payload";
+const CAROUSEL_DB_LAST_UPDATED_KEY = "toke_bakes_db_last_updated";
+const CAROUSEL_ASSET_VERSION_PARAM = "cv";
+const CAROUSEL_RUNTIME_CONNECTION =
+  typeof navigator !== "undefined"
+    ? navigator.connection || navigator.mozConnection || navigator.webkitConnection
+    : null;
+const carouselDebugLog = (...args) => {
+  if (CAROUSEL_DEBUG) console.log(...args);
+};
+const carouselDebugWarn = (...args) => {
+  if (CAROUSEL_DEBUG) console.warn(...args);
+};
+
+const getCarouselRuntimeProfile = () => {
+  const connection = CAROUSEL_RUNTIME_CONNECTION;
+  const effectiveType = String(connection?.effectiveType || "").toLowerCase();
+  const saveData = Boolean(connection?.saveData);
+  const downlink = Number(connection?.downlink || 0);
+  const rtt = Number(connection?.rtt || 0);
+  const prefersReducedMotion = Boolean(
+    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+  const memory = Number(navigator.deviceMemory || 0);
+  const cores = Number(navigator.hardwareConcurrency || 0);
+  const lowEndDevice =
+    (Number.isFinite(memory) && memory > 0 && memory <= 2) ||
+    (Number.isFinite(cores) && cores > 0 && cores <= 4);
+
+  let networkTier = "fast";
+  if (
+    saveData ||
+    effectiveType === "slow-2g" ||
+    effectiveType === "2g" ||
+    (Number.isFinite(downlink) && downlink > 0 && downlink < 0.9) ||
+    (Number.isFinite(rtt) && rtt > 900)
+  ) {
+    networkTier = "slow";
+  } else if (
+    effectiveType === "3g" ||
+    (Number.isFinite(downlink) && downlink > 0 && downlink < 1.8) ||
+    (Number.isFinite(rtt) && rtt > 450)
+  ) {
+    networkTier = "standard";
+  }
+
+  return {
+    networkTier,
+    saveData,
+    lowEndDevice,
+    prefersReducedMotion,
+  };
+};
+
+const getCarouselAdaptiveTimeoutMs = (baseTimeoutMs = CAROUSEL_FETCH_TIMEOUT_MS) => {
+  const profile = getCarouselRuntimeProfile();
+  let multiplier = 1;
+  if (profile.networkTier === "standard") multiplier = 1.35;
+  if (profile.networkTier === "slow") multiplier = 2.1;
+  if (profile.lowEndDevice) multiplier += 0.15;
+  if (profile.saveData) multiplier += 0.2;
+  return Math.round(Math.max(4000, Number(baseTimeoutMs) || CAROUSEL_FETCH_TIMEOUT_MS) * multiplier);
+};
+const isCarouselSlideActive = (value) => {
+  if (value === null || value === undefined || value === "") return true;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "false" || normalized === "0" || normalized === "no") {
+    return false;
+  }
+  return true;
+};
+const getCarouselContentVersionToken = () => {
+  let latest = 0;
+  try {
+    latest = Math.max(
+      Number(localStorage.getItem(CAROUSEL_DB_LAST_UPDATED_KEY) || "0"),
+      Number(localStorage.getItem(CAROUSEL_LAST_UPDATE_KEY) || "0")
+    );
+    const payloadRaw = localStorage.getItem(CAROUSEL_LAST_PAYLOAD_KEY);
+    if (payloadRaw) {
+      const payload = JSON.parse(payloadRaw);
+      latest = Math.max(latest, Number(payload?.timestamp) || 0);
+    }
+  } catch {}
+  return latest > 0 ? String(latest) : "";
+};
+
+const appendCarouselAssetVersion = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+  if (lower.startsWith("data:") || lower.startsWith("blob:")) return raw;
+
+  const version = getCarouselContentVersionToken();
+  if (!version) return raw;
+
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    parsed.searchParams.set(CAROUSEL_ASSET_VERSION_PARAM, version);
+    if (/^https?:\/\//i.test(raw) || raw.startsWith("//")) {
+      return parsed.toString();
+    }
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    const encodedVersion = encodeURIComponent(version);
+    if (raw.includes(`${CAROUSEL_ASSET_VERSION_PARAM}=`)) {
+      return raw.replace(
+        /([?&])cv=[^&#]*/i,
+        `$1${CAROUSEL_ASSET_VERSION_PARAM}=${encodedVersion}`
+      );
+    }
+    return `${raw}${raw.includes("?") ? "&" : "?"}${CAROUSEL_ASSET_VERSION_PARAM}=${encodedVersion}`;
+  }
+};
+
+const normalizeCarouselAsset = (value) => {
+  if (value === null || value === undefined) return "";
+  const normalized = String(value)
+    .trim()
+    .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
+  return appendCarouselAssetVersion(normalized);
+};
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = CAROUSEL_FETCH_TIMEOUT_MS) {
+  if (typeof AbortController === "undefined") {
+    return fetch(url, options);
+  }
+
+  const adaptiveTimeoutMs = getCarouselAdaptiveTimeoutMs(timeoutMs);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), adaptiveTimeoutMs);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function ensureCarouselCacheVersion() {
+  try {
+    const current = localStorage.getItem(CAROUSEL_CACHE_VERSION_KEY);
+    if (String(current) !== String(CAROUSEL_CACHE_VERSION)) {
+      localStorage.removeItem("hero_carousel_data");
+      localStorage.setItem(
+        CAROUSEL_CACHE_VERSION_KEY,
+        String(CAROUSEL_CACHE_VERSION)
+      );
+    }
+  } catch {}
+}
+
+let carouselEmptyStylesAdded = false;
+function ensureCarouselEmptyStyles() {
+  if (carouselEmptyStylesAdded) return;
+  const style = document.createElement("style");
+  style.id = "carousel-empty-state-styles";
+  style.textContent = `
+    .hero-carousel.is-empty {
+      position: relative;
+      min-height: 240px;
+      background: linear-gradient(135deg, rgba(0,0,0,0.6), rgba(0,0,0,0.35));
+    }
+    .hero-carousel.is-empty .carousel-overlay,
+    .hero-carousel.is-empty .carousel-nav,
+    .hero-carousel.is-empty .carousel-dots {
+      display: none;
+    }
+    .carousel-empty-state {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: rgba(15, 10, 6, 0.82);
+      color: #fff;
+      font-size: 0.9rem;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+      pointer-events: none;
+      z-index: 12;
+    }
+    .carousel-empty-state i {
+      color: #ffd8ae;
+    }
+  `;
+  document.head.appendChild(style);
+  carouselEmptyStylesAdded = true;
+}
+
+class HeroCarousel {
+  constructor() {
+    carouselDebugLog("ðŸŽ  HeroCarousel constructor called");
+    ensureCarouselCacheVersion();
+    ensureCarouselEmptyStyles();
+
+    this.container = document.querySelector(".hero-carousel");
+    if (!this.container) {
+      carouselDebugLog("ðŸŽ  No carousel found on this page");
+      return;
+    }
+
+    this.track = this.container.querySelector(".carousel-track");
+    this.dotsContainer = this.container.querySelector(".carousel-dots");
+    this.navContainer = this.container.querySelector(".carousel-nav");
+    this.slides = [];
+    this.currentIndex = 0;
+    this.syncHeroContent =
+      this.container?.dataset?.syncHeroContent === "true";
+    this.heroState = null;
+    this.runtimeProfile = getCarouselRuntimeProfile();
+
+    // Auto-play timers
+    this.autoPlayInterval = null;
+    this.autoPlayDelay = 2500;
+    this.autoPlayEnabled = true;
+    this.autoPlayTickIntervalMs = this.runtimeProfile.lowEndDevice ? 400 : 250;
+    this.autoPlayNextAt = 0;
+    this.hoverPauseUntil = 0;
+    this.interactionPauseUntil = 0;
+    if (this.runtimeProfile.prefersReducedMotion) {
+      this.autoPlayDelay = Math.max(this.autoPlayDelay, 5000);
+    }
+    this.resumeTimeout = null;
+    this.resumeDelay = 2500;
+    this.pointerIdleResumeDelay = 2600;
+    this.pointerActivityThrottleMs =
+      this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.lowEndDevice
+        ? 240
+        : 160;
+    this.lastPointerActivityAt = 0;
+    this.isHovered = false;
+    this.preloadNeighborDepth =
+      this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.saveData
+        ? 0
+        : this.runtimeProfile.networkTier === "standard"
+          ? 1
+          : 2;
+
+    // State management
+    this.isTransitioning = false;
+    this.transitionTimeout = null;
+    this.transitionDuration = 1100;
+    this.queuedIndex = null;
+    this.emptyStateEl = null;
+
+    // Smart loading helpers
+    this.preloadedImages = new Set();
+
+    // Smart autoplay helpers
+    this.isInView = true;
+    this.intersectionObserver = null;
+
+    // Touch/swipe support
+    this.touchStartX = 0;
+    this.touchEndX = 0;
+    this.touchStartY = 0;
+    this.touchEndY = 0;
+    this.swipeBlocked = false;
+    this.boundHandlers = {};
+    this.connectionChangeHandler = null;
+
+    // Hero content elements
+    this.heroContent = {
+      title: document.querySelector(".hero-content h2"),
+      subtitle: document.querySelector(".hero-content .lead"),
+      cta: document.querySelector(".hero-content .btn"),
+    };
+    this.defaultHero = {
+      title: this.heroContent.title ? this.heroContent.title.textContent : "",
+      subtitle: this.heroContent.subtitle
+        ? this.heroContent.subtitle.textContent
+        : "",
+      ctaText: this.heroContent.cta ? this.heroContent.cta.textContent : "",
+      ctaLink: this.heroContent.cta ? this.heroContent.cta.getAttribute("href") : "",
+    };
+
+    if (typeof window !== "undefined") {
+      window.__tokeCarouselReady = false;
+    }
+
+    this.setupRuntimeProfileListener();
+    this.applyRuntimeProfileHints();
+
+    // Initialize immediately
+    this.init();
+  }
+
+  applyRuntimeProfileHints() {
+    this.runtimeProfile = getCarouselRuntimeProfile();
+    this.pointerActivityThrottleMs =
+      this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.lowEndDevice
+        ? 240
+        : 160;
+    this.autoPlayTickIntervalMs = this.runtimeProfile.lowEndDevice ? 400 : 250;
+    this.preloadNeighborDepth =
+      this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.saveData
+        ? 0
+        : this.runtimeProfile.networkTier === "standard"
+          ? 1
+          : 2;
+  }
+
+  setupRuntimeProfileListener() {
+    if (
+      !CAROUSEL_RUNTIME_CONNECTION ||
+      typeof CAROUSEL_RUNTIME_CONNECTION.addEventListener !== "function" ||
+      this.connectionChangeHandler
+    ) {
+      return;
+    }
+
+    this.connectionChangeHandler = () => {
+      this.applyRuntimeProfileHints();
+    };
+    CAROUSEL_RUNTIME_CONNECTION.addEventListener(
+      "change",
+      this.connectionChangeHandler
+    );
+  }
+
+  async init() {
+    carouselDebugLog("ðŸŽ  Initializing Hero Carousel...");
+    try {
+      const loadResult = await this.loadCarouselData(false, {
+        allowStaleCache: true,
+        showLoading: false,
+        cacheOnly: true,
+      });
+
+      if (!loadResult?.fromCache) {
+        this.slides = this.getFallbackSlides();
+      }
+
+      this.setupCarousel({ preferredIndex: 0 });
+      this.syncTransitionDurationFromCss();
+      await this.waitForFirstSlideReady();
+      this.hideLoadingState();
+      this.setupEventListeners();
+      this.setupIntersectionObserver();
+      this.startAutoPlay();
+      const needsBackgroundRefresh =
+        !loadResult?.fromCache || !loadResult?.isFresh;
+      if (needsBackgroundRefresh) {
+        this.refresh(true, {
+          showLoading: false,
+          forceRebuild: !loadResult?.fromCache,
+        }).catch(() => {});
+      }
+    } finally {
+      this.announceReady();
+    }
+  }
+
+  syncTransitionDurationFromCss() {
+    try {
+      const slide =
+        this.track && this.track.querySelector(".carousel-slide.active");
+      if (!slide) return;
+
+      const style = window.getComputedStyle(slide);
+      const durations = String(style.transitionDuration || "")
+        .split(",")
+        .map((v) => v.trim());
+      const delays = String(style.transitionDelay || "")
+        .split(",")
+        .map((v) => v.trim());
+      const props = String(style.transitionProperty || "")
+        .split(",")
+        .map((v) => v.trim());
+
+      const parseTimeMs = (value) => {
+        const text = String(value || "").trim();
+        if (!text) return 0;
+        if (text.endsWith("ms")) {
+          const n = Number.parseFloat(text);
+          return Number.isFinite(n) ? n : 0;
+        }
+        if (text.endsWith("s")) {
+          const n = Number.parseFloat(text);
+          return Number.isFinite(n) ? n * 1000 : 0;
+        }
+        const n = Number.parseFloat(text);
+        return Number.isFinite(n) ? n : 0;
+      };
+
+      const pickIndex = () => {
+        const idx = props.findIndex(
+          (p) => p === "opacity" || p === "all" || p === ""
+        );
+        return idx >= 0 ? idx : 0;
+      };
+
+      const i = pickIndex();
+      const durationMs = parseTimeMs(durations[i] ?? durations[0]);
+      const delayMs = parseTimeMs(delays[i] ?? delays[0]);
+
+      const total = Math.max(0, durationMs + delayMs);
+      if (total > 0) {
+        // Small buffer to avoid early unlock on slow devices.
+        this.transitionDuration = Math.round(total + 60);
+      }
+    } catch {}
+  }
+
+  setupIntersectionObserver() {
+    if (!this.container || typeof IntersectionObserver === "undefined") return;
+
+    if (this.intersectionObserver) {
+      try {
+        this.intersectionObserver.disconnect();
+      } catch {}
+      this.intersectionObserver = null;
+    }
+
+    try {
+      this.intersectionObserver = new IntersectionObserver(
+        (entries) => {
+          const entry = entries && entries[0];
+          if (!entry) return;
+          const ratio = Number(entry.intersectionRatio || 0);
+          const inView = Boolean(entry.isIntersecting || ratio > 0);
+          this.isInView = inView;
+
+          if (!this.autoPlayEnabled) return;
+
+          if (!inView) {
+            this.stopAutoPlay();
+            return;
+          }
+
+          // When the carousel comes back into view, restart autoplay with a fresh cadence.
+          this.autoPlayNextAt = Date.now() + this.autoPlayDelay;
+          this.startAutoPlay();
+        },
+        { root: null, threshold: 0.15 }
+      );
+
+      this.intersectionObserver.observe(this.container);
+    } catch (error) {
+      carouselDebugWarn("IntersectionObserver setup failed:", error);
+      this.intersectionObserver = null;
+      this.isInView = true;
+    }
+  }
+
+  preloadImage(url) {
+    const src = normalizeCarouselAsset(url);
+    if (!src || this.preloadedImages.has(src)) return;
+    this.preloadedImages.add(src);
+
+    try {
+      const img = new Image();
+      img.decoding = "async";
+      img.src = src;
+      if (typeof img.decode === "function") {
+        img.decode().catch(() => {});
+      }
+    } catch {}
+  }
+
+  preloadNeighbors() {
+    if (!Array.isArray(this.slides) || this.slides.length <= 1) return;
+    if (this.preloadNeighborDepth <= 0) return;
+    const nextIndex = (this.currentIndex + 1) % this.slides.length;
+    const nextNextIndex = (this.currentIndex + 2) % this.slides.length;
+    this.preloadImage(this.slides[nextIndex]?.image);
+    if (this.preloadNeighborDepth > 1 && this.slides.length > 2) {
+      this.preloadImage(this.slides[nextNextIndex]?.image);
+    }
+  }
+
+  markSlideImageReady(slideEl, force = true) {
+    const target = slideEl instanceof Element ? slideEl : null;
+    const image = target ? target.querySelector("img") : null;
+    const canMark = Boolean(
+      force || (image && image.complete && image.naturalWidth > 0)
+    );
+    if (!canMark) return;
+    if (target) {
+      target.classList.add("is-image-ready");
+    }
+    if (image) {
+      image.dataset.ready = "1";
+    }
+  }
+
+  async prepareSlideImage(
+    slideEl,
+    slide = null,
+    timeoutMs = CAROUSEL_READY_TIMEOUT_MS + 200
+  ) {
+    const target = slideEl instanceof Element ? slideEl : null;
+    const image = target ? target.querySelector("img") : null;
+    if (!image) return;
+
+    const resolvedSrc =
+      normalizeCarouselAsset(slide?.image || image.currentSrc || image.src);
+    if (resolvedSrc && image.getAttribute("src") !== resolvedSrc) {
+      image.setAttribute("src", resolvedSrc);
+    }
+
+    if (image.dataset.ready === "1" && image.complete && image.naturalWidth > 0) {
+      this.markSlideImageReady(target, false);
+      return;
+    }
+
+    const markReady = () => {
+      this.markSlideImageReady(target, true);
+    };
+
+    if (image.complete && image.naturalWidth > 0) {
+      if (typeof image.decode === "function") {
+        try {
+          await Promise.race([
+            image.decode(),
+            new Promise((resolve) => setTimeout(resolve, timeoutMs)),
+          ]);
+        } catch {}
+      }
+      markReady();
+      return;
+    }
+
+    await new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        image.removeEventListener("load", finish);
+        image.removeEventListener("error", finish);
+        markReady();
+        resolve();
+      };
+
+      image.addEventListener("load", finish, { once: true });
+      image.addEventListener("error", finish, { once: true });
+      setTimeout(finish, timeoutMs);
+    });
+  }
+
+  announceReady() {
+    if (typeof window === "undefined") return;
+    try {
+      window.__tokeCarouselReady = true;
+      window.dispatchEvent(
+        new CustomEvent("carousel:ready", {
+          detail: {
+            slides: Array.isArray(this.slides) ? this.slides.length : 0,
+          },
+        })
+      );
+    } catch {}
+  }
+
+  async waitForFirstSlideReady() {
+    const firstSlide = this.track?.querySelector(".carousel-slide.active");
+    await this.prepareSlideImage(
+      firstSlide,
+      Array.isArray(this.slides) ? this.slides[this.currentIndex] : null,
+      CAROUSEL_READY_TIMEOUT_MS
+    );
+  }
+
+  // NEW: Cleanup method for SPA navigation
+  destroy() {
+    carouselDebugLog("ðŸŽ  Cleaning up carousel...");
+
+    // Stop auto-play
+    this.stopAutoPlay();
+    this.hoverPauseUntil = 0;
+    this.interactionPauseUntil = 0;
+
+    // Clear any timeouts
+    if (this.transitionTimeout) {
+      clearTimeout(this.transitionTimeout);
+    }
+
+    // Remove event listeners
+    this.teardownEventListeners();
+
+    if (this.intersectionObserver) {
+      try {
+        this.intersectionObserver.disconnect();
+      } catch {}
+      this.intersectionObserver = null;
+    }
+
+    if (
+      CAROUSEL_RUNTIME_CONNECTION &&
+      this.connectionChangeHandler &&
+      typeof CAROUSEL_RUNTIME_CONNECTION.removeEventListener === "function"
+    ) {
+      CAROUSEL_RUNTIME_CONNECTION.removeEventListener(
+        "change",
+        this.connectionChangeHandler
+      );
+    }
+    this.connectionChangeHandler = null;
+
+    // Clear references
+    this.container = null;
+    this.track = null;
+    this.dotsContainer = null;
+    this.navContainer = null;
+    this.slides = [];
+    this.boundHandlers = {};
+
+    carouselDebugLog("ðŸŽ  Carousel cleanup complete");
+  }
+
+  getFallbackSlides() {
+    return [];
+  }
+
+  createSlidesSignature(slides = this.slides) {
+    if (!Array.isArray(slides) || slides.length === 0) return "";
+    return slides
+      .map(
+        (slide) =>
+          JSON.stringify({
+            id: slide?.id || "",
+            image: slide?.image || "",
+            alt: slide?.alt || "",
+            title: slide?.title || "",
+            subtitle: slide?.subtitle || "",
+            cta_text: slide?.cta_text || "",
+            cta_link: slide?.cta_link || "",
+            display_order: slide?.display_order ?? "",
+            is_active: slide?.is_active ?? "",
+            updated_at: slide?.updated_at || "",
+          })
+      )
+      .join("||");
+  }
+
+  async loadCarouselData(forceRefresh = false, options = {}) {
+    const dataCacheKey = "hero_carousel_data";
+    const allowStaleCache = options.allowStaleCache !== false;
+    const showLoading = options.showLoading !== false;
+    const cacheOnly = options.cacheOnly === true;
+    // Check if carousel data is cached
+    if (!forceRefresh) {
+      try {
+        const cached = localStorage.getItem(dataCacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          const cachedSlides = Array.isArray(parsed?.data)
+            ? parsed.data
+                .filter(
+                  (item) =>
+                    item &&
+                    normalizeCarouselAsset(item.image) &&
+                    isCarouselSlideActive(item.is_active)
+                )
+                .map((item) => ({
+                  ...item,
+                  image: normalizeCarouselAsset(item.image),
+                  alt:
+                    (item.alt && String(item.alt).trim()) ||
+                    (item.title && String(item.title).trim()) ||
+                    "Toke Bakes",
+                }))
+            : [];
+
+          if (cachedSlides.length > 0) {
+            const ageMs = Date.now() - Number(parsed.timestamp || 0);
+            const isFresh = ageMs >= 0 && ageMs < CAROUSEL_CACHE_TTL_MS;
+            if (isFresh || allowStaleCache) {
+              this.slides = cachedSlides;
+              carouselDebugLog(
+              `âœ… Loaded ${this.slides.length} carousel slides from cache`
+            );
+              return { fromCache: true, isFresh };
+            }
+          }
+        }
+      } catch {}
+    }
+
+    if (cacheOnly) {
+      return { fromCache: false, isFresh: false, cacheOnlyMiss: true };
+    }
+
+    if (showLoading) {
+      this.showLoadingState();
+    }
+
+    try {
+      carouselDebugLog("ðŸ”„ Loading carousel data...");
+
+      if (!window.SUPABASE_CONFIG || !window.SUPABASE_CONFIG.URL) {
+        console.error("Supabase configuration not found");
+        this.slides = this.getFallbackSlides();
+        return { fromCache: false, isFresh: false, error: true };
+      }
+
+      const buildUrl = (simpleOrder = false) => {
+        const url = new URL(`${SUPABASE_CONFIG.URL}${API_ENDPOINTS.CAROUSEL}`);
+        url.searchParams.set("select", "*");
+        // Prefer explicit order; fall back to simple order if requested
+        url.searchParams.set(
+          "order",
+          simpleOrder ? "display_order.asc" : "display_order.asc,created_at.desc"
+        );
+        return url.toString();
+      };
+
+      const doFetch = async (simpleOrder = false) => {
+        const requestUrl = buildUrl(simpleOrder);
+        const response = await fetchWithTimeout(
+          requestUrl,
+          {
+            cache: "no-store",
+            headers: {
+              apikey: SUPABASE_CONFIG.ANON_KEY,
+              Authorization: `Bearer ${SUPABASE_CONFIG.ANON_KEY}`,
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              Pragma: "no-cache",
+              "Cache-Control": "no-store",
+            },
+          },
+          CAROUSEL_FETCH_TIMEOUT_MS
+        );
+
+        if (!response.ok) {
+          const errText = await response.text().catch(() => "");
+          const err = new Error(
+            `HTTP ${response.status}${errText ? `: ${errText}` : ""}`
+          );
+          err.status = response.status;
+          throw err;
+        }
+
+        return response.json();
+      };
+
+      let data;
+      try {
+        data = await doFetch(false);
+      } catch (primaryError) {
+        // Retry once with simpler order clause if the first request fails (e.g., Supabase parsing)
+        carouselDebugWarn("Primary carousel fetch failed, retrying simple order:", primaryError);
+        data = await doFetch(true);
+      }
+      const slides = Array.isArray(data)
+        ? data
+            .filter(
+              (item) =>
+                item &&
+                normalizeCarouselAsset(item.image) &&
+                isCarouselSlideActive(item.is_active)
+            )
+            .map((item) => ({
+              ...item,
+              image: normalizeCarouselAsset(item.image),
+              alt:
+                (item.alt && String(item.alt).trim()) ||
+                (item.title && String(item.title).trim()) ||
+                "Toke Bakes",
+            }))
+        : [];
+
+      if (slides.length === 0) {
+        carouselDebugWarn("No active carousel items found");
+        this.slides = [];
+      } else {
+        this.slides = slides;
+        carouselDebugLog(`âœ… Loaded ${this.slides.length} carousel slides`);
+      }
+
+      try {
+        localStorage.setItem(
+          dataCacheKey,
+          JSON.stringify({ data: this.slides, timestamp: Date.now() })
+        );
+      } catch {}
+
+      return { fromCache: false, isFresh: true, hasSlides: this.slides.length > 0 };
+    } catch (error) {
+      console.error("Error loading carousel data:", error);
+      if (!Array.isArray(this.slides) || this.slides.length === 0) {
+        this.slides = [];
+      }
+      return { fromCache: false, isFresh: false, error: true };
+    }
+  }
+
+  showLoadingState() {
+    if (!this.container) return;
+
+    // Create loading overlay
+    const loadingOverlay = document.createElement("div");
+    loadingOverlay.className = "carousel-loading";
+    loadingOverlay.innerHTML = `
+      <div class="loading-message">
+        <div class="loading-spinner"></div>
+        <p>Loading carousel...</p>
+      </div>
+    `;
+    loadingOverlay.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    `;
+
+    this.container.style.position = "relative";
+    this.container.appendChild(loadingOverlay);
+
+    // Remove loading after content loads
+    this.container.dataset.loading = "true";
+  }
+
+  hideLoadingState() {
+    if (!this.container) return;
+
+    const loadingOverlay = this.container.querySelector(".carousel-loading");
+    if (loadingOverlay) {
+      loadingOverlay.remove();
+    }
+    delete this.container.dataset.loading;
+  }
+
+  renderEmptyState() {
+    if (!this.container) return;
+    this.clearEmptyState();
+    this.container.classList.add("is-empty");
+    if (this.track) this.track.innerHTML = "";
+    if (this.dotsContainer) this.dotsContainer.innerHTML = "";
+    if (this.navContainer) this.navContainer.innerHTML = "";
+
+    const empty = document.createElement("div");
+    empty.className = "carousel-empty-state";
+    empty.innerHTML = `<i class="fas fa-image"></i><span>Add a hero slide in the Admin panel to display here.</span>`;
+    this.emptyStateEl = empty;
+    this.container.appendChild(empty);
+  }
+
+  clearEmptyState() {
+    if (this.emptyStateEl) {
+      this.emptyStateEl.remove();
+      this.emptyStateEl = null;
+    }
+    if (this.container) {
+      this.container.classList.remove("is-empty");
+    }
+  }
+
+  setupCarousel(options = {}) {
+    this.clearEmptyState();
+    if (this.slides.length === 0) {
+      this.renderEmptyState();
+      return;
+    }
+
+    const preferredSlide = options?.preferredSlide || null;
+    const preferredId =
+      preferredSlide && preferredSlide.id !== undefined && preferredSlide.id !== null
+        ? String(preferredSlide.id)
+        : "";
+    const preferredImage = preferredSlide
+      ? normalizeCarouselAsset(preferredSlide.image)
+      : "";
+
+    let initialIndex = 0;
+    if (options?.preservePosition === true) {
+      if (Number.isFinite(options?.preferredIndex)) {
+        const idx = Math.trunc(Number(options.preferredIndex));
+        if (idx >= 0 && idx < this.slides.length) initialIndex = idx;
+      } else if (preferredId) {
+        const idx = this.slides.findIndex((slide) => String(slide?.id) === preferredId);
+        if (idx >= 0) initialIndex = idx;
+      } else if (preferredImage) {
+        const idx = this.slides.findIndex(
+          (slide) => normalizeCarouselAsset(slide?.image) === preferredImage
+        );
+        if (idx >= 0) initialIndex = idx;
+      }
+    } else if (Number.isFinite(options?.preferredIndex)) {
+      const idx = Math.trunc(Number(options.preferredIndex));
+      if (idx >= 0 && idx < this.slides.length) initialIndex = idx;
+    }
+
+    this.currentIndex = initialIndex;
+    this.isTransitioning = false;
+    this.queuedIndex = null;
+
+    // Clear existing content
+    this.track.innerHTML = "";
+    this.dotsContainer.innerHTML = "";
+    this.navContainer.innerHTML = "";
+
+    // Create slides
+    this.slides.forEach((slide, index) => {
+      // Create slide element
+      const slideEl = document.createElement("div");
+      const isActive = index === this.currentIndex;
+      slideEl.className = `carousel-slide ${isActive ? "active" : ""}`;
+      slideEl.dataset.index = index;
+
+      const conservativeImageLoading =
+        this.runtimeProfile.networkTier === "slow" || this.runtimeProfile.saveData;
+      const loading = isActive && !conservativeImageLoading ? "eager" : "lazy";
+      const fetchPriority = isActive && !conservativeImageLoading ? "high" : "auto";
+      const width = Number(slide?.width) > 0 ? Math.round(Number(slide.width)) : 1920;
+      const height = Number(slide?.height) > 0 ? Math.round(Number(slide.height)) : 1080;
+
+      slideEl.innerHTML = `
+        <img src="${slide.image}"
+             alt="${slide.alt || "Toke Bakes"}"
+             class="slide-image"
+             loading="${loading}"
+             decoding="async"
+             fetchpriority="${fetchPriority}"
+             width="${width}"
+             height="${height}"
+             onerror="this.onerror=null; this.src='${CAROUSEL_FALLBACK_IMAGE}';">
+      `;
+
+      if (isActive) {
+        slideEl.setAttribute("aria-current", "true");
+      }
+
+      this.track.appendChild(slideEl);
+      if (isActive) {
+        this.markSlideImageReady(slideEl, false);
+      }
+
+      // Create dot
+      const dot = document.createElement("button");
+      dot.className = `carousel-dot ${isActive ? "active" : ""}`;
+      dot.dataset.index = index;
+      dot.setAttribute("aria-label", `Go to slide ${index + 1}`);
+      dot.setAttribute("aria-current", isActive ? "true" : "false");
+      this.dotsContainer.appendChild(dot);
+    });
+
+    // Create navigation arrows if we have more than 1 slide
+    if (this.slides.length > 1) {
+      this.navContainer.innerHTML = `
+        <button class="carousel-prev" type="button" aria-label="Previous slide">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+        </button>
+        <button class="carousel-next" type="button" aria-label="Next slide">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 18l6-6-6-6"/>
+          </svg>
+        </button>
+      `;
+    }
+
+    // Sync hero content with the active slide
+    this.updateHeroContent(this.slides[this.currentIndex], { animate: false });
+    this.preloadNeighbors();
+  }
+
+  updateHeroContent(slide, options = {}) {
+    if (!this.syncHeroContent) return;
+    if (!this.heroContent.title && !this.heroContent.subtitle) return;
+
+    const nextState = {
+      title: slide?.title || this.defaultHero.title,
+      subtitle: slide?.subtitle || this.defaultHero.subtitle,
+      ctaText: slide?.cta_text || this.defaultHero.ctaText,
+      ctaLink: slide?.cta_link || this.defaultHero.ctaLink,
+    };
+    const previousState = this.heroState || {};
+    let didChange = false;
+
+    if (this.heroContent.title && previousState.title !== nextState.title) {
+      this.heroContent.title.textContent = nextState.title;
+      didChange = true;
+    }
+    if (
+      this.heroContent.subtitle &&
+      previousState.subtitle !== nextState.subtitle
+    ) {
+      this.heroContent.subtitle.textContent = nextState.subtitle;
+      didChange = true;
+    }
+    if (this.heroContent.cta) {
+      if (previousState.ctaText !== nextState.ctaText) {
+        this.heroContent.cta.textContent = nextState.ctaText;
+        didChange = true;
+      }
+      if (nextState.ctaLink && previousState.ctaLink !== nextState.ctaLink) {
+        this.heroContent.cta.setAttribute("href", nextState.ctaLink);
+        didChange = true;
+      }
+    }
+
+    this.heroState = nextState;
+
+    if (didChange && options && options.animate) {
+      this.animateHeroContent();
+    }
+  }
+
+  animateHeroContent() {
+    try {
+      if (
+        typeof window !== "undefined" &&
+        window.matchMedia &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        return;
+      }
+    } catch {}
+
+    const targets = [
+      this.heroContent.title,
+      this.heroContent.subtitle,
+      this.heroContent.cta,
+    ].filter(Boolean);
+
+    targets.forEach((el, i) => {
+      try {
+        if (typeof el.animate !== "function") return;
+        el.animate(
+          [
+            { opacity: 0, transform: "translateY(8px)" },
+            { opacity: 1, transform: "translateY(0)" },
+          ],
+          {
+            duration: 460,
+            easing: "cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+            fill: "both",
+            delay: i * 55,
+          }
+        );
+      } catch {}
+    });
+  }
+
+  setupEventListeners() {
+    this.teardownEventListeners();
+    if (this.slides.length <= 1) return;
+
+    const isInteractiveTarget = (target) => {
+      if (!(target instanceof Element)) return false;
+      return Boolean(
+        target.closest(
+          ".carousel-nav button, .carousel-dot, .hero-content .btn, .hero-content a, [data-no-swipe]"
+        )
+      );
+    };
+
+    // Dots navigation
+    this.boundHandlers.dotsClick = (e) => {
+      const targetEl =
+        e.target instanceof Element ? e.target : e.target?.parentElement;
+      const dot =
+        targetEl && typeof targetEl.closest === "function"
+          ? targetEl.closest(".carousel-dot")
+          : null;
+      if (!dot) return;
+
+      const index = parseInt(dot.dataset.index);
+      if (!isNaN(index) && index !== this.currentIndex) {
+        this.goToSlide(index);
+        this.pauseAutoPlay("interaction", this.resumeDelay);
+      }
+    };
+    this.dotsContainer.addEventListener("click", this.boundHandlers.dotsClick);
+
+    // Arrow navigation
+    if (this.navContainer) { 
+      this.boundHandlers.navClick = (e) => { 
+        e.stopPropagation(); 
+        const targetEl = 
+          e.target instanceof Element ? e.target : e.target?.parentElement; 
+        const prevBtn =
+          targetEl && typeof targetEl.closest === "function"
+            ? targetEl.closest(".carousel-prev")
+            : null;
+        const nextBtn =
+          targetEl && typeof targetEl.closest === "function"
+            ? targetEl.closest(".carousel-next")
+            : null;
+
+        if (prevBtn) {
+          this.prevSlide();
+        } else if (nextBtn) {
+          this.nextSlide();
+        }
+
+        this.pauseAutoPlay("interaction", this.resumeDelay);
+      };
+      this.navContainer.addEventListener("click", this.boundHandlers.navClick); 
+    } 
+
+    // Pause autoplay on hover, then resume after a short idle delay.
+    this.boundHandlers.mouseEnter = () => {
+      this.isHovered = true;
+      this.pauseAutoPlay("hover", this.pointerIdleResumeDelay);
+    };
+    this.container.addEventListener("mouseenter", this.boundHandlers.mouseEnter);
+
+    this.boundHandlers.mouseLeave = () => {
+      this.isHovered = false;
+      this.hoverPauseUntil = 0;
+      // Add a tiny grace window to avoid an instant slide jump when leaving.
+      this.autoPlayNextAt = Math.max(this.autoPlayNextAt, Date.now() + 600);
+      this.startAutoPlay();
+    };
+    this.container.addEventListener("mouseleave", this.boundHandlers.mouseLeave);
+
+    // While user is actively moving/clicking inside carousel, pause briefly then auto-resume. 
+    this.boundHandlers.mouseMove = () => { 
+      const now = Date.now(); 
+      if (now - this.lastPointerActivityAt < this.pointerActivityThrottleMs) return; 
+      this.lastPointerActivityAt = now; 
+      this.pauseAutoPlay("hover", this.pointerIdleResumeDelay);
+    };
+    this.container.addEventListener("mousemove", this.boundHandlers.mouseMove, {
+      passive: true,
+    });
+
+    this.boundHandlers.pointerDown = (e) => {
+      if (isInteractiveTarget(e?.target)) return;
+      this.pauseAutoPlay("interaction", this.pointerIdleResumeDelay);
+    };
+    this.container.addEventListener("pointerdown", this.boundHandlers.pointerDown, {
+      passive: true,
+    });
+
+    // Touch/swipe support
+    this.boundHandlers.touchStart = (e) => {
+      const touch = e.changedTouches && e.changedTouches[0];
+      if (!touch) return;
+      if (isInteractiveTarget(e.target)) {
+        this.swipeBlocked = true;
+        return;
+      }
+      this.swipeBlocked = false;
+      this.touchStartX = touch.screenX;
+      this.touchStartY = touch.screenY;
+      this.pauseAutoPlay("interaction", this.pointerIdleResumeDelay);
+    };
+    this.container.addEventListener(
+      "touchstart",
+      this.boundHandlers.touchStart,
+      { passive: true }
+    );
+
+    this.boundHandlers.touchEnd = (e) => {
+      if (this.swipeBlocked) {
+        this.swipeBlocked = false;
+        this.pauseAutoPlay("interaction", this.resumeDelay);
+        return;
+      }
+      const touch = e.changedTouches && e.changedTouches[0];
+      if (!touch) return;
+      this.touchEndX = touch.screenX;
+      this.touchEndY = touch.screenY;
+      this.handleSwipe();
+      this.pauseAutoPlay("interaction", this.resumeDelay + 1000);
+    };
+    this.container.addEventListener(
+      "touchend",
+      this.boundHandlers.touchEnd,
+      { passive: true }
+    );
+
+    // Keyboard navigation
+    this.boundHandlers.keydown = (e) => {
+        if (
+        !this.container ||
+        e.target.tagName === "INPUT" ||
+        e.target.tagName === "TEXTAREA"
+      )
+        return;
+
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        this.prevSlide();
+        this.pauseAutoPlay("interaction", this.resumeDelay);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        this.nextSlide();
+        this.pauseAutoPlay("interaction", this.resumeDelay);
+      }
+    };
+    document.addEventListener("keydown", this.boundHandlers.keydown);
+
+    // Pause auto-play when tab is not visible (saves CPU + avoids slide jumps).
+    this.boundHandlers.visibilityChange = () => {
+      if (!this.autoPlayEnabled) return;
+      if (document.hidden) {
+        this.stopAutoPlay();
+        return;
+      }
+      this.autoPlayNextAt = Date.now() + this.autoPlayDelay;
+      this.startAutoPlay();
+    };
+    document.addEventListener(
+      "visibilitychange",
+      this.boundHandlers.visibilityChange
+    );
+  }
+
+  teardownEventListeners() {
+    if (this.dotsContainer && this.boundHandlers.dotsClick) {
+      this.dotsContainer.removeEventListener("click", this.boundHandlers.dotsClick);
+    }
+    if (this.navContainer && this.boundHandlers.navClick) { 
+      this.navContainer.removeEventListener("click", this.boundHandlers.navClick); 
+    } 
+    if (this.container && this.boundHandlers.mouseEnter) {
+      this.container.removeEventListener("mouseenter", this.boundHandlers.mouseEnter);
+    }
+    if (this.container && this.boundHandlers.mouseLeave) {
+      this.container.removeEventListener("mouseleave", this.boundHandlers.mouseLeave);
+    }
+    if (this.container && this.boundHandlers.mouseMove) { 
+      this.container.removeEventListener("mousemove", this.boundHandlers.mouseMove); 
+    } 
+    if (this.container && this.boundHandlers.pointerDown) { 
+      this.container.removeEventListener("pointerdown", this.boundHandlers.pointerDown); 
+    }
+    if (this.container && this.boundHandlers.touchStart) {
+      this.container.removeEventListener("touchstart", this.boundHandlers.touchStart);
+    }
+    if (this.container && this.boundHandlers.touchEnd) {
+      this.container.removeEventListener("touchend", this.boundHandlers.touchEnd);
+    }
+    if (this.boundHandlers.keydown) {
+      document.removeEventListener("keydown", this.boundHandlers.keydown);
+    }
+    if (this.boundHandlers.visibilityChange) {
+      document.removeEventListener(
+        "visibilitychange",
+        this.boundHandlers.visibilityChange
+      );
+    }
+  }
+
+  handleSwipe() {
+    if (this.slides.length <= 1) return;
+
+    const swipeThreshold = 50;
+    const verticalThreshold = 70;
+    const diff = this.touchStartX - this.touchEndX;
+    const diffY = this.touchStartY - this.touchEndY;
+
+    if (
+      Math.abs(diffY) > verticalThreshold &&
+      Math.abs(diffY) > Math.abs(diff)
+    ) {
+      return;
+    }
+
+    if (Math.abs(diff) > swipeThreshold) {
+      if (diff > 0) {
+        this.nextSlide();
+      } else {
+        this.prevSlide();
+      }
+    }
+  }
+
+  getSlideDirection(currentIndex, nextIndex) {
+    if (!Array.isArray(this.slides) || this.slides.length <= 1) return 1;
+    const lastIndex = this.slides.length - 1;
+    if (currentIndex === lastIndex && nextIndex === 0) return 1;
+    if (currentIndex === 0 && nextIndex === lastIndex) return -1;
+    return nextIndex > currentIndex ? 1 : -1;
+  }
+
+  clearTransitionClasses(...slideEls) {
+    slideEls.filter(Boolean).forEach((slideEl) => {
+      slideEl.classList.remove(
+        "is-enter-from-left",
+        "is-enter-from-right",
+        "is-exit-left",
+        "is-exit-right"
+      );
+    });
+  }
+
+  async goToSlide(index) {
+    const nextIndex = Number(index);
+    if (!Number.isFinite(nextIndex)) return;
+    if (nextIndex === this.currentIndex) return;
+    if (nextIndex < 0 || nextIndex >= this.slides.length) return;
+
+    if (this.isTransitioning) {
+      // Queue the latest request so nav always feels responsive.
+      this.queuedIndex = nextIndex;
+      return;
+    }
+
+    // Set transitioning state
+    this.isTransitioning = true;
+    this.queuedIndex = null;
+
+    // Get current and next elements
+    const currentSlide = this.track.querySelector(".carousel-slide.active");
+    const nextSlide = this.track.querySelector(
+      `.carousel-slide[data-index="${nextIndex}"]`
+    );
+    const currentDot = this.dotsContainer.querySelector(".carousel-dot.active");
+    const nextDot = this.dotsContainer.querySelector(
+      `.carousel-dot[data-index="${nextIndex}"]`
+    );
+    const direction = this.getSlideDirection(this.currentIndex, nextIndex);
+
+    await this.prepareSlideImage(
+      nextSlide,
+      this.slides[nextIndex],
+      this.transitionDuration
+    );
+
+    this.clearTransitionClasses(currentSlide, nextSlide);
+    if (currentSlide) {
+      currentSlide.classList.add(direction > 0 ? "is-exit-left" : "is-exit-right");
+    }
+    if (nextSlide) {
+      nextSlide.classList.add(
+        direction > 0 ? "is-enter-from-right" : "is-enter-from-left"
+      );
+      nextSlide.offsetHeight;
+    }
+
+    // Update classes
+    if (currentSlide) currentSlide.classList.remove("active");
+    if (nextSlide) {
+      nextSlide.classList.add("active");
+      nextSlide.classList.remove("is-enter-from-right", "is-enter-from-left");
+      this.markSlideImageReady(nextSlide, false);
+    }
+    if (currentDot) currentDot.classList.remove("active");
+    if (nextDot) nextDot.classList.add("active");
+
+    // Update ARIA attributes
+    if (currentSlide) currentSlide.removeAttribute("aria-current");
+    if (nextSlide) nextSlide.setAttribute("aria-current", "true");
+    if (currentDot) currentDot.setAttribute("aria-current", "false");
+    if (nextDot) nextDot.setAttribute("aria-current", "true");
+
+    // Update current index
+    this.currentIndex = nextIndex;
+
+    // Sync hero content with current slide
+    this.updateHeroContent(this.slides[nextIndex], { animate: true });
+    this.preloadNeighbors();
+
+    const finishTransition = () => {
+      if (this.transitionTimeout) {
+        clearTimeout(this.transitionTimeout);
+        this.transitionTimeout = null;
+      }
+      if (!this.isTransitioning) return;
+      this.isTransitioning = false;
+      this.clearTransitionClasses(currentSlide, nextSlide);
+
+      if (
+        this.queuedIndex !== null &&
+        this.queuedIndex !== this.currentIndex
+      ) {
+        const queued = this.queuedIndex;
+        this.queuedIndex = null;
+        this.goToSlide(queued);
+      }
+    };
+
+    // Clear any existing timeout
+    if (this.transitionTimeout) {
+      clearTimeout(this.transitionTimeout);
+      this.transitionTimeout = null;
+    }
+
+    if (nextSlide) {
+      const onEnd = (event) => {
+        if (!event) return;
+        if (event.target !== nextSlide) return;
+        if (event.propertyName && event.propertyName !== "opacity") return;
+        finishTransition();
+      };
+      nextSlide.addEventListener("transitionend", onEnd, { once: true });
+    }
+
+    // Fallback in case transitionend doesn't fire.
+    this.transitionTimeout = setTimeout(
+      finishTransition,
+      Math.max(0, Number(this.transitionDuration) || 0)
+    );
+  }
+
+  nextSlide() {
+    if (this.slides.length <= 1) return;
+    const nextIndex = (this.currentIndex + 1) % this.slides.length;
+    this.goToSlide(nextIndex);
+  }
+
+  prevSlide() {
+    if (this.slides.length <= 1) return;
+    const prevIndex =
+      (this.currentIndex - 1 + this.slides.length) % this.slides.length;
+    this.goToSlide(prevIndex);
+  }
+
+  getPausedUntil() {
+    return Math.max(
+      Number(this.hoverPauseUntil) || 0,
+      Number(this.interactionPauseUntil) || 0
+    );
+  }
+
+  // Auto-play methods
+  startAutoPlay() {
+    if (
+      this.slides.length <= 1 ||
+      !this.autoPlayEnabled
+    )
+      return;
+
+    if (this.autoPlayInterval) return;
+    this.autoPlayNextAt = Date.now() + this.autoPlayDelay;
+
+    this.autoPlayInterval = setInterval(() => {
+      if (document.hidden) return;
+      if (!this.isInView) return;
+      if (this.isTransitioning) return;
+
+      const now = Date.now();
+      if (now < this.getPausedUntil()) return;
+      if (!this.autoPlayNextAt) {
+        this.autoPlayNextAt = now + this.autoPlayDelay;
+        return;
+      }
+      if (now < this.autoPlayNextAt) return;
+
+      this.autoPlayNextAt = now + this.autoPlayDelay;
+      this.nextSlide();
+    }, this.autoPlayTickIntervalMs);
+  }
+
+  stopAutoPlay() {
+    if (this.autoPlayInterval) {
+      clearInterval(this.autoPlayInterval);
+      this.autoPlayInterval = null;
+    }
+  }
+
+  pauseAutoPlay(kind = "interaction", delay = this.resumeDelay) {
+    const now = Date.now();
+    const safeDelay = Math.max(0, Number(delay) || 0);
+    const until = now + safeDelay;
+
+    if (kind === "hover") {
+      this.hoverPauseUntil = until;
+    } else {
+      this.interactionPauseUntil = until;
+      // User-initiated interactions should "reset" the autoplay cadence so it
+      // doesn't advance immediately after a click/swipe.
+      this.autoPlayNextAt = now + this.autoPlayDelay;
+    }
+
+    this.startAutoPlay();
+  }
+
+  toggleAutoPlay() {
+    this.autoPlayEnabled = !this.autoPlayEnabled;
+    if (this.autoPlayEnabled) {
+      this.startAutoPlay();
+    } else {
+      this.stopAutoPlay();
+    }
+  }
+
+  // Refresh when admin updates data
+  async refresh(forceRefresh = false, options = {}) {
+    carouselDebugLog("Refreshing carousel...");
+    const preservePosition = options.preservePosition === true;
+    const previousSlide =
+      preservePosition && Array.isArray(this.slides) && this.slides.length > 0
+        ? this.slides[this.currentIndex]
+        : null;
+    const previousSignature = this.createSlidesSignature();
+    const loadResult = await this.loadCarouselData(forceRefresh, options);
+    const nextSignature = this.createSlidesSignature();
+
+    if (
+      previousSignature &&
+      previousSignature === nextSignature &&
+      !options.forceRebuild
+    ) {
+      this.announceReady();
+      return loadResult;
+    }
+
+    this.setupCarousel(
+      preservePosition
+        ? {
+            preferredSlide: previousSlide,
+            preferredIndex: this.currentIndex,
+            preservePosition: true,
+          }
+        : { preferredIndex: 0 }
+    );
+    this.syncTransitionDurationFromCss();
+    await this.waitForFirstSlideReady();
+    this.setupEventListeners();
+    this.setupIntersectionObserver();
+
+    if (this.autoPlayEnabled) {
+      this.startAutoPlay();
+    }
+
+    this.announceReady();
+    return loadResult;
+  }
+
+  // Backward compatibility with older update callers.
+  async reload(forceRefresh = false, options = {}) {
+    return this.refresh(forceRefresh, options);
+  }
+}
+
+function refreshCarouselFromSync(payload = {}) {
+  if (!window.heroCarousel || typeof window.heroCarousel.refresh !== "function") {
+    return;
+  }
+
+  if (payload.type !== "DATA_UPDATED") return;
+  if (payload.itemType !== "carousel" && payload.itemType !== "all") return;
+  const ts = Number(payload.timestamp) || 0;
+  if (ts && ts <= Number(window.__carouselLastSyncTs || 0)) {
+    return;
+  }
+  if (ts) {
+    window.__carouselLastSyncTs = ts;
+  }
+
+  carouselDebugLog("Refreshing carousel from sync payload", payload);
+  try {
+    localStorage.removeItem("hero_carousel_data");
+  } catch {}
+  window.heroCarousel.refresh(true, { showLoading: false });
+}
+
+function bindCarouselUpdateSync() {
+  if (window.carouselUpdateUnsubscribe) {
+    try {
+      window.carouselUpdateUnsubscribe();
+    } catch {}
+    window.carouselUpdateUnsubscribe = null;
+  }
+
+  if (window.carouselUpdateChannel) {
+    try {
+      window.carouselUpdateChannel.close();
+    } catch {}
+    window.carouselUpdateChannel = null;
+  }
+
+  if (window.carouselLocalUpdateHandler) {
+    window.removeEventListener("toke:data-updated", window.carouselLocalUpdateHandler);
+    window.carouselLocalUpdateHandler = null;
+  }
+
+  if (
+    window.TokeUpdateSync &&
+    typeof window.TokeUpdateSync.subscribe === "function"
+  ) {
+    window.carouselUpdateUnsubscribe = window.TokeUpdateSync.subscribe(
+      refreshCarouselFromSync
+    );
+    return;
+  }
+
+  // Legacy fallback path when shared sync bus is unavailable.
+  if (typeof BroadcastChannel !== "undefined") {
+    if (window.carouselUpdateChannel) {
+      try {
+        window.carouselUpdateChannel.close();
+      } catch {}
+    }
+
+    try {
+      const channel = new BroadcastChannel("toke_bakes_data_updates");
+      window.carouselUpdateChannel = channel;
+      channel.onmessage = (event) => {
+        refreshCarouselFromSync(event && event.data ? event.data : {});
+      };
+    } catch (error) {
+      carouselDebugWarn("BroadcastChannel unavailable for carousel sync:", error);
+      window.carouselUpdateChannel = null;
+    }
+  }
+
+  window.carouselLocalUpdateHandler = (event) => {
+    refreshCarouselFromSync((event && event.detail) || {});
+  };
+  window.addEventListener("toke:data-updated", window.carouselLocalUpdateHandler);
+}
+
+// Initialize carousel - UPDATED FOR SPA
+function initializeCarousel() {
+  // Don't initialize on admin pages
+  if (
+    window.location.pathname.includes("admin") ||
+    document.querySelector(".admin-dashboard") ||
+    document.querySelector(".admin-login-container")
+  ) {
+    carouselDebugLog("Skipping carousel on admin page");
+    return;
+  }
+
+  // Clean up existing carousel before creating new one
+  if (
+    window.heroCarousel &&
+    typeof window.heroCarousel.destroy === "function"
+  ) {
+    window.heroCarousel.destroy();
+  }
+
+  // Initialize new carousel
+  window.heroCarousel = new HeroCarousel();
+  bindCarouselUpdateSync();
+}
+
+// Start initialization
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initializeCarousel);
+} else {
+  initializeCarousel();
+}
+
+// Export for SPA manager
+if (typeof window !== "undefined") {
+  window.initializeCarousel = initializeCarousel;
+  window.HeroCarousel = HeroCarousel;
+}
+
+

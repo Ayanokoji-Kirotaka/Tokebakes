@@ -1,0 +1,74 @@
+/* theme-christmas.css - The "North Pole" Edition */
+@import url("style.css");
+
+/* ================== LIGHT MODE (Santa's Workshop) ================== */
+:root {
+  /* High-energy Festive Palette */
+  --primary: #d32f2f; /* classic santa red */
+  --primary-strong: #ff1744; /* bright ribbon red */
+  --primary-soft: rgba(211, 47, 47, 0.12);
+
+  --secondary: #2e7d32; /* deep holly green */
+  --secondary-soft: rgba(46, 125, 50, 0.1);
+
+  /* Metallic Gold accent for buttons/links */
+  --accent: #fbc02d; /* star-on-the-tree gold */
+  --accent-glow: rgba(251, 192, 45, 0.4);
+
+  /* Text - Chocolate and Cinnamon tones */
+  --text: #3e2723; /* gingerbread brown */
+  --text-light: #795548;
+
+  /* Backgrounds - Snowy and Crisp */
+  --background: #fdfdfd; /* fresh snow */
+  --surface: rgba(255, 255, 255, 0.9);
+  --surface-2: #fff5f5; /* very faint candy-cane pink tint */
+  --surface-secondary: #edf7ed; /* faint mistletoe green tint */
+
+  /* Borders - Wrapping paper vibes */
+  --border: #ffcdd2; /* soft red border */
+  --border-strong: #c62828;
+  --border-subtle: rgba(46, 125, 50, 0.15);
+
+  /* Shadows - Warm hearth glow */
+  --shadow: rgba(93, 64, 55, 0.15);
+
+  /* Focus - "Twinkling Light" effect */
+  --focus-ring: 0 0 0 4px rgba(251, 192, 45, 0.5);
+
+  --primary-color: var(--primary);
+  --secondary-color: var(--secondary);
+}
+
+/* ================== DARK MODE (Midnight Blizzard) ================== */
+[data-theme="dark"] {
+  /* Neon Festive Palette */
+  --primary: #ff5252; /* glowing red ornament */
+  --primary-strong: #ff8a80;
+  --primary-soft: rgba(255, 82, 82, 0.25);
+
+  --secondary: #4caf50; /* bright pine needles */
+  --secondary-soft: rgba(76, 175, 80, 0.2);
+
+  --accent: #ffd740; /* sparkling fairy lights */
+
+  --text: #e8f5e9; /* frosted leaf white */
+  --text-light: #a5d6a7;
+
+  /* Backgrounds - Night Sky & Winter Forest */
+  --background: #050f0a; /* deep spruce forest at night */
+  --surface: rgba(10, 25, 15, 0.85);
+  --surface-2: rgba(20, 40, 25, 0.9);
+  --surface-secondary: rgba(45, 15, 15, 0.6); /* dark cherry wood tint */
+
+  --border: rgba(255, 82, 82, 0.3);
+  --border-strong: #4caf50;
+  --border-subtle: rgba(255, 255, 255, 0.1);
+
+  --shadow: rgba(0, 0, 0, 0.8);
+
+  --focus-ring: 0 0 0 4px rgba(76, 175, 80, 0.6);
+
+  --primary-color: var(--primary);
+  --secondary-color: var(--secondary);
+}

@@ -1,0 +1,699 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Toke Bakes | Artisan Cakes, Cupcakes and Pastries</title>
+    <meta
+      name="description"
+      content="Toke Bakes crafts artisan cakes, cupcakes and pastries for celebrations and everyday treats. Explore our menu and order your favorites."
+    />
+    <meta
+      name="robots"
+      content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
+    />
+    <link rel="canonical" href="https://tokebakes-ten.vercel.app/" />
+    <link
+      rel="preconnect"
+      href="https://lmqoflcikfcxoeyinjus.supabase.co"
+      crossorigin
+    />
+    <link rel="dns-prefetch" href="//lmqoflcikfcxoeyinjus.supabase.co" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Toke Bakes" />
+    <meta
+      property="og:title"
+      content="Toke Bakes | Artisan Cakes, Cupcakes and Pastries"
+    />
+    <meta
+      property="og:description"
+      content="Handcrafted cakes, cupcakes and pastries made with premium ingredients."
+    />
+    <meta property="og:url" content="https://tokebakes-ten.vercel.app/" />
+    <meta
+      property="og:image"
+      content="https://tokebakes-ten.vercel.app/images/logo.webp"
+    />
+    <meta property="og:image:alt" content="Toke Bakes logo" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <style id="loader-critical">
+      #loader {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--tb-loader-bg, var(--background, #1b140f));
+        z-index: 9999;
+        transition: opacity 0.6s ease;
+      }
+      #loader img {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        display: block;
+        background: var(--tb-loader-img-bg, rgba(230, 122, 0, 0.08));
+        box-shadow: 0 0 32px var(--tb-loader-glow, rgba(230, 122, 0, 0.38));
+        animation: loaderPulse 1.6s ease-in-out infinite;
+        opacity: 1;
+        transition: opacity 180ms ease;
+      }
+      #loader[data-logo-ready="0"] img {
+        opacity: 0;
+      }
+      #loader[data-logo-ready="1"] img {
+        opacity: 1;
+      }
+      #loader.fade-out {
+        transition: opacity 0.35s ease;
+      }
+      #loader.fade-out img {
+        animation-duration: 1.05s;
+        box-shadow: 0 0 26px var(--tb-loader-glow, rgba(230, 122, 0, 0.38));
+      }
+      @keyframes loaderPulse {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 0.92;
+          box-shadow: 0 0 28px var(--tb-loader-glow, rgba(230, 122, 0, 0.4));
+        }
+        50% {
+          transform: scale(1.16);
+          opacity: 1;
+          box-shadow: 0 0 50px
+            var(--tb-loader-glow-strong, rgba(230, 122, 0, 0.6));
+        }
+      }
+    </style>
+    <style id="app-critical">
+      html.home-shell-gated:not(.app-ready) body > :not(#loader):not(#sync-status-indicator) {
+        visibility: hidden !important;
+      }
+    </style>
+    <style id="logo-critical">
+      img.logo-sm,
+      img.hero-logo,
+      img.admin-logo,
+      #loader img {
+        display: block;
+        width: auto;
+        height: auto;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+        border-radius: 50%;
+        background: rgba(230, 122, 0, 0.08);
+      }
+      #loader img {
+        background: var(--tb-loader-img-bg, rgba(230, 122, 0, 0.08));
+      }
+      img.logo-sm {
+        width: 48px;
+        height: 48px;
+      }
+      img.hero-logo {
+        width: 170px;
+        height: 170px;
+      }
+      img.admin-logo {
+        width: 100px;
+        height: 100px;
+      }
+      #loader img {
+        width: 120px;
+        height: 120px;
+      }
+    </style>
+    <script>
+      (function initLoaderThemePreload() {
+        const normalizeAssetPath = (value) => {
+          if (value === null || value === undefined) return "";
+          return String(value)
+            .trim()
+            .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
+        };
+        const fixLegacyThemePath = (value) => {
+          const cssFile = normalizeAssetPath(value) || "styles/style.css";
+          const legacyMap = {
+            "style.css": "styles/style.css",
+            "theme-christmas.css": "styles/theme-christmas.css",
+            "theme-valentine.css": "styles/theme-valentine.css",
+            "theme-ramadan.css": "styles/theme-ramadan.css",
+            "theme-halloween.css": "styles/theme-halloween.css",
+            "theme-independenceday.css": "styles/theme-independenceday.css",
+            "theme-independence-day.css": "styles/theme-independenceday.css",
+          };
+          return legacyMap[cssFile] || cssFile;
+        };
+        const lsGet = (key) => {
+          try {
+            return localStorage.getItem(key);
+          } catch {
+            return null;
+          }
+        };
+        const hexToRgb = (hex) => {
+          const raw = String(hex || "").trim().replace("#", "");
+          if (!raw) return null;
+          const expanded =
+            raw.length === 3
+              ? raw
+                  .split("")
+                  .map((ch) => ch + ch)
+                  .join("")
+              : raw;
+          if (expanded.length !== 6) return null;
+          const n = Number.parseInt(expanded, 16);
+          if (!Number.isFinite(n)) return null;
+          const r = (n >> 16) & 255;
+          const g = (n >> 8) & 255;
+          const b = n & 255;
+          return [r, g, b];
+        };
+
+        const savedModeRaw = lsGet("toke_bakes_theme_mode");
+        const systemMode =
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        const mode =
+          savedModeRaw === "dark" || savedModeRaw === "light"
+            ? savedModeRaw
+            : systemMode;
+
+        const savedThemeRaw =
+          lsGet("toke_bakes_global_theme_css") ||
+          lsGet("toke_bakes_css_theme") ||
+          "styles/style.css";
+        const savedTheme = fixLegacyThemePath(savedThemeRaw);
+
+        const PALETTES = {
+          "styles/style.css": {
+            light: { background: "#fcf6f0", primary: "#e67a00" },
+            dark: { background: "#151210", primary: "#e67a00" },
+          },
+          "styles/theme-christmas.css": {
+            light: { background: "#fff7f5", primary: "#c62828" },
+            dark: { background: "#071a0b", primary: "#ff6b6b" },
+          },
+          "styles/theme-valentine.css": {
+            light: { background: "#fff4f7", primary: "#ff2d55" },
+            dark: { background: "#12060b", primary: "#ff5c8a" },
+          },
+          "styles/theme-ramadan.css": {
+            light: { background: "#fdf7e8", primary: "#0b6b3a" },
+            dark: { background: "#071a13", primary: "#2fd17a" },
+          },
+          "styles/theme-halloween.css": {
+            light: { background: "#f5f5f5", primary: "#ff7a00" },
+            dark: { background: "#0f0f0f", primary: "#ff9a3c" },
+          },
+          "styles/theme-independenceday.css": {
+            light: { background: "#f8fbff", primary: "#1e4db7" },
+            dark: { background: "#0b1020", primary: "#4d7cff" },
+          },
+        };
+
+        const palette =
+          PALETTES[savedTheme] || PALETTES["styles/style.css"] || null;
+        const colors = palette ? palette[mode] || palette.light : null;
+        if (!colors) return;
+
+        const rgb = hexToRgb(colors.primary) || [230, 122, 0];
+        const css = document.documentElement.style;
+        css.setProperty("--tb-loader-bg", colors.background);
+        css.setProperty(
+          "--tb-loader-img-bg",
+          `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.08)`
+        );
+        css.setProperty(
+          "--tb-loader-glow",
+          `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.38)`
+        );
+        css.setProperty(
+          "--tb-loader-glow-strong",
+          `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.6)`
+        );
+        try {
+          document.documentElement.style.backgroundColor = colors.background;
+        } catch {}
+      })();
+    </script>
+    <link rel="stylesheet" href="styles/style.css" id="base-stylesheet" />
+    <link rel="preload" href="images/logo.webp" as="image" fetchpriority="high" />
+    <link rel="prefetch" href="images/christmas-logo.webp" as="image" />
+    <link rel="prefetch" href="images/halloween-logo.webp" as="image" />
+    <link rel="prefetch" href="images/independence-day-logo.webp" as="image" />
+    <link rel="prefetch" href="images/ramadan-logo.webp" as="image" />
+    <link rel="prefetch" href="images/valantine-logo.webp" as="image" />
+    <meta
+      name="twitter:title"
+      content="Toke Bakes | Artisan Cakes, Cupcakes and Pastries"
+    />
+    <meta
+      name="twitter:description"
+      content="Explore handcrafted cakes, cupcakes and pastries from Toke Bakes."
+    />
+    <meta
+      name="twitter:image"
+      content="https://tokebakes-ten.vercel.app/images/logo.webp"
+    />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Bakery",
+        "name": "Toke Bakes",
+        "url": "https://tokebakes-ten.vercel.app/",
+        "logo": "https://tokebakes-ten.vercel.app/images/logo.webp",
+        "image": "https://tokebakes-ten.vercel.app/images/logo.webp",
+        "telephone": "+2347063466822",
+        "email": "tokebakes@gmail.com",
+        "priceRange": "$$"
+      }
+    </script>
+    <script>
+      (function () {
+        const normalizeAssetPath = (value) => {
+          if (value === null || value === undefined) return "";
+          return String(value)
+            .trim()
+            .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
+        };
+        const fixLegacyThemePath = (value) => {
+          const cssFile = normalizeAssetPath(value) || "styles/style.css";
+          const legacyMap = {
+            "style.css": "styles/style.css",
+            "theme-christmas.css": "styles/theme-christmas.css",
+            "theme-valentine.css": "styles/theme-valentine.css",
+            "theme-ramadan.css": "styles/theme-ramadan.css",
+            "theme-halloween.css": "styles/theme-halloween.css",
+            "theme-independenceday.css": "styles/theme-independenceday.css",
+            "theme-independence-day.css": "styles/theme-independenceday.css",
+          };
+          return legacyMap[cssFile] || cssFile;
+        };
+
+        const lsGet = (key) => {
+          try {
+            return localStorage.getItem(key);
+          } catch {
+            return null;
+          }
+        };
+        const lsSet = (key, value) => {
+          try {
+            localStorage.setItem(key, value);
+          } catch {}
+        };
+
+        const savedModeRaw = lsGet("toke_bakes_theme_mode");
+        const systemMode =
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        const savedMode =
+          savedModeRaw === "dark" || savedModeRaw === "light"
+            ? savedModeRaw
+            : systemMode;
+
+        const savedThemeRaw = lsGet("toke_bakes_global_theme_css") || lsGet("toke_bakes_css_theme") || "styles/style.css";
+        const savedTheme = fixLegacyThemePath(savedThemeRaw);
+        const themeVersion = lsGet("toke_bakes_global_theme_updated_at") || lsGet("toke_bakes_theme_last_update") || "";
+        const savedLogoRaw =
+          lsGet("toke_bakes_global_theme_logo") ||
+          lsGet("toke_bakes_theme_logo") ||
+          "images/logo.webp";
+        const savedLogo = normalizeAssetPath(savedLogoRaw) || "images/logo.webp";
+        window.__tbInitialLoaderLogo = savedLogo;
+
+        if (savedThemeRaw !== savedTheme) {
+          lsSet("toke_bakes_css_theme", savedTheme);
+          lsSet("toke_bakes_global_theme_css", savedTheme);
+        }
+
+        document.documentElement.setAttribute("data-theme", savedMode);
+        const page = window.location.pathname.split("/").pop() || "";
+        const isHomePage = page === "" || page === "index.html" || page === "index";
+        if (!isHomePage) {
+          document.documentElement.setAttribute("data-loader-seen", "1");
+          document.documentElement.setAttribute("data-app-ready", "1");
+        } else {
+          document.documentElement.classList.add("home-shell-gated");
+          document.documentElement.setAttribute("data-app-ready", "0");
+        }
+        document.documentElement.setAttribute("data-overlay-ready", "0");
+        document.documentElement.classList.add("preload-no-transitions");
+        try {
+          document.documentElement.style.colorScheme = savedMode;
+          const preloadBg = (
+            document.documentElement.style.getPropertyValue("--tb-loader-bg") || ""
+          ).trim();
+          document.documentElement.style.backgroundColor =
+            preloadBg || (savedMode === "dark" ? "#1a1a1a" : "#ffffff");
+        } catch {}
+        let preloadStyle = document.getElementById("theme-preload-style");
+        if (!preloadStyle) {
+          preloadStyle = document.createElement("style");
+          preloadStyle.id = "theme-preload-style";
+          preloadStyle.textContent =
+            "html.theme-loading:not([data-loader-seen=1]) body > :not(#loader):not(#sync-status-indicator){visibility:hidden!important;}html.home-shell-gated:not(.app-ready) body > :not(#loader):not(#sync-status-indicator){visibility:hidden!important;}";
+          document.head.appendChild(preloadStyle);
+        }
+        document.documentElement.classList.add("theme-loading");
+        const DEFAULT_THEME_CSS = "styles/style.css";
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.id = "theme-stylesheet";
+        link.dataset.loaded = "false";
+        let themeReady = false;
+        let triedDefaultFallback = false;
+
+        const finalizeThemeReady = () => {
+          if (themeReady) return;
+          themeReady = true;
+          link.dataset.loaded = "true";
+          document.documentElement.classList.remove("theme-loading");
+          document.documentElement.setAttribute("data-overlay-ready", "1");
+          requestAnimationFrame(() => {
+            document.documentElement.classList.remove("preload-no-transitions");
+          });
+          window.dispatchEvent(new CustomEvent("theme:ready"));
+        };
+
+        const applyThemeHref = (cssFile, useStoredVersion = true, cacheBust = false) => {
+          const normalized = fixLegacyThemePath(cssFile || DEFAULT_THEME_CSS);
+          const suffix = useStoredVersion && themeVersion
+            ? `?v=${themeVersion}`
+            : cacheBust
+              ? `?v=${Date.now()}`
+              : "";
+          link.href = `${normalized}${suffix}`;
+        };
+
+        link.addEventListener(
+          "load",
+          () => finalizeThemeReady(),
+          { once: true }
+        );
+        link.addEventListener(
+          "error",
+          () => {
+            if (!triedDefaultFallback) {
+              triedDefaultFallback = true;
+              applyThemeHref(DEFAULT_THEME_CSS, false, true);
+              return;
+            }
+            finalizeThemeReady();
+          },
+          { once: true }
+        );
+        applyThemeHref(savedTheme, true, false);
+        document.head.appendChild(link);
+        setTimeout(() => {
+          finalizeThemeReady();
+        }, 3200);
+      })();
+    </script>
+    <script>
+      (function warmHeroImageFromCache() {
+        try {
+          const raw = localStorage.getItem("hero_carousel_data");
+          if (!raw) return;
+
+          const parsed = JSON.parse(raw);
+          const slides = Array.isArray(parsed?.data) ? parsed.data : [];
+          const first = slides.find((slide) => slide && slide.image);
+          if (!first || !first.image) return;
+
+          const imageUrl = String(first.image).trim();
+          if (!imageUrl) return;
+
+          const img = new Image();
+          img.decoding = "async";
+          img.fetchPriority = "high";
+          img.src = imageUrl;
+          if (typeof img.decode === "function") {
+            img.decode().catch(() => {});
+          }
+        } catch {}
+      })();
+    </script>
+    <link rel="manifest" href="manifest.json?v=3" />
+    <meta name="theme-color" content="#e67a00" />
+    <link rel="apple-touch-icon" href="images/icon-192-v3.png" />
+    <link rel="icon" href="images/favicon.webp" type="image/webp" />
+    <link
+      rel="preload"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-solid-900.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin="anonymous"
+    />
+    <link
+      rel="preload"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+      as="style"
+      onload="this.onload=null;this.rel='stylesheet'"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+    <script src="scripts/config.js" defer></script>
+    <script src="scripts/update-sync.js" defer></script>
+    <script src="scripts/theme-manager.js" defer></script>
+  </head>
+  <body>
+    <div id="loader" data-logo-ready="1">
+      <img
+        src="images/logo.webp"
+        alt="Toke Bakes"
+        width="120"
+        height="120"
+        decoding="async"
+        loading="eager"
+        fetchpriority="high"
+      />
+    </div>
+    <header id="site-header">
+      <div class="header-inner">
+        <div class="brand">
+          <img
+            src="images/logo.webp"
+            alt="Toke Bakes logo"
+            class="logo-sm"
+            width="48"
+            height="48"
+            decoding="async"
+          />
+          <h1>Toke Bakes</h1>
+        </div>
+        <nav class="navbar">
+          <!-- Navigation links (visible on desktop) -->
+          <ul class="show">
+            <li>
+              <a href="index.html">Home</a>
+            </li>
+            <li>
+              <a href="menu.html">Menu</a>
+            </li>
+            <li>
+              <a href="specials.html">Specials</a>
+            </li>
+          </ul>
+
+          <!-- Cart -->
+          <a href="order.html" class="cart-link">
+            <i class="fas fa-shopping-cart"></i>
+            <span id="cart-count"></span>
+          </a>
+
+          <!-- Theme toggle -->
+          <button
+            class="theme-toggle"
+            id="themeToggle"
+            aria-label="Toggle theme"
+          >
+            <i class="fas fa-sun icon sun"></i>
+            <i class="fas fa-moon icon moon"></i>
+          </button>
+
+          <!-- Hamburger menu (visible on mobile only) -->
+          <button class="navbar-toggle" id="navbarToggle">
+            <i class="fas fa-bars"></i>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="hero">
+        <!-- Carousel Layer -->
+        <div class="hero-carousel">
+          <div class="carousel-track">
+            <!-- Slides will be dynamically inserted here by carousel.js -->
+            <!-- Example of what gets inserted:
+        <div class="carousel-slide active" data-index="0">
+          <img src="image-from-database.jpg" alt="Carousel image" class="slide-image">
+        </div>
+      -->
+          </div>
+
+          <!-- Dark overlay gradient -->
+          <div class="carousel-overlay"></div>
+
+          <!-- Navigation dots -->
+          <div class="carousel-dots">
+            <!-- Dots will be dynamically inserted here by carousel.js -->
+            <!-- Example:
+        <button class="carousel-dot active" data-index="0" aria-label="Go to slide 1"></button>
+      -->
+          </div>
+
+          <!-- Navigation arrows -->
+          <div class="carousel-nav">
+            <!-- Arrows will be dynamically inserted here by carousel.js -->
+            <!-- Example:
+        <button class="carousel-prev" aria-label="Previous slide">
+          <svg>? arrow SVG</svg>
+        </button>
+        <button class="carousel-next" aria-label="Next slide">
+          <svg>? arrow SVG</svg>
+        </button>
+      -->
+          </div>
+        </div>
+
+        <!-- Hero Content (Your existing content - stays exactly as is) -->
+        <div class="hero-content">
+          <img
+            src="images/logo.webp"
+            alt="Toke Bakes logo"
+            class="hero-logo"
+            width="170"
+            height="170"
+            decoding="async"
+          />
+          <h2>Baking Love, One Slice at a Time</h2>
+          <p class="lead">
+            Artisan cakes, cupcakes & pastries baked with passion and precision.
+            Small-batch, handcrafted, unforgettable.
+          </p>
+          <a class="btn" href="menu.html">Explore Our Menu</a>
+        </div>
+      </section>
+
+      <section class="about-preview">
+        <h3>Our Story</h3>
+        <p>
+          Founded in 2020, Toke Bakes blends traditional techniques with modern
+          flavors. From custom wedding cakes to everyday treats, our goal is to
+          make every moment sweeter.
+        </p>
+        <div class="about-features">
+          <div class="feature">
+            <h4>Handcrafted</h4>
+            <p>Every item is made by hand with attention to detail.</p>
+          </div>
+          <div class="feature">
+            <h4>Premium Ingredients</h4>
+            <p>
+              We only use the best ingredients: real butter, quality chocolate,
+              and fresh fruit.
+            </p>
+          </div>
+          <div class="feature">
+            <h4>Tell us your vision</h4>
+            <p>we bring it to life with flavor and style.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="featured">
+        <h3>Featured Creations</h3>
+        <div id="featured-container" class="featured-grid">
+          <!-- Content will be loaded dynamically by JavaScript -->
+          <div class="loading-message">Loading featured items...</div>
+        </div>
+      </section>
+    </main>
+
+    <footer id="site-footer" class="bakes-footer">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <h3>Toke Bakes</h3>
+          <p class="tagline">Taking Love, One Slice at a Time</p>
+        </div>
+
+        <div class="footer-info">
+          <!-- Phone should be a clickable link, not just text -->
+          <a href="tel:07063466822" class="phone-link">
+            <i class="fas fa-phone"></i>
+            <span>07063466822</span>
+          </a>
+
+          <div class="social-links">
+            <span class="follow-text">Follow Us</span>
+            <div class="social-icons">
+              <a href="#" class="social-icon" aria-label="Instagram">
+                <i class="fab fa-instagram"></i>
+              </a>
+              <a href="#" class="social-icon" aria-label="TikTok">
+                <i class="fab fa-tiktok"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <!-- Add legal-link class to these -->
+        <div class="legal-links">
+          <a href="privacy.html" class="legal-link">Privacy Policy</a>
+          <a href="terms-of-use.html" class="legal-link">Terms of Use</a>
+        </div>
+        <p class="copyright">
+          &copy; <span id="current-year" data-auto-year>2026</span> Toke Bakes. All rights
+          reserved.
+        </p>
+      </div>
+    </footer>
+
+    <script src="scripts/carousel.js" defer></script>
+    <script src="scripts/spa-manager.js" defer></script>
+    <script>
+      (function hardFailSafeLoaderExit() {
+        const loader = document.getElementById("loader");
+        if (!loader) return;
+        const forceHide = () => {
+          if (loader.style.display === "none") return;
+          try {
+            document.documentElement.setAttribute("data-loader-seen", "1");
+            document.documentElement.setAttribute("data-app-ready", "1");
+            document.documentElement.classList.add("app-ready");
+          } catch {}
+          try {
+            document.documentElement.classList.remove("theme-loading");
+            document.documentElement.setAttribute("data-overlay-ready", "1");
+          } catch {}
+          loader.classList.add("fade-out");
+          loader.style.opacity = "0";
+          loader.style.pointerEvents = "none";
+          setTimeout(() => {
+            loader.style.display = "none";
+            loader.classList.remove("fade-out");
+          }, 380);
+        };
+        setTimeout(forceHide, 20000);
+      })();
+    </script>
+    <script src="scripts/script.js" defer></script>
+    <script src="scripts/sw-register.js" defer></script>
+  </body>
+</html>
+

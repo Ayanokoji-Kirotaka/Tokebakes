@@ -1,0 +1,2016 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Panel | Toke Bakes</title>
+    <meta
+      name="description"
+      content="Administrative panel for managing Toke Bakes website content."
+    />
+    <meta
+      name="robots"
+      content="noindex,nofollow,noarchive,nosnippet,noimageindex"
+    />
+    <link
+      rel="preconnect"
+      href="https://lmqoflcikfcxoeyinjus.supabase.co"
+      crossorigin
+    />
+    <link rel="dns-prefetch" href="//lmqoflcikfcxoeyinjus.supabase.co" />
+    <style id="admin-critical-shell">
+      html,
+      body {
+        min-height: 100%;
+      }
+      body.admin-root {
+        margin: 0;
+        font-family: "Manrope", "Segoe UI", Tahoma, sans-serif;
+        background: #1b140f;
+        color: #f5efe7;
+        position: relative;
+        width: 100%;
+      }
+      html.admin-pre-init body.admin-root > * {
+        visibility: hidden !important;
+      }
+      html.admin-pre-init body.admin-root::before {
+        content: "Loading admin panel...";
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-size: 0.95rem;
+        letter-spacing: 0.01em;
+        color: rgba(255, 255, 255, 0.78);
+        visibility: visible;
+        z-index: 9998;
+      }
+      #login-screen.admin-login-container {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        flex: 1 1 100%;
+        padding: 1.25rem;
+      }
+      #login-screen .admin-login-box {
+        width: min(560px, 100%);
+        background: rgba(26, 19, 14, 0.92);
+        border: 1px solid rgba(230, 122, 0, 0.35);
+        border-radius: 18px;
+        padding: 1.25rem;
+      }
+    </style>
+    <style id="logo-critical">
+      img.logo-sm,
+      img.hero-logo,
+      img.admin-logo,
+      #loader img {
+        display: block;
+        width: auto;
+        height: auto;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+        border-radius: 50%;
+        background: rgba(230, 122, 0, 0.08);
+      }
+      img.logo-sm {
+        width: 48px;
+        height: 48px;
+      }
+      img.hero-logo {
+        width: 170px;
+        height: 170px;
+      }
+      img.admin-logo {
+        width: 100px;
+        height: 100px;
+        margin: 0 auto 1.5rem;
+      }
+      #loader img {
+        width: 120px;
+        height: 120px;
+      }
+    </style>
+    <link rel="stylesheet" href="styles/style.css" id="base-stylesheet" />
+    <script>
+      (function () {
+        const normalizeAssetPath = (value) => {
+          if (value === null || value === undefined) return "";
+          return String(value)
+            .trim()
+            .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
+        };
+        const fixLegacyThemePath = (value) => {
+          const cssFile = normalizeAssetPath(value) || "styles/style.css";
+          const legacyMap = {
+            "style.css": "styles/style.css",
+            "theme-christmas.css": "styles/theme-christmas.css",
+            "theme-valentine.css": "styles/theme-valentine.css",
+            "theme-ramadan.css": "styles/theme-ramadan.css",
+            "theme-halloween.css": "styles/theme-halloween.css",
+            "theme-independenceday.css": "styles/theme-independenceday.css",
+            "theme-independence-day.css": "styles/theme-independenceday.css",
+          };
+          return legacyMap[cssFile] || cssFile;
+        };
+
+        const lsGet = (key) => {
+          try {
+            return localStorage.getItem(key);
+          } catch {
+            return null;
+          }
+        };
+        const lsSet = (key, value) => {
+          try {
+            localStorage.setItem(key, value);
+          } catch {}
+        };
+
+        const savedModeRaw = lsGet("toke_bakes_theme_mode");
+        const systemMode =
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        const savedMode =
+          savedModeRaw === "dark" || savedModeRaw === "light"
+            ? savedModeRaw
+            : systemMode;
+
+        const savedThemeRaw =
+          lsGet("toke_bakes_global_theme_css") ||
+          lsGet("toke_bakes_css_theme") ||
+          "styles/style.css";
+        const savedTheme = fixLegacyThemePath(savedThemeRaw);
+        const themeVersion =
+          lsGet("toke_bakes_global_theme_updated_at") ||
+          lsGet("toke_bakes_theme_last_update") ||
+          "";
+
+        if (savedThemeRaw !== savedTheme) {
+          lsSet("toke_bakes_css_theme", savedTheme);
+          lsSet("toke_bakes_global_theme_css", savedTheme);
+        }
+
+        document.documentElement.setAttribute("data-theme", savedMode);
+        document.documentElement.setAttribute("data-overlay-ready", "0");
+        document.documentElement.classList.add("admin-pre-init");
+        document.documentElement.classList.add("preload-no-transitions");
+        try {
+          document.documentElement.style.colorScheme = savedMode;
+          document.documentElement.style.backgroundColor =
+            savedMode === "dark" ? "#1a1a1a" : "#ffffff";
+        } catch {}
+        let preloadStyle = document.getElementById("theme-preload-style");
+        if (!preloadStyle) {
+          preloadStyle = document.createElement("style");
+          preloadStyle.id = "theme-preload-style";
+          preloadStyle.textContent =
+            "html.theme-loading body.admin-root > :not(#sync-status-indicator){visibility:hidden!important;}";
+          document.head.appendChild(preloadStyle);
+        }
+        document.documentElement.classList.add("theme-loading");
+
+        const DEFAULT_THEME_CSS = "styles/style.css";
+        const baseStylesheet = document.getElementById("base-stylesheet");
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.id = "theme-stylesheet";
+        link.dataset.loaded = "false";
+        let baseStylesReady = !baseStylesheet;
+        let themeReady = false;
+        let overlayRevealed = false;
+        let themeReadyDispatched = false;
+        let triedDefaultFallback = false;
+
+        const dispatchThemeReady = () => {
+          if (themeReadyDispatched) return;
+          themeReadyDispatched = true;
+          window.dispatchEvent(new CustomEvent("theme:ready"));
+        };
+
+        const revealAdminUi = () => {
+          if (overlayRevealed || !themeReady || !baseStylesReady) return;
+          overlayRevealed = true;
+          document.documentElement.classList.remove("theme-loading");
+          document.documentElement.setAttribute("data-overlay-ready", "1");
+          requestAnimationFrame(() => {
+            document.documentElement.classList.remove("admin-pre-init");
+            document.documentElement.classList.remove("preload-no-transitions");
+          });
+          dispatchThemeReady();
+        };
+
+        const finalizeThemeReady = () => {
+          if (themeReady) return;
+          themeReady = true;
+          link.dataset.loaded = "true";
+          revealAdminUi();
+        };
+
+        const applyThemeHref = (
+          cssFile,
+          useStoredVersion = true,
+          cacheBust = false,
+        ) => {
+          const normalized = fixLegacyThemePath(cssFile || DEFAULT_THEME_CSS);
+          const suffix =
+            useStoredVersion && themeVersion
+              ? `?v=${themeVersion}`
+              : cacheBust
+                ? `?v=${Date.now()}`
+                : "";
+          link.href = `${normalized}${suffix}`;
+        };
+
+        link.addEventListener("load", () => finalizeThemeReady(), {
+          once: true,
+        });
+        link.addEventListener(
+          "error",
+          () => {
+            if (!triedDefaultFallback) {
+              triedDefaultFallback = true;
+              applyThemeHref(DEFAULT_THEME_CSS, false, true);
+              return;
+            }
+            finalizeThemeReady();
+          },
+          { once: true },
+        );
+        if (baseStylesheet) {
+          const markBaseStylesReady = () => {
+            baseStylesReady = true;
+            revealAdminUi();
+          };
+          if (baseStylesheet.sheet) {
+            baseStylesReady = true;
+          } else {
+            baseStylesheet.addEventListener("load", markBaseStylesReady, {
+              once: true,
+            });
+            baseStylesheet.addEventListener("error", markBaseStylesReady, {
+              once: true,
+            });
+          }
+        }
+        applyThemeHref(savedTheme, true, false);
+        document.head.appendChild(link);
+        setTimeout(() => {
+          baseStylesReady = true;
+          finalizeThemeReady();
+          revealAdminUi();
+        }, 3200);
+        setTimeout(() => {
+          if (overlayRevealed) return;
+          baseStylesReady = true;
+          themeReady = true;
+          link.dataset.loaded = "true";
+          revealAdminUi();
+        }, 5200);
+      })();
+    </script>
+    <link rel="shortcut icon" href="images/favicon.webp" type="image/png" />
+    <link
+      rel="preload"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-solid-900.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin="anonymous"
+    />
+    <link
+      rel="preload"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+      as="style"
+      onload="
+        this.onload = null;
+        this.rel = 'stylesheet';
+      "
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+    <link rel="manifest" href="manifest.json?v=3" />
+    <link rel="icon" href="images/favicon.webp" type="image/webp" />
+    <link
+      rel="preload"
+      href="images/logo.webp"
+      as="image"
+      fetchpriority="high"
+    />
+    <script src="scripts/config.js" defer></script>
+    <script src="scripts/update-sync.js" defer></script>
+    <script src="scripts/theme-manager.js" defer></script>
+    <style>
+      .btn-options {
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .menu-options-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 6500;
+        display: none;
+      }
+      .menu-options-modal.active {
+        display: block;
+      }
+      .menu-options-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(17, 14, 11, 0.55);
+      }
+      .menu-options-panel {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: min(620px, 96vw);
+        background: var(--background);
+        color: var(--text);
+        border-left: 1px solid var(--border);
+        box-shadow: -18px 0 32px rgba(0, 0, 0, 0.22);
+        display: flex;
+        flex-direction: column;
+      }
+      .menu-options-header {
+        padding: 1rem 1.1rem 0.85rem;
+        border-bottom: 1px solid var(--border);
+      }
+      .menu-options-header h3 {
+        margin: 0;
+      }
+      .menu-options-header p {
+        margin: 0.3rem 0 0;
+        color: var(--text-light);
+      }
+      .menu-options-close {
+        position: absolute;
+        right: 0.8rem;
+        top: 0.75rem;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        cursor: pointer;
+      }
+      .menu-options-body {
+        overflow-y: auto;
+        padding: 1rem 1.1rem 1.3rem;
+      }
+      .option-group-form {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 0.8rem;
+        margin-bottom: 1rem;
+        background: var(--surface);
+      }
+      .option-values-editor {
+        margin-top: 0.75rem;
+        display: grid;
+        gap: 0.55rem;
+      }
+      .option-value-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 130px 42px;
+        gap: 0.45rem;
+        align-items: center;
+      }
+      .option-value-row button {
+        width: 100%;
+      }
+      .option-groups-list {
+        display: grid;
+        gap: 0.8rem;
+      }
+      .option-group-card {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 0.75rem;
+        background: var(--surface);
+      }
+      .option-group-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-bottom: 0.45rem;
+      }
+      .option-meta-pill {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 0.17rem 0.5rem;
+      }
+      .option-group-values {
+        margin: 0.45rem 0 0;
+        padding-left: 1rem;
+        color: var(--text-light);
+      }
+      .option-group-actions {
+        margin-top: 0.65rem;
+        display: flex;
+        gap: 0.45rem;
+      }
+      body.menu-options-open {
+        overflow: hidden;
+      }
+      @media (max-width: 768px) {
+        .menu-options-panel {
+          width: 100%;
+        }
+        .option-value-row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body class="admin-root">
+    <!-- <div id="loader"><img src="images/logo.jpg" alt="Toke Bakes" /></div> -->
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="admin-login-container">
+      <div class="admin-login-box">
+        <div class="admin-brand">
+          <img
+            src="images/logo.webp"
+            alt="Toke Bakes"
+            class="admin-logo"
+            width="100"
+            height="100"
+            decoding="async"
+          />
+          <h2>Toke Bakes Admin</h2>
+          <p class="admin-subtitle">Content Management System</p>
+        </div>
+
+        <form id="login-form" class="admin-login-form">
+          <div class="form-group">
+            <label for="admin-email"
+              ><i class="fas fa-user"></i> Admin Email</label
+            >
+            <input
+              type="email"
+              id="admin-email"
+              placeholder="admin@yourdomain.com"
+              autocomplete="username"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="admin-password"
+              ><i class="fas fa-lock"></i> Password</label
+            >
+            <div class="password-input-wrap">
+              <input
+                type="password"
+                id="admin-password"
+                placeholder="Enter password"
+                autocomplete="current-password"
+                required
+              />
+              <button
+                type="button"
+                class="password-toggle-btn"
+                id="admin-password-toggle"
+                aria-label="Show password"
+                aria-pressed="false"
+              >
+                <i class="fas fa-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <button type="submit" class="btn btn-admin">
+              <i class="fas fa-sign-in-alt"></i> Login
+            </button>
+          </div>
+
+          <div class="login-note">
+            <p>
+              <i class="fas fa-info-circle"></i> Use a Supabase Auth account
+              that is listed in <code>app_admins</code>.
+            </p>
+            <p>Passwords are managed in Supabase Auth.</p>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Admin Dashboard (Hidden until login) -->
+    <div id="admin-dashboard" class="admin-dashboard" style="display: none">
+      <header class="admin-header">
+        <div class="header-inner">
+          <div class="brand">
+            <img
+              src="images/logo.webp"
+              alt="Toke Bakes logo"
+              class="logo-sm"
+              width="48"
+              height="48"
+              decoding="async"
+            />
+            <h1>Toke Bakes Admin</h1>
+          </div>
+          <nav class="admin-navbar">
+            <ul>
+              <li>
+                <a href="index.html" target="_blank"
+                  ><i class="fas fa-external-link-alt"></i> Site</a
+                >
+              </li>
+
+              <li>
+                <a href="#" id="logout-btn"
+                  ><i class="fas fa-sign-out-alt"></i> Logout</a
+                >
+              </li>
+            </ul>
+
+            <div
+              id="admin-sync-badge"
+              class="admin-sync-badge"
+              role="status"
+              aria-live="polite"
+            >
+              Sync: ready
+            </div>
+
+            <!-- Theme toggle -->
+            <button
+              class="theme-toggle"
+              id="themeToggle"
+              aria-label="Toggle theme"
+            >
+              <i class="fas fa-sun icon sun"></i>
+              <i class="fas fa-moon icon moon"></i>
+            </button>
+          </nav>
+        </div>
+      </header>
+
+      <main class="admin-main">
+        <!-- Dashboard Tabs -->
+        <div class="admin-tabs">
+          <button class="admin-tab active" data-tab="featured">
+            <i class="fas fa-star"></i> Featured Items
+          </button>
+          <button class="admin-tab" data-tab="menu">
+            <i class="fas fa-utensils"></i> Menu Items
+          </button>
+          <button class="admin-tab" data-tab="specials">
+            <i class="fas fa-tag"></i> Specials
+          </button>
+          <button class="admin-tab" data-tab="carousel">
+            <i class="fas fa-images"></i> Hero Carousel
+          </button>
+          <button class="admin-tab" data-tab="themes">
+            <i class="fas fa-palette"></i> Themes
+          </button>
+          <button class="admin-tab" data-tab="stats">
+            <i class="fas fa-chart-line"></i> Stats
+          </button>
+          <button class="admin-tab" data-tab="settings">
+            <i class="fas fa-cog"></i> Settings
+          </button>
+        </div>
+
+        <!-- Storage Status -->
+        <div class="storage-status">
+          <div class="storage-info">
+            <i class="fas fa-database"></i>
+            <span>Storage: <span id="storage-used">0.00</span> MB / 500 MB</span>
+          </div>
+          <div class="storage-bar">
+            <div class="storage-fill" id="storage-fill"></div>
+          </div>
+        </div>
+
+        <!-- Tab Content Containers -->
+        <div class="admin-tab-content">
+          <!-- Featured Items Tab -->
+          <div id="featured-tab" class="tab-pane active">
+            <div class="admin-section-header">
+              <h2><i class="fas fa-star"></i> Manage Featured Items</h2>
+              <p>These appear on the homepage under "Featured Creations"</p>
+              <button class="btn btn-admin" id="add-featured-btn">
+                <i class="fas fa-plus"></i> Add New Featured Item
+              </button>
+            </div>
+
+            <div
+              class="admin-form-container"
+              id="featured-form-container"
+              style="display: none"
+            >
+              <form id="featured-form" class="admin-form">
+                <input type="hidden" id="featured-id" value="" />
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="featured-title"
+                      ><i class="fas fa-heading"></i> Title</label
+                    >
+                    <input
+                      type="text"
+                      id="featured-title"
+                      placeholder="e.g., Chocolate Fudge Cake"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="featured-description"
+                      ><i class="fas fa-align-left"></i> Description</label
+                    >
+                    <textarea
+                      id="featured-description"
+                      rows="3"
+                      placeholder="Describe this item..."
+                      required
+                    ></textarea>
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="featured-menu-item"
+                      ><i class="fas fa-link"></i> Linked Menu Item
+                      (Optional)</label
+                    >
+                    <select id="featured-menu-item">
+                      <option value="">None</option>
+                    </select>
+                    <small class="form-help"
+                      >Optional: connect to a menu item for quick
+                      updates.</small
+                    >
+                  </div>
+                  <div class="form-group">
+                    <label for="featured-display-order"
+                      ><i class="fas fa-sort-numeric-down"></i> Display
+                      Order</label
+                    >
+                    <input
+                      type="number"
+                      id="featured-display-order"
+                      placeholder="Auto"
+                      min="0"
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="featured-active"
+                      ><i class="fas fa-toggle-on"></i> Status</label
+                    >
+                    <select id="featured-active">
+                      <option value="true">Active</option>
+                      <option value="false">Inactive</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="featured-start-date"
+                      ><i class="fas fa-calendar-alt"></i> Start Date</label
+                    >
+                    <input type="date" id="featured-start-date" />
+                  </div>
+                  <div class="form-group">
+                    <label for="featured-end-date"
+                      ><i class="fas fa-calendar-check"></i> End Date</label
+                    >
+                    <input type="date" id="featured-end-date" />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="featured-image"
+                      ><i class="fas fa-image"></i> Image</label
+                    >
+                    <input type="file" id="featured-image" accept="image/*" />
+                    <small class="form-help"
+                      >Max 500KB. Images are stored in the cloud.</small
+                    >
+                    <div
+                      class="image-preview"
+                      id="featured-image-preview"
+                    ></div>
+                  </div>
+                </div>
+
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-admin">
+                    <i class="fas fa-save"></i> Save Item
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    id="cancel-featured"
+                  >
+                    <i class="fas fa-times"></i> Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div class="items-list" id="featured-items-list">
+              <!-- Featured items will be loaded here -->
+              <div class="empty-state">
+                <i class="fas fa-star"></i>
+                <p>No featured items yet. Add your first item!</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Menu Items Tab -->
+          <div id="menu-tab" class="tab-pane">
+            <div class="admin-section-header">
+              <h2><i class="fas fa-utensils"></i> Manage Menu Items</h2>
+              <p>These appear on the menu page with prices</p>
+              <button class="btn btn-admin" id="add-menu-btn">
+                <i class="fas fa-plus"></i> Add New Menu Item
+              </button>
+            </div>
+
+            <div
+              class="admin-form-container"
+              id="menu-form-container"
+              style="display: none"
+            >
+              <form id="menu-form" class="admin-form">
+                <input type="hidden" id="menu-id" value="" />
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="menu-title"
+                      ><i class="fas fa-heading"></i> Title</label
+                    >
+                    <input
+                      type="text"
+                      id="menu-title"
+                      placeholder="e.g., Chocolate Fudge Cake"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="menu-description"
+                      ><i class="fas fa-align-left"></i> Description</label
+                    >
+                    <textarea
+                      id="menu-description"
+                      rows="3"
+                      placeholder="Describe this menu item..."
+                      required
+                    ></textarea>
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="menu-price"
+                      ><i class="fas fa-tag"></i> Price (NGN)</label
+                    >
+                    <input
+                      type="number"
+                      id="menu-price"
+                      placeholder="1200"
+                      min="0"
+                      step="0.01"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="menu-category"
+                      ><i class="fas fa-layer-group"></i> Category</label
+                    >
+                    <input
+                      type="text"
+                      id="menu-category"
+                      placeholder="pastries"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="menu-tags"
+                      ><i class="fas fa-tags"></i> Tags</label
+                    >
+                    <input
+                      type="text"
+                      id="menu-tags"
+                      placeholder="chocolate, vegan"
+                    />
+                    <small class="form-help"
+                      >Comma-separated tags (optional).</small
+                    >
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="menu-available"
+                      ><i class="fas fa-toggle-on"></i> Availability</label
+                    >
+                    <select id="menu-available">
+                      <option value="true">Available</option>
+                      <option value="false">Unavailable</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="menu-display-order"
+                      ><i class="fas fa-sort-numeric-down"></i> Display
+                      Order</label
+                    >
+                    <input
+                      type="number"
+                      id="menu-display-order"
+                      placeholder="Auto"
+                      min="0"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="menu-calories"
+                      ><i class="fas fa-fire"></i> Calories (Optional)</label
+                    >
+                    <input
+                      type="number"
+                      id="menu-calories"
+                      placeholder="320"
+                      min="0"
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="menu-image"
+                      ><i class="fas fa-image"></i> Image</label
+                    >
+                    <input type="file" id="menu-image" accept="image/*" />
+                    <small class="form-help"
+                      >Max 500KB. Images are stored in the cloud.</small
+                    >
+                    <div class="image-preview" id="menu-image-preview"></div>
+                  </div>
+                </div>
+
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-admin">
+                    <i class="fas fa-save"></i> Save Menu Item
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    id="cancel-menu"
+                  >
+                    <i class="fas fa-times"></i> Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div class="items-list" id="menu-items-list">
+              <!-- Menu items will be loaded here -->
+              <div class="empty-state">
+                <i class="fas fa-utensils"></i>
+                <p>No menu items yet. Add your first item!</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Specials Tab -->
+          <div id="specials-tab" class="tab-pane">
+            <div class="admin-section-header">
+              <h2><i class="fas fa-tag"></i> Manage Specials</h2>
+              <p>Promotional specials shown on the Specials page</p>
+              <button class="btn btn-admin" id="add-specials-btn">
+                <i class="fas fa-plus"></i> Add Special
+              </button>
+            </div>
+
+            <div
+              class="admin-form-container"
+              id="specials-form-container"
+              style="display: none"
+            >
+              <form id="specials-form" class="admin-form">
+                <input type="hidden" id="specials-id" value="" />
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="specials-title"
+                      ><i class="fas fa-heading"></i> Title</label
+                    >
+                    <input
+                      type="text"
+                      id="specials-title"
+                      placeholder="e.g., Assorted Cupcakes (Box of 6)"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="specials-price"
+                      ><i class="fas fa-tag"></i> Discounted Price (NGN)</label
+                    >
+                    <input
+                      type="number"
+                      id="specials-price"
+                      placeholder="4800"
+                      min="0"
+                      step="0.01"
+                      required
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="specials-original-price"
+                      ><i class="fas fa-tags"></i> Original Price (NGN)</label
+                    >
+                    <input
+                      type="number"
+                      id="specials-original-price"
+                      placeholder="6000"
+                      min="0"
+                      step="0.01"
+                    />
+                    <small class="form-help"
+                      >Discount chip auto-computes from original vs current
+                      price.</small
+                    >
+                  </div>
+                  <div class="form-group specials-discount-preview">
+                    <label for="specials-discount-preview"
+                      ><i class="fas fa-percent"></i> Auto Discount</label
+                    >
+                    <div
+                      id="specials-discount-preview"
+                      class="admin-discount-preview"
+                    >
+                      No discount preview yet.
+                    </div>
+                    <small class="form-help"
+                      >The badge and price comparison are generated
+                      automatically from these values.</small
+                    >
+                  </div>
+                </div>
+
+                <div class="form-row" data-specials-auto-badge-row="true">
+                  <div class="form-group">
+                    <label for="specials-special-flag"
+                      ><i class="fas fa-bolt"></i> Show SPECIAL Badge</label
+                    >
+                    <select id="specials-special-flag">
+                      <option value="false">No</option>
+                      <option value="true">Yes</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="specials-badge-right-text"
+                      ><i class="fas fa-font"></i> Badge Text (Optional)</label
+                    >
+                    <input
+                      type="text"
+                      id="specials-badge-right-text"
+                      placeholder="SPECIAL"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="specials-badge-right-icon"
+                      ><i class="fas fa-fire"></i> Badge Icon (Optional)</label
+                    >
+                    <input
+                      type="text"
+                      id="specials-badge-right-icon"
+                      placeholder="🔥"
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="specials-cta-label"
+                      ><i class="fas fa-bullhorn"></i> CTA Label
+                      (Optional)</label
+                    >
+                    <input
+                      type="text"
+                      id="specials-cta-label"
+                      placeholder="Order Now"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="specials-active"
+                      ><i class="fas fa-toggle-on"></i> Status</label
+                    >
+                    <select id="specials-active">
+                      <option value="true">Active</option>
+                      <option value="false">Inactive</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="specials-display-order"
+                      ><i class="fas fa-sort-numeric-down"></i> Display
+                      Order</label
+                    >
+                    <input
+                      type="number"
+                      id="specials-display-order"
+                      placeholder="Auto"
+                      min="0"
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="specials-image"
+                      ><i class="fas fa-image"></i> Image</label
+                    >
+                    <input
+                      type="file"
+                      id="specials-image"
+                      accept="image/*"
+                      required
+                    />
+                    <small class="form-help"
+                      >Max 500KB. Images are stored in the cloud.</small
+                    >
+                    <div
+                      class="image-preview"
+                      id="specials-image-preview"
+                    ></div>
+                  </div>
+                </div>
+
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-admin">
+                    <i class="fas fa-save"></i> Save Special
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    id="cancel-specials"
+                  >
+                    <i class="fas fa-times"></i> Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div class="specials-admin-grid" id="specials-admin-grid">
+              <!-- Specials will be loaded here -->
+              <div class="empty-state">
+                <i class="fas fa-tag"></i>
+                <p>No specials yet. Add your first special!</p>
+              </div>
+            </div>
+          </div>
+          <!-- Carousel Tab -->
+          <div id="carousel-tab" class="tab-pane">
+            <div class="admin-section-header">
+              <h2><i class="fas fa-images"></i> Manage Hero Carousel</h2>
+              <p>Images that appear in the hero section background carousel</p>
+              <button class="btn btn-admin" id="add-carousel-btn">
+                <i class="fas fa-plus"></i> Add Carousel Image
+              </button>
+            </div>
+
+            <div
+              class="admin-form-container"
+              id="carousel-form-container"
+              style="display: none"
+            >
+              <form id="carousel-form" class="admin-form">
+                <input type="hidden" id="carousel-id" value="" />
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="carousel-alt"
+                      ><i class="fas fa-text-width"></i> Alt Text</label
+                    >
+                    <input
+                      type="text"
+                      id="carousel-alt"
+                      placeholder="Describe the image for accessibility"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="carousel-title"
+                      ><i class="fas fa-heading"></i> Title (Optional)</label
+                    >
+                    <input
+                      type="text"
+                      id="carousel-title"
+                      placeholder="Hero headline"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="carousel-subtitle"
+                      ><i class="fas fa-align-left"></i> Subtitle
+                      (Optional)</label
+                    >
+                    <input
+                      type="text"
+                      id="carousel-subtitle"
+                      placeholder="Supporting line"
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="carousel-cta-text"
+                      ><i class="fas fa-bullhorn"></i> CTA Text
+                      (Optional)</label
+                    >
+                    <input
+                      type="text"
+                      id="carousel-cta-text"
+                      placeholder="Shop Now"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="carousel-cta-link"
+                      ><i class="fas fa-link"></i> CTA Link (Optional)</label
+                    >
+                    <input
+                      type="url"
+                      id="carousel-cta-link"
+                      placeholder="https://example.com/menu"
+                    />
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="carousel-display-order"
+                      ><i class="fas fa-sort-numeric-down"></i> Display
+                      Order</label
+                    >
+                    <input
+                      type="number"
+                      id="carousel-display-order"
+                      placeholder="Auto"
+                      min="0"
+                    />
+                    <small class="form-help">Lower numbers appear first</small>
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="carousel-active"
+                      ><i class="fas fa-toggle-on"></i> Status</label
+                    >
+                    <select id="carousel-active">
+                      <option value="true">Active</option>
+                      <option value="false">Inactive</option>
+                    </select>
+                    <small class="form-help"
+                      >Inactive slides won't show in carousel</small
+                    >
+                  </div>
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="carousel-image"
+                      ><i class="fas fa-image"></i> Image</label
+                    >
+                    <input
+                      type="file"
+                      id="carousel-image"
+                      accept="image/*"
+                      required
+                    />
+                    <small class="form-help"
+                      >Max 500KB. Images are stored in the cloud.</small
+                    >
+                    <div
+                      class="image-preview"
+                      id="carousel-image-preview"
+                    ></div>
+                  </div>
+                </div>
+
+                <div class="form-actions">
+                  <button type="submit" class="btn btn-admin">
+                    <i class="fas fa-save"></i> Save Carousel Image
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    id="cancel-carousel"
+                  >
+                    <i class="fas fa-times"></i> Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div class="carousel-admin-grid" id="carousel-admin-grid">
+              <!-- Carousel images will be loaded here -->
+              <div class="empty-state">
+                <i class="fas fa-images"></i>
+                <p>No carousel images yet. Add your first background image!</p>
+              </div>
+            </div>
+          </div>
+          <!-- ================== THEMES TAB ================== -->
+          <div id="themes-tab" class="tab-pane">
+            <div class="admin-section-header">
+              <h2><i class="fas fa-palette"></i> Website Themes</h2>
+              <p>
+                Change the visual theme of your entire website. Changes apply
+                immediately to all visitors.
+              </p>
+            </div>
+
+            <!-- Themes Grid -->
+            <div class="themes-grid" id="themes-grid">
+              <!-- DEFAULT THEME -->
+              <div
+                class="theme-card active"
+                data-theme-file="styles/style.css"
+                data-theme-logo="images/logo.webp"
+              >
+                <div class="theme-preview">
+                  <img
+                    src="images/default-theme-preview.webp"
+                    alt="Default Theme Preview"
+                    onerror="
+                      this.src =
+                        'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkRFRkFVTFQgVEhFTUU8L3RleHQ+PC9zdmc+'
+                    "
+                  />
+                </div>
+
+                <div class="theme-info">
+                  <div class="theme-status active">
+                    <i class="fas fa-check-circle"></i> ACTIVE
+                  </div>
+                  <h3 class="theme-title">Default Theme</h3>
+                  <p class="theme-filename">styles/style.css</p>
+                  <p class="theme-description">Orange bakery theme</p>
+                </div>
+
+                <div class="theme-actions">
+                  <button class="btn-activate-theme">
+                    <i class="fas fa-play"></i> Activate
+                  </button>
+                  <button class="btn-active-theme">
+                    <i class="fas fa-check"></i> Active
+                  </button>
+                </div>
+              </div>
+
+              <!-- VALENTINE THEME -->
+              <div
+                class="theme-card"
+                data-theme-file="styles/theme-valentine.css"
+                data-theme-logo="images/valantine-logo.webp"
+              >
+                <div class="theme-preview">
+                  <img
+                    src="images/valatine-theme-preview.webp"
+                    alt="Valentine Theme Preview"
+                    onerror="
+                      this.src =
+                        'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjhjY2NjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFmaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlZBTEVOVElORSBUSEVNRTwvdGV4dD48L3N2Zz4='
+                    "
+                  />
+                </div>
+
+                <div class="theme-info">
+                  <div class="theme-status">
+                    <i class="fas fa-heart"></i> VALENTINE
+                  </div>
+                  <h3 class="theme-title">Valentine's Day</h3>
+                  <p class="theme-filename">styles/theme-valentine.css</p>
+                  <p class="theme-description">Romantic pink & red theme</p>
+                </div>
+
+                <div class="theme-actions">
+                  <button class="btn-activate-theme">
+                    <i class="fas fa-play"></i> Activate
+                  </button>
+                  <button class="btn-active-theme">
+                    <i class="fas fa-check"></i> Active
+                  </button>
+                </div>
+              </div>
+
+              <!-- RAMADAN THEME -->
+              <div
+                class="theme-card"
+                data-theme-file="styles/theme-ramadan.css"
+                data-theme-logo="images/ramadan-logo.webp"
+              >
+                <div class="theme-preview">
+                  <img
+                    src="images/theme-preview-ramadan.jpg"
+                    alt="Ramadan Theme Preview"
+                    onerror="
+                      this.src =
+                        'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmRmNWI1Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlJBTUFEQU4gVEhFTUU8L3RleHQ+PC9zdmc+'
+                    "
+                  />
+                </div>
+
+                <div class="theme-info">
+                  <div class="theme-status">
+                    <i class="fas fa-moon"></i> RAMADAN
+                  </div>
+                  <h3 class="theme-title">Ramadan</h3>
+                  <p class="theme-filename">styles/theme-ramadan.css</p>
+                  <p class="theme-description">Green & gold theme</p>
+                </div>
+
+                <div class="theme-actions">
+                  <button class="btn-activate-theme">
+                    <i class="fas fa-play"></i> Activate
+                  </button>
+                  <button class="btn-active-theme">
+                    <i class="fas fa-check"></i> Active
+                  </button>
+                </div>
+              </div>
+
+              <!-- CHRISTMAS THEME -->
+              <div
+                class="theme-card"
+                data-theme-file="styles/theme-christmas.css"
+                data-theme-logo="images/christmas-logo.webp"
+              >
+                <div class="theme-preview">
+                  <img
+                    src="images/theme-preview-christmas.jpg"
+                    alt="Christmas Theme Preview"
+                    onerror="
+                      this.src =
+                        'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZDMzMmYyIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkNIUklTVE1BUyBUSEVNRTwvdGV4dD48L3N2Zz4='
+                    "
+                  />
+                </div>
+
+                <div class="theme-info">
+                  <div class="theme-status">
+                    <i class="fas fa-tree"></i> CHRISTMAS
+                  </div>
+                  <h3 class="theme-title">Christmas</h3>
+                  <p class="theme-filename">styles/theme-christmas.css</p>
+                  <p class="theme-description">Festive red & green theme</p>
+                </div>
+
+                <div class="theme-actions">
+                  <button class="btn-activate-theme">
+                    <i class="fas fa-play"></i> Activate
+                  </button>
+                  <button class="btn-active-theme">
+                    <i class="fas fa-check"></i> Active
+                  </button>
+                </div>
+              </div>
+
+              <!-- HALLOWEEN THEME -->
+              <div
+                class="theme-card"
+                data-theme-file="styles/theme-halloween.css"
+                data-theme-logo="images/halloween-logo.webp"
+              >
+                <div class="theme-preview">
+                  <img
+                    src="images/theme-preview-halloween.jpg"
+                    alt="Halloween Theme Preview"
+                    onerror="
+                      this.src =
+                        'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmY2ZjAwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkhBTExPV0VFTiBUSEVNRTwvdGV4dD48L3N2Zz4='
+                    "
+                  />
+                </div>
+
+                <div class="theme-info">
+                  <div class="theme-status">
+                    <i class="fas fa-ghost"></i> HALLOWEEN
+                  </div>
+                  <h3 class="theme-title">Halloween</h3>
+                  <p class="theme-filename">styles/theme-halloween.css</p>
+                  <p class="theme-description">Spooky orange & purple theme</p>
+                </div>
+
+                <div class="theme-actions">
+                  <button class="btn-activate-theme">
+                    <i class="fas fa-play"></i> Activate
+                  </button>
+                  <button class="btn-active-theme">
+                    <i class="fas fa-check"></i> Active
+                  </button>
+                </div>
+              </div>
+
+              <!-- INDEPENDENCE DAY THEME -->
+              <div
+                class="theme-card"
+                data-theme-file="styles/theme-independenceday.css"
+                data-theme-logo="images/independence-day-logo.webp"
+              >
+                <div class="theme-preview">
+                  <img
+                    src="images/theme-preview-independenceday.jpg"
+                    alt="Independence Day Theme Preview"
+                    onerror="
+                      this.src =
+                        'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMDA4NzUxIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPklOREVQRU5ERU5DRSBEQVk8L3RleHQ+PC9zdmc+'
+                    "
+                  />
+                </div>
+
+                <div class="theme-info">
+                  <div class="theme-status">
+                    <i class="fas fa-flag"></i> INDEPENDENCE
+                  </div>
+                  <h3 class="theme-title">Independence Day</h3>
+                  <p class="theme-filename">styles/theme-independenceday.css</p>
+                  <p class="theme-description">Green & white Nigerian theme</p>
+                </div>
+
+                <div class="theme-actions">
+                  <button class="btn-activate-theme">
+                    <i class="fas fa-play"></i> Activate
+                  </button>
+                  <button class="btn-active-theme">
+                    <i class="fas fa-check"></i> Active
+                  </button>
+                </div>
+              </div>
+            </div>
+            <!-- End themes-grid -->
+
+            <!-- Loading State -->
+            <div class="loading-state" id="themes-loading">
+              <div class="loading-spinner"></div>
+              <p>Loading themes...</p>
+            </div>
+
+            <!-- Empty State (Hidden) -->
+            <div
+              class="empty-state"
+              id="themes-empty-state"
+              style="display: none"
+            >
+              <i class="fas fa-palette"></i>
+              <p>No themes found. Please check your theme files.</p>
+            </div>
+          </div>
+          <!-- End themes-tab -->
+
+          <!-- Stats Tab -->
+          <div id="stats-tab" class="tab-pane">
+            <div class="admin-section-header">
+              <h2><i class="fas fa-chart-line"></i> Website Stats</h2>
+              <p>
+                Live analytics from your website activity and core content
+                counts.
+              </p>
+            </div>
+
+            <div class="stats-toolbar">
+              <div class="stats-range-control">
+                <label for="stats-days"
+                  ><i class="fas fa-calendar-alt"></i> Time Window</label
+                >
+                <select id="stats-days">
+                  <option value="7">Last 7 days</option>
+                  <option value="30" selected>Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="365">Last 365 days</option>
+                </select>
+              </div>
+              <div class="stats-toolbar-actions">
+                <button class="btn btn-primary" id="global-refresh-btn">
+                  <i class="fas fa-globe"></i> Global Refresh
+                </button>
+                <button class="btn btn-secondary" id="refresh-stats-btn">
+                  <i class="fas fa-sync"></i> Refresh Stats
+                </button>
+                <span class="stats-last-updated" id="stats-last-updated"
+                  >Not refreshed yet</span
+                >
+              </div>
+            </div>
+
+            <p class="stats-status" id="stats-status"></p>
+
+            <div class="stats-cards-grid">
+              <div class="stats-card">
+                <h3>Menu Items</h3>
+                <div class="value" id="stat-menu-items-total">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Active Menu</h3>
+                <div class="value" id="stat-menu-items-active">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Featured Items</h3>
+                <div class="value" id="stat-featured-items-total">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Specials Items</h3>
+                <div class="value" id="stat-specials-items-total">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Carousel Items</h3>
+                <div class="value" id="stat-carousel-items-total">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Option Groups</h3>
+                <div class="value" id="stat-option-groups-total">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Option Values</h3>
+                <div class="value" id="stat-option-values-total">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Unread Messages</h3>
+                <div class="value" id="stat-unread-messages">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Total Events</h3>
+                <div class="value" id="stat-total-events">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Page Views</h3>
+                <div class="value" id="stat-page-views">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Menu Views</h3>
+                <div class="value" id="stat-menu-views">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Add To Cart</h3>
+                <div class="value" id="stat-add-to-cart">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Order Now Clicks</h3>
+                <div class="value" id="stat-order-now-clicks">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Orders Submitted</h3>
+                <div class="value" id="stat-orders-submitted">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Unique Sessions</h3>
+                <div class="value" id="stat-unique-sessions">0</div>
+              </div>
+              <div class="stats-card">
+                <h3>Submitted Revenue</h3>
+                <div class="value" id="stat-submitted-revenue">NGN 0</div>
+              </div>
+            </div>
+
+            <div class="stats-table-card">
+              <h3><i class="fas fa-table"></i> Daily Activity</h3>
+              <div class="stats-table-wrap">
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Events</th>
+                      <th>Page Views</th>
+                      <th>Add To Cart</th>
+                      <th>Orders</th>
+                      <th>Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody id="stats-daily-body">
+                    <tr>
+                      <td colspan="6">No data yet.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="stats-table-card" id="stats-debug-panel">
+              <h3><i class="fas fa-bug"></i> State & Sync Debug</h3>
+              <p class="stats-status" id="debug-status-line">
+                Collecting diagnostics...
+              </p>
+
+              <div class="stats-cards-grid" id="debug-stats-grid">
+                <div class="stats-card">
+                  <h3>Active Theme</h3>
+                  <div class="value" id="debug-active-theme">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Theme CSS Path</h3>
+                  <div class="value" id="debug-theme-path">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Content Version</h3>
+                  <div class="value" id="debug-content-version">0</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Last Change Type</h3>
+                  <div class="value" id="debug-last-change-type">all</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Sync Mode</h3>
+                  <div class="value" id="debug-sync-mode">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Poll Interval</h3>
+                  <div class="value" id="debug-poll-interval">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Last Sync Check</h3>
+                  <div class="value" id="debug-last-sync-check">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>SW Status</h3>
+                  <div class="value" id="debug-sw-status">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>SW Version/Cache</h3>
+                  <div class="value" id="debug-sw-version">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>SW Last Update</h3>
+                  <div class="value" id="debug-sw-update-time">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Local Version</h3>
+                  <div class="value" id="debug-local-version">-</div>
+                </div>
+                <div class="stats-card">
+                  <h3>Mismatch Flags</h3>
+                  <div class="value" id="debug-mismatch-flags">None</div>
+                </div>
+              </div>
+
+              <div class="stats-toolbar-actions">
+                <button class="btn btn-secondary" id="debug-force-check-btn">
+                  <i class="fas fa-sync"></i> Force Recheck Version
+                </button>
+                <button class="btn btn-secondary" id="debug-force-refetch-btn">
+                  <i class="fas fa-cloud-download-alt"></i> Force Refetch
+                  Content
+                </button>
+                <button
+                  class="btn btn-secondary"
+                  id="debug-clear-theme-cache-btn"
+                >
+                  <i class="fas fa-paint-roller"></i> Clear Theme Cache
+                </button>
+                <button
+                  class="btn btn-secondary"
+                  id="debug-clear-app-cache-btn"
+                >
+                  <i class="fas fa-broom"></i> Clear App Caches
+                </button>
+                <button class="btn btn-secondary" id="debug-clear-logs-btn">
+                  <i class="fas fa-eraser"></i> Clear Logs
+                </button>
+                <button class="btn btn-secondary" id="debug-soft-reload-btn">
+                  <i class="fas fa-redo-alt"></i> Soft Reload Shell
+                </button>
+              </div>
+
+              <div class="stats-table-wrap" style="margin-top: 1rem">
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>Metric</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody id="debug-metrics-body">
+                    <tr>
+                      <td colspan="2">No diagnostics yet.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="stats-table-wrap" style="margin-top: 1rem">
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Type</th>
+                      <th>Message</th>
+                    </tr>
+                  </thead>
+                  <tbody id="debug-logs-body">
+                    <tr>
+                      <td colspan="3">No activity yet.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="stats-table-wrap" style="margin-top: 1rem">
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Type</th>
+                      <th>Message</th>
+                    </tr>
+                  </thead>
+                  <tbody id="debug-errors-body">
+                    <tr>
+                      <td colspan="3">No recent errors.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Settings Tab -->
+          <div id="settings-tab" class="tab-pane">
+            <div class="admin-section-header">
+              <h2><i class="fas fa-cog"></i> Admin Settings</h2>
+            </div>
+
+            <div class="settings-grid">
+              <div class="settings-card">
+                <h3><i class="fas fa-user-shield"></i> Change Password</h3>
+                <form id="change-password-form" class="admin-form">
+                  <div class="form-group">
+                    <label for="current-password">Current Password</label>
+                    <input type="password" id="current-password" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="new-password">New Password</label>
+                    <input
+                      type="password"
+                      id="new-password"
+                      required
+                      minlength="6"
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="confirm-password">Confirm New Password</label>
+                    <input type="password" id="confirm-password" required />
+                  </div>
+                  <button type="submit" class="btn btn-admin">
+                    <i class="fas fa-key"></i> Update Password
+                  </button>
+                </form>
+              </div>
+
+              <div class="settings-card">
+                <h3><i class="fas fa-database"></i> Data Management</h3>
+                <div class="settings-actions">
+                  <button class="btn btn-secondary" id="export-data">
+                    <i class="fas fa-download"></i> Export All Data
+                  </button>
+                  <button class="btn btn-secondary" id="import-data">
+                    <i class="fas fa-upload"></i> Import Data
+                  </button>
+                  <button class="btn btn-danger" id="reset-data">
+                    <i class="fas fa-trash"></i> Reset to Defaults
+                  </button>
+                </div>
+                <small class="form-help"
+                  >Export saves your data as a JSON file. Import replaces all
+                  current data.</small
+                >
+              </div>
+
+              <div class="settings-card">
+                <h3><i class="fas fa-user-plus"></i> Admin Access Helper</h3>
+                <p class="form-help">
+                  Add an existing Supabase Auth user to <code>app_admins</code>
+                  by pasting their user ID.
+                </p>
+                <form id="add-admin-form" class="admin-form">
+                  <div class="form-group">
+                    <label for="admin-user-id"
+                      ><i class="fas fa-id-card"></i> Auth User ID</label
+                    >
+                    <input
+                      type="text"
+                      id="admin-user-id"
+                      placeholder="UUID from Supabase Auth Users"
+                      required
+                    />
+                  </div>
+                  <div class="form-actions">
+                    <button type="submit" class="btn btn-admin">
+                      <i class="fas fa-user-shield"></i> Grant Admin Access
+                    </button>
+                  </div>
+                </form>
+                <small class="form-help">
+                  Create the user first in Supabase Auth, then copy their UUID
+                  here.
+                </small>
+              </div>
+
+              <div class="settings-card">
+                <h3><i class="fas fa-info-circle"></i> System Info</h3>
+                <div class="system-info">
+                  <p><strong>Version:</strong> 2.0.0</p>
+                  <p>
+                    <strong>Storage Used:</strong>
+                    <span id="storage-info">0 MB</span>
+                  </p>
+                  <p><strong>Items Count:</strong></p>
+                  <ul>
+                    <li>Featured: <span id="count-featured">0</span></li>
+                    <li>Menu: <span id="count-menu">0</span></li>
+                    <li>Specials: <span id="count-specials">0</span></li>
+                    <li>Carousel: <span id="count-carousel">0</span></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer class="bakes-footer">
+        <div class="footer-content">
+          <div class="footer-brand">
+            <h3>Toke Bakes Admin</h3>
+            <p class="tagline">Content Management System</p>
+          </div>
+          <div class="footer-info">
+            <div class="social-links">
+              <span class="follow-text">Quick Links</span>
+              <div class="social-icons">
+                <a
+                  href="index.html"
+                  target="_blank"
+                  class="social-icon"
+                  aria-label="View Homepage"
+                >
+                  <i class="fas fa-home"></i>
+                </a>
+                <a
+                  href="menu.html"
+                  target="_blank"
+                  class="social-icon"
+                  aria-label="View Menu"
+                >
+                  <i class="fas fa-utensils"></i>
+                </a>
+                <a
+                  href="specials.html"
+                  target="_blank"
+                  class="social-icon"
+                  aria-label="View Specials"
+                >
+                  <i class="fas fa-tag"></i>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <p class="copyright">
+            &copy; <span id="admin-year" data-auto-year>2026</span> Toke Bakes
+            Admin Panel. All rights reserved.
+          </p>
+        </div>
+      </footer>
+    </div>
+
+    <div id="menu-options-modal" class="menu-options-modal" aria-hidden="true">
+      <div class="menu-options-backdrop" data-options-close="true"></div>
+      <section
+        class="menu-options-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="menu-options-title"
+      >
+        <button
+          type="button"
+          class="menu-options-close"
+          data-options-close="true"
+          aria-label="Close options manager"
+        >
+          x
+        </button>
+        <div class="menu-options-header">
+          <h3 id="menu-options-title">Product Configurator Options</h3>
+          <p id="menu-options-product-label">Select a menu item to begin.</p>
+        </div>
+        <div class="menu-options-body">
+          <form id="option-group-form" class="admin-form option-group-form">
+            <input type="hidden" id="option-group-id" value="" />
+            <div class="form-row">
+              <div class="form-group">
+                <label for="option-group-name"
+                  ><i class="fas fa-list"></i> Group Name</label
+                >
+                <input
+                  type="text"
+                  id="option-group-name"
+                  placeholder="e.g., Flavour, Size, Toppings"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label for="option-group-type"
+                  ><i class="fas fa-dot-circle"></i> Type</label
+                >
+                <select id="option-group-type">
+                  <option value="single">Single Select</option>
+                  <option value="multiple">Multiple Select</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="option-group-required"
+                  ><i class="fas fa-asterisk"></i> Required</label
+                >
+                <select id="option-group-required">
+                  <option value="false">No</option>
+                  <option value="true">Yes</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="option-group-max"
+                  ><i class="fas fa-layer-group"></i> Max Selections (multiple
+                  only)</label
+                >
+                <input
+                  type="number"
+                  id="option-group-max"
+                  min="1"
+                  placeholder="Leave empty for unlimited"
+                />
+              </div>
+            </div>
+
+            <h4 style="margin: 0.6rem 0 0.3rem">Option Values</h4>
+            <div id="option-values-editor" class="option-values-editor"></div>
+            <button
+              type="button"
+              class="btn btn-secondary"
+              id="add-option-value-row"
+            >
+              <i class="fas fa-plus"></i> Add Option Value
+            </button>
+            <div class="form-actions">
+              <button
+                type="submit"
+                class="btn btn-admin"
+                id="save-option-group"
+              >
+                <i class="fas fa-save"></i> Save Group
+              </button>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                id="reset-option-group"
+              >
+                <i class="fas fa-undo"></i> Clear
+              </button>
+            </div>
+          </form>
+
+          <div id="option-groups-status" class="form-help"></div>
+          <div id="option-groups-list" class="option-groups-list"></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Hidden file input for import -->
+    <input type="file" id="import-file" accept=".json" style="display: none" />
+
+    <script src="scripts/admin.js" defer></script>
+  </body>
+</html>

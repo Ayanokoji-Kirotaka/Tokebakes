@@ -1,0 +1,356 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Specials | Toke Bakes</title>
+    <meta
+      name="description"
+      content="Discover limited-time Toke Bakes specials with current promo pricing and easy ordering."
+    />
+    <meta
+      name="robots"
+      content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
+    />
+    <link
+      rel="canonical"
+      href="https://tokebakes-ten.vercel.app/specials.html"
+    />
+    <link
+      rel="preconnect"
+      href="https://lmqoflcikfcxoeyinjus.supabase.co"
+      crossorigin
+    />
+    <link rel="dns-prefetch" href="//lmqoflcikfcxoeyinjus.supabase.co" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Toke Bakes" />
+    <meta property="og:title" content="Specials | Toke Bakes" />
+    <meta
+      property="og:description"
+      content="Browse current Toke Bakes specials, discounts, and featured promo offers."
+    />
+    <meta
+      property="og:url"
+      content="https://tokebakes-ten.vercel.app/specials.html"
+    />
+    <meta
+      property="og:image"
+      content="https://tokebakes-ten.vercel.app/images/logo.webp"
+    />
+    <meta property="og:image:alt" content="Toke Bakes logo" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Specials | Toke Bakes" />
+    <meta
+      name="twitter:description"
+      content="See the latest Toke Bakes specials and order quickly via WhatsApp or Instagram."
+    />
+    <meta
+      name="twitter:image"
+      content="https://tokebakes-ten.vercel.app/images/logo.webp"
+    />
+    <style id="logo-critical">
+      img.logo-sm,
+      img.hero-logo,
+      img.admin-logo,
+      #loader img {
+        display: block;
+        width: auto;
+        height: auto;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+        border-radius: 50%;
+        background: rgba(230, 122, 0, 0.08);
+      }
+      img.logo-sm {
+        width: 48px;
+        height: 48px;
+      }
+      img.hero-logo {
+        width: 170px;
+        height: 170px;
+      }
+      img.admin-logo {
+        width: 100px;
+        height: 100px;
+      }
+      #loader img {
+        width: 120px;
+        height: 120px;
+      }
+    </style>
+    <link rel="stylesheet" href="styles/style.css" id="base-stylesheet" />
+    <script>
+      (function () {
+        const normalizeAssetPath = (value) => {
+          if (value === null || value === undefined) return "";
+          return String(value)
+            .trim()
+            .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
+        };
+        const fixLegacyThemePath = (value) => {
+          const cssFile = normalizeAssetPath(value) || "styles/style.css";
+          const legacyMap = {
+            "style.css": "styles/style.css",
+            "theme-christmas.css": "styles/theme-christmas.css",
+            "theme-valentine.css": "styles/theme-valentine.css",
+            "theme-ramadan.css": "styles/theme-ramadan.css",
+            "theme-halloween.css": "styles/theme-halloween.css",
+            "theme-independenceday.css": "styles/theme-independenceday.css",
+            "theme-independence-day.css": "styles/theme-independenceday.css",
+          };
+          return legacyMap[cssFile] || cssFile;
+        };
+
+        const lsGet = (key) => {
+          try {
+            return localStorage.getItem(key);
+          } catch {
+            return null;
+          }
+        };
+        const lsSet = (key, value) => {
+          try {
+            localStorage.setItem(key, value);
+          } catch {}
+        };
+
+        const savedModeRaw = lsGet("toke_bakes_theme_mode");
+        const systemMode =
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        const savedMode =
+          savedModeRaw === "dark" || savedModeRaw === "light"
+            ? savedModeRaw
+            : systemMode;
+
+        const savedThemeRaw =
+          lsGet("toke_bakes_global_theme_css") ||
+          lsGet("toke_bakes_css_theme") ||
+          "styles/style.css";
+        const savedTheme = fixLegacyThemePath(savedThemeRaw);
+        const themeVersion =
+          lsGet("toke_bakes_global_theme_updated_at") ||
+          lsGet("toke_bakes_theme_last_update") ||
+          "";
+
+        if (savedThemeRaw !== savedTheme) {
+          lsSet("toke_bakes_css_theme", savedTheme);
+          lsSet("toke_bakes_global_theme_css", savedTheme);
+        }
+
+        document.documentElement.setAttribute("data-theme", savedMode);
+        const page = window.location.pathname.split("/").pop() || "";
+        const isHomePage =
+          page === "" || page === "index.html" || page === "index";
+        if (!isHomePage) {
+          document.documentElement.setAttribute("data-loader-seen", "1");
+        }
+        document.documentElement.setAttribute("data-overlay-ready", "0");
+        document.documentElement.classList.add("preload-no-transitions");
+        try {
+          document.documentElement.style.colorScheme = savedMode;
+          document.documentElement.style.backgroundColor =
+            savedMode === "dark" ? "#1a1a1a" : "#ffffff";
+        } catch {}
+        let preloadStyle = document.getElementById("theme-preload-style");
+        if (!preloadStyle) {
+          preloadStyle = document.createElement("style");
+          preloadStyle.id = "theme-preload-style";
+          preloadStyle.textContent =
+            "html.theme-loading:not([data-loader-seen=1]) body > :not(#loader):not(#sync-status-indicator){visibility:hidden!important;}";
+          document.head.appendChild(preloadStyle);
+        }
+        document.documentElement.classList.add("theme-loading");
+
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.id = "theme-stylesheet";
+        link.dataset.loaded = "false";
+        link.addEventListener(
+          "load",
+          () => {
+            link.dataset.loaded = "true";
+            document.documentElement.classList.remove("theme-loading");
+            document.documentElement.setAttribute("data-overlay-ready", "1");
+            requestAnimationFrame(() => {
+              document.documentElement.classList.remove(
+                "preload-no-transitions",
+              );
+            });
+            window.dispatchEvent(new CustomEvent("theme:ready"));
+          },
+          { once: true },
+        );
+        link.addEventListener(
+          "error",
+          () => {
+            link.dataset.loaded = "true";
+            document.documentElement.classList.remove("theme-loading");
+            document.documentElement.setAttribute("data-overlay-ready", "1");
+            requestAnimationFrame(() => {
+              document.documentElement.classList.remove(
+                "preload-no-transitions",
+              );
+            });
+          },
+          { once: true },
+        );
+        link.href = `${savedTheme}${themeVersion ? `?v=${themeVersion}` : ""}`;
+        document.head.appendChild(link);
+        setTimeout(() => {
+          document.documentElement.classList.remove("theme-loading");
+          document.documentElement.setAttribute("data-overlay-ready", "1");
+          document.documentElement.classList.remove("preload-no-transitions");
+        }, 4000);
+      })();
+    </script>
+    <link rel="manifest" href="manifest.json?v=3" />
+    <meta name="theme-color" content="#e67a00" />
+    <link rel="apple-touch-icon" href="images/icon-192-v3.png" />
+    <link rel="icon" href="images/favicon.webp" type="image/webp" />
+    <link
+      rel="preload"
+      href="images/logo.webp"
+      as="image"
+      fetchpriority="high"
+    />
+    <link
+      rel="preload"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-solid-900.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin="anonymous"
+    />
+    <link
+      rel="preload"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+      as="style"
+      onload="
+        this.onload = null;
+        this.rel = 'stylesheet';
+      "
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+    <script src="scripts/config.js" defer></script>
+    <script src="scripts/update-sync.js" defer></script>
+    <script src="scripts/theme-manager.js" defer></script>
+  </head>
+
+  <body>
+    <header id="site-header">
+      <div class="header-inner">
+        <div class="brand">
+          <img
+            src="images/logo.webp"
+            alt="logo"
+            class="logo-sm"
+            width="48"
+            height="48"
+            decoding="async"
+          />
+          <h1>Toke Bakes</h1>
+        </div>
+        <nav class="navbar">
+          <!-- Navigation links (visible on desktop) -->
+          <ul>
+            <li>
+              <a href="index.html">Home</a>
+            </li>
+            <li>
+              <a href="menu.html">Menu</a>
+            </li>
+            <li>
+              <a href="specials.html">Specials</a>
+            </li>
+          </ul>
+
+          <!-- Cart -->
+          <a href="order.html" class="cart-link">
+            <i class="fas fa-shopping-cart"></i>
+            <span id="cart-count"></span>
+          </a>
+
+          <!-- Theme toggle -->
+          <button
+            class="theme-toggle"
+            id="themeToggle"
+            aria-label="Toggle theme"
+          >
+            <i class="fas fa-sun icon sun"></i>
+            <i class="fas fa-moon icon moon"></i>
+          </button>
+
+          <!-- Hamburger menu (visible on mobile only) -->
+          <button class="navbar-toggle" id="navbarToggle">
+            <i class="fas fa-bars"></i>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="specials-section">
+        <h2>Today's Specials</h2>
+        <p class="lead">
+          Fresh offers and promo picks. Limited quantities may apply.
+        </p>
+
+        <div id="specials-container" class="specials-grid">
+          <!-- Content will be loaded dynamically by JavaScript -->
+          <div class="loading-message">Loading specials...</div>
+        </div>
+      </section>
+    </main>
+
+    <footer id="site-footer" class="bakes-footer">
+      <div class="footer-content">
+        <div class="footer-brand">
+          <h3>Toke Bakes</h3>
+          <p class="tagline">Taking Love, One Slice at a Time</p>
+        </div>
+
+        <div class="footer-info">
+          <!-- Phone should be a clickable link, not just text -->
+          <a href="tel:07063466822" class="phone-link">
+            <i class="fas fa-phone"></i>
+            <span>07063466822</span>
+          </a>
+
+          <div class="social-links">
+            <span class="follow-text">Follow Us</span>
+            <div class="social-icons">
+              <a href="#" class="social-icon" aria-label="Instagram">
+                <i class="fab fa-instagram"></i>
+              </a>
+              <a href="#" class="social-icon" aria-label="TikTok">
+                <i class="fab fa-tiktok"></i>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <!-- Add legal-link class to these -->
+        <div class="legal-links">
+          <a href="privacy.html" class="legal-link">Privacy Policy</a>
+          <a href="terms-of-use.html" class="legal-link">Terms of Use</a>
+        </div>
+        <p class="copyright">
+          &copy; <span id="current-year" data-auto-year>2026</span> Toke Bakes.
+          All rights reserved.
+        </p>
+      </div>
+    </footer>
+
+    <script src="scripts/spa-manager.js" defer></script>
+    <script src="scripts/script.js" defer></script>
+    <script src="scripts/sw-register.js" defer></script>
+  </body>
+</html>

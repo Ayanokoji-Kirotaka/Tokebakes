@@ -1,0 +1,87 @@
+/* theme-halloween.css - Seasonal Halloween Theme */
+@import url("style.css");
+
+/* ================== LIGHT MODE ================== */
+:root {
+
+  /* Pumpkin orange */
+  --primary: #ff6a00;
+  --primary-strong: #ff8c1a;
+  --primary-soft: rgba(255, 106, 0, 0.18);
+
+  /* Witch purple */
+  --secondary: #4b2a63;
+
+  /* Accent glow (candle/moon) */
+  --accent: #ffc94d;
+
+  /* Text */
+  --text: #1a1a1a;
+  --text-light: #5a4a44;
+
+  /* Background system (warm spooky fog) */
+  --background: #fff4ec;
+  --surface: #ffffff;
+  --surface-secondary: #fff7f1;
+  --surface-2: var(--surface-secondary);
+
+  /* Borders */
+  --border: rgba(255, 106, 0, 0.15);
+  --border-subtle: rgba(255, 106, 0, 0.08);
+  --border-strong: rgba(255, 106, 0, 0.25);
+
+  /* Shadows */
+  --shadow: rgba(30, 15, 5, 0.12);
+  --shadow-sm: 0 2px 4px rgba(30, 15, 5, 0.08);
+  --shadow-md: 0 4px 8px rgba(30, 15, 5, 0.12);
+  --shadow-lg: 0 8px 16px rgba(30, 15, 5, 0.16);
+  --shadow-xl: 0 12px 24px rgba(30, 15, 5, 0.2);
+
+  --focus-ring: 0 0 0 3px rgba(255, 106, 0, 0.35);
+
+  --primary-color: var(--primary);
+  --secondary-color: var(--primary-strong);
+}
+
+
+/* ================== DARK MODE ================== */
+[data-theme="dark"] {
+
+  /* Glowing pumpkin orange */
+  --primary: #ff8c1a;
+  --primary-strong: #ffb347;
+  --primary-soft: rgba(255, 140, 26, 0.18);
+
+  /* Deep witch purple */
+  --secondary: #6d3a96;
+
+  /* Candle glow */
+  --accent: #ffd36a;
+
+  /* Text */
+  --text: #f8f9fa;
+  --text-light: #d6cbd3;
+
+  /* Background system (spooky night) */
+  --background: #0c0a10;
+  --surface: #17131d;
+  --surface-secondary: #20192a;
+  --surface-2: var(--surface-secondary);
+
+  /* Borders */
+  --border: rgba(255, 140, 26, 0.25);
+  --border-subtle: rgba(255, 140, 26, 0.12);
+  --border-strong: rgba(255, 140, 26, 0.4);
+
+  /* Shadows */
+  --shadow: rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.55);
+  --shadow-xl: 0 12px 24px rgba(0, 0, 0, 0.6);
+
+  --focus-ring: 0 0 0 3px rgba(255, 140, 26, 0.42);
+
+  --primary-color: var(--primary);
+  --secondary-color: var(--primary-strong);
+}
