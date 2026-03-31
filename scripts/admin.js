@@ -2787,41 +2787,6 @@ function generateSessionToken() {
   );
 }
 
-// Secure storage for session data
-const secureStorage = {
-  setItem: (key, value) => {
-    try {
-      sessionStorage.setItem(`secure_${key}`, btoa(JSON.stringify(value)));
-    } catch (e) {
-      debugWarn("Secure storage failed:", e);
-      // Fallback to memory storage
-      window.tempStorage = window.tempStorage || {};
-      window.tempStorage[`secure_${key}`] = value;
-    }
-  },
-  getItem: (key) => {
-    try {
-      const item = sessionStorage.getItem(`secure_${key}`);
-      return item ? JSON.parse(atob(item)) : null;
-    } catch (e) {
-      debugWarn("Secure storage retrieval failed:", e);
-      // Check memory storage
-      return window.tempStorage ? window.tempStorage[`secure_${key}`] : null;
-    }
-  },
-  removeItem: (key) => {
-    try {
-      sessionStorage.removeItem(`secure_${key}`);
-    } catch (e) {
-      debugWarn("Secure storage removal failed:", e);
-    }
-    // Also remove from memory storage
-    if (window.tempStorage) {
-      delete window.tempStorage[`secure_${key}`];
-    }
-  },
-};
-
 // Input sanitization
 function sanitizeInput(input) {
   if (typeof input !== "string") return input;
@@ -2839,30 +2804,6 @@ function isUuidLike(value) {
   return UUID_FORMAT_REGEX.test(toSafeString(value));
 }
 
-function readJwtPayload(token) {
-  const rawToken = toSafeString(token);
-  if (!rawToken) return null;
-  const parts = rawToken.split(".");
-  if (parts.length < 2) return null;
-  try {
-    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = payload.padEnd(Math.ceil(payload.length / 4) * 4, "=");
-    return JSON.parse(atob(padded));
-  } catch {
-    return null;
-  }
-}
-
-function isSessionTokenUsable(session) {
-  if (!session || typeof session !== "object") return false;
-  const accessToken = toSafeString(session.access_token);
-  if (!accessToken) return false;
-  const payload = readJwtPayload(accessToken);
-  if (!payload || typeof payload !== "object") return false;
-  const subject = toSafeString(payload.sub || session.user?.id);
-  return isUuidLike(subject);
-}
-
 // Escape HTML for safety
 function escapeHtml(text) {
   const div = document.createElement("div");
@@ -2876,6 +2817,32 @@ function toSafeString(value, fallback = "") {
     .replace(/\u0000/g, "")
     .trim();
   return text || fallback;
+}
+
+function maskLoginIdentifier(value) {
+  const raw = toSafeString(value);
+  if (!raw) return "";
+  const atIndex = raw.indexOf("@");
+  if (atIndex <= 0) return "***";
+  const local = raw.slice(0, atIndex);
+  const domain = raw.slice(atIndex + 1);
+  return `${local.charAt(0)}***@${domain}`;
+}
+
+function logAdminLogin(message, details = null) {
+  if (details && typeof details === "object") {
+    console.info("[Admin Login]", message, details);
+    return;
+  }
+  console.info("[Admin Login]", message);
+}
+
+function warnAdminLogin(message, details = null) {
+  if (details && typeof details === "object") {
+    console.warn("[Admin Login]", message, details);
+    return;
+  }
+  console.warn("[Admin Login]", message);
 }
 
 function normalizeAssetPath(value) {
@@ -3909,80 +3876,83 @@ function showNotification(message, type = "success") {
   showAdminPopup(message, type);
 }
 
+function setLoginFeedback(message = "", type = "info") {
+  const feedback = document.getElementById("login-feedback");
+  if (!feedback) return;
+
+  const safeMessage = toSafeString(message);
+  if (!safeMessage) {
+    feedback.textContent = "";
+    feedback.dataset.state = "";
+    feedback.hidden = true;
+    return;
+  }
+
+  feedback.textContent = safeMessage;
+  feedback.dataset.state = ["success", "error", "warning", "info"].includes(type)
+    ? type
+    : "info";
+  feedback.hidden = false;
+}
+
+function clearLoginFeedback() {
+  setLoginFeedback("");
+}
+
 /* ================== SECURE API FUNCTIONS ================== */
 
-const SESSION_SKEW_SECONDS = 60;
+function getAdminAuthCore() {
+  if (window.TBAdminAuthCore) return window.TBAdminAuthCore;
+  throw new Error("Admin auth core is not available.");
+}
+
+function cacheAdminAuthResponseData(result) {
+  const rows = Array.isArray(result) ? result : [result];
+  rows.forEach((item) => {
+    const img = resolveRecordImage(item);
+    if (img && item?.id && tempImageCache.size < 50) {
+      cacheTempImageForItem(item.id, img);
+    }
+  });
+}
+
+let adminAuthCoreConfigured = false;
+function configureAdminAuthCore() {
+  if (adminAuthCoreConfigured) return getAdminAuthCore();
+  const authCore = getAdminAuthCore();
+  authCore.setHooks({
+    notify: showNotification,
+    recordError: recordAdminError,
+    cacheResponseData: cacheAdminAuthResponseData,
+    onUnauthorized: () => {
+      try {
+        logoutAdmin();
+      } catch {}
+    },
+    debugWarn,
+  });
+  adminAuthCoreConfigured = true;
+  return authCore;
+}
 
 function getStoredSession() {
-  return secureStorage.getItem("session");
+  return getAdminAuthCore().getStoredSession();
 }
 
 function storeSession(session) {
-  secureStorage.setItem("session", session);
+  getAdminAuthCore().storeSession(session);
 }
 
 function clearSession() {
-  secureStorage.removeItem("session");
+  getAdminAuthCore().clearSession();
 }
 
-async function refreshSessionIfNeeded(session) {
-  if (!session || !session.refresh_token) return session;
-
-  const now = Math.floor(Date.now() / 1000);
-  if (session.expires_at && session.expires_at - now > SESSION_SKEW_SECONDS) {
-    return session;
-  }
-
-  try {
-    const response = await fetch(
-      `${SUPABASE_CONFIG.URL}/auth/v1/token?grant_type=refresh_token`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SUPABASE_CONFIG.ANON_KEY,
-        },
-        body: JSON.stringify({ refresh_token: session.refresh_token }),
-      },
-    );
-
-    if (!response.ok) {
-      return session;
-    }
-
-    const refreshed = await response.json();
-    const refreshedSession = {
-      access_token: refreshed.access_token,
-      refresh_token: refreshed.refresh_token || session.refresh_token,
-      expires_at:
-        refreshed.expires_at ||
-        Math.floor(Date.now() / 1000) + (refreshed.expires_in || 3600),
-      user: refreshed.user || session.user,
-      email: (refreshed.user && refreshed.user.email) || session.email,
-    };
-
-    storeSession(refreshedSession);
-    return refreshedSession;
-  } catch (error) {
-    debugWarn("Session refresh failed:", error);
-    return session;
-  }
+function isSessionTokenUsable(session) {
+  return getAdminAuthCore().isSessionTokenUsable(session);
 }
 
 async function ensureValidSession() {
-  const session = getStoredSession();
-  if (!isSessionTokenUsable(session)) {
-    clearSession();
-    return null;
-  }
-
-  const refreshed = await refreshSessionIfNeeded(session);
-  if (!isSessionTokenUsable(refreshed)) {
-    clearSession();
-    return null;
-  }
-
-  return refreshed;
+  return configureAdminAuthCore().ensureValidSession();
 }
 
 async function secureRequest(
@@ -3991,273 +3961,12 @@ async function secureRequest(
   data = null,
   options = {},
 ) {
-  const normalizedMethod = toSafeString(method, "GET").toUpperCase();
-  const {
-    retries = 3,
-    timeout = normalizedMethod === "GET" ? 22000 : 15000,
-    authRequired = false,
-    headers: extraHeaders = {},
-    suppressNotifications = false,
-  } = options;
-  const requestTimeout =
-    Number.isFinite(Number(timeout)) && Number(timeout) > 0
-      ? Number(timeout)
-      : normalizedMethod === "GET"
-        ? 22000
-        : 15000;
-
-  if (!SUPABASE_CONFIG || !SUPABASE_CONFIG.URL || !SUPABASE_CONFIG.ANON_KEY) {
-    throw new Error("Supabase configuration missing. Check config.js");
-  }
-
-  const safeEndpoint = toSafeString(endpoint).replace(/\u0000/g, "");
-  if (!safeEndpoint.startsWith("/")) {
-    throw new Error("Invalid API endpoint");
-  }
-
-  const session = await ensureValidSession();
-  if (authRequired && !session?.access_token) {
-    throw new Error("Authentication required");
-  }
-
-  const baseHeaders = {
-    apikey: SUPABASE_CONFIG.ANON_KEY,
-    Authorization: `Bearer ${
-      session?.access_token || SUPABASE_CONFIG.ANON_KEY
-    }`,
-    Prefer: "return=representation",
-    "Cache-Control": "no-store",
-    Pragma: "no-cache",
-    ...extraHeaders,
-  };
-
-  if (
-    data &&
-    (normalizedMethod === "POST" ||
-      normalizedMethod === "PATCH" ||
-      normalizedMethod === "PUT")
-  ) {
-    baseHeaders["Content-Type"] = "application/json";
-  }
-
-  const isRetryableStatus = (status) => {
-    const code = Number(status) || 0;
-    return (
-      code === 408 ||
-      code === 425 ||
-      code === 429 ||
-      code === 502 ||
-      code === 503 ||
-      code === 504 ||
-      code >= 500
-    );
-  };
-
-  const isTransientNetworkError = (error) => {
-    const message = toSafeString(error?.message).toLowerCase();
-    return (
-      error?.name === "AbortError" ||
-      message.includes("failed to fetch") ||
-      message.includes("networkerror") ||
-      message.includes("network request failed") ||
-      message.includes("load failed") ||
-      message.includes("timeout")
-    );
-  };
-
-  const getRetryDelayMs = (attempt, retryAfterSeconds = 0) => {
-    if (retryAfterSeconds > 0) {
-      return Math.min(10000, Math.max(300, retryAfterSeconds * 1000));
-    }
-    return Math.min(
-      10000,
-      Math.pow(2, attempt) * 700 + Math.floor(Math.random() * 250),
-    );
-  };
-
-  for (let attempt = 1; attempt <= retries; attempt++) {
-    const controller =
-      typeof AbortController !== "undefined" ? new AbortController() : null;
-    const timeoutId = controller
-      ? setTimeout(() => controller.abort(), requestTimeout)
-      : null;
-
-    const config = {
-      method: normalizedMethod,
-      headers: baseHeaders,
-      signal: controller ? controller.signal : undefined,
-      cache: "no-store",
-    };
-
-    if (
-      data &&
-      (normalizedMethod === "POST" ||
-        normalizedMethod === "PATCH" ||
-        normalizedMethod === "PUT")
-    ) {
-      config.body = JSON.stringify(data);
-    }
-
-    try {
-      const response = await fetch(
-        `${SUPABASE_CONFIG.URL}${safeEndpoint}`,
-        config,
-      );
-      if (timeoutId) clearTimeout(timeoutId);
-
-      if (response.status === 429) {
-        const retryAfter =
-          Number(response.headers.get("Retry-After") || 1) || 1;
-        if (attempt < retries) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, getRetryDelayMs(attempt, retryAfter)),
-          );
-          continue;
-        }
-      }
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        recordAdminError("fetch", `HTTP ${response.status} ${safeEndpoint}`, {
-          method: normalizedMethod,
-          status: response.status,
-        });
-
-        if (response.status === 401) {
-          if (!suppressNotifications) {
-            showNotification(
-              "Authentication failed. Please login again.",
-              "error",
-            );
-          }
-          logoutAdmin();
-          const authError = new Error("Authentication failed");
-          authError.status = response.status;
-          throw authError;
-        }
-
-        if (response.status === 403) {
-          if (!suppressNotifications) {
-            showNotification(
-              "Permission denied. Please contact administrator.",
-              "error",
-            );
-          }
-          const permissionError = new Error("Permission denied");
-          permissionError.status = response.status;
-          throw permissionError;
-        }
-
-        if (response.status === 413) {
-          if (!suppressNotifications) {
-            showNotification(
-              "Image file is too large. Please use a smaller image.",
-              "error",
-            );
-          }
-          const sizeError = new Error("File too large");
-          sizeError.status = response.status;
-          throw sizeError;
-        }
-
-        const httpError = new Error(
-          `HTTP ${response.status}: ${errorData.substring(0, 200)}`,
-        );
-        httpError.status = response.status;
-        httpError.responseBody = errorData;
-
-        if (attempt < retries && isRetryableStatus(response.status)) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, getRetryDelayMs(attempt)),
-          );
-          continue;
-        }
-        throw httpError;
-      }
-
-      if (normalizedMethod === "DELETE" && response.status === 204) {
-        return { success: true, message: "Item deleted successfully" };
-      }
-
-      if (response.status !== 204) {
-        const result = await response.json();
-
-        if (Array.isArray(result)) {
-          result.forEach((item) => {
-            const img = resolveRecordImage(item);
-            if (img && item.id && tempImageCache.size < 50) {
-              cacheTempImageForItem(item.id, img);
-            }
-          });
-        } else {
-          const img = resolveRecordImage(result);
-          if (img && result.id && tempImageCache.size < 50) {
-            cacheTempImageForItem(result.id, img);
-          }
-        }
-
-        return result;
-      }
-
-      return { success: true };
-    } catch (error) {
-      if (timeoutId) clearTimeout(timeoutId);
-
-      const statusCode = Number(error?.status) || 0;
-      const canRetry =
-        attempt < retries &&
-        (isRetryableStatus(statusCode) || isTransientNetworkError(error));
-
-      if (canRetry) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, getRetryDelayMs(attempt)),
-        );
-        continue;
-      }
-
-      if (!suppressNotifications) {
-        console.error("API request failed after retries:", error);
-      } else {
-        debugWarn(
-          "API request failed after retries:",
-          safeEndpoint,
-          error?.message,
-        );
-      }
-      recordAdminError("fetch", `Request failed: ${safeEndpoint}`, {
-        method: normalizedMethod,
-        status: statusCode || undefined,
-        message: error?.message || "Unknown error",
-      });
-
-      if (!suppressNotifications) {
-        if (error?.name === "AbortError") {
-          showNotification(
-            "Request timed out while contacting the server. Please try again.",
-            "error",
-          );
-        } else if (
-          toSafeString(error?.message).toLowerCase().includes("failed to fetch")
-        ) {
-          showNotification(
-            "Network error. Please check your connection.",
-            "error",
-          );
-        } else if (
-          toSafeString(error?.message).toLowerCase().includes("cors")
-        ) {
-          showNotification(
-            "Cross-origin request blocked. Please check configuration.",
-            "error",
-          );
-        } else {
-          showNotification(`Operation failed: ${error.message}`, "error");
-        }
-      }
-
-      throw error;
-    }
-  }
+  return configureAdminAuthCore().secureRequest(
+    endpoint,
+    method,
+    data,
+    options,
+  );
 }
 
 // Load data with caching
@@ -4401,55 +4110,134 @@ function ensureChatWidgetScriptLoaded() {
 
 /* ================== FIXED AUTHENTICATION - KEY CHANGES ================== */
 
-// Fixed login attempts storage
-let loginAttempts = {
-  count: 0,
-  timestamp: Date.now(),
-  ipKey: "login_attempts",
-};
-
 // Enhanced login with rate limiting
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_TIME = 15 * 60 * 1000; // 15 minutes
+const LOGIN_ATTEMPTS_STORAGE_KEY = "login_attempts";
 
-async function requestAuthSession(email, password) {
-  const response = await fetch(
-    `${SUPABASE_CONFIG.URL}/auth/v1/token?grant_type=password`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_CONFIG.ANON_KEY,
-      },
-      body: JSON.stringify({ email, password }),
-    },
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
+function getStoredLoginAttempts() {
+  try {
+    const parsed = JSON.parse(
+      sessionStorage.getItem(LOGIN_ATTEMPTS_STORAGE_KEY) ||
+        '{"count":0,"timestamp":0}',
+    );
     return {
-      success: false,
-      message: errorText || "Authentication failed",
+      count: Math.max(0, Number(parsed?.count) || 0),
+      timestamp: Math.max(0, Number(parsed?.timestamp) || 0),
     };
+  } catch {
+    return { count: 0, timestamp: 0 };
   }
-
-  const result = await response.json();
-  const session = {
-    access_token: result.access_token,
-    refresh_token: result.refresh_token,
-    expires_at:
-      result.expires_at ||
-      Math.floor(Date.now() / 1000) + (result.expires_in || 3600),
-    user: result.user,
-    email: (result.user && result.user.email) || email,
-  };
-
-  return { success: true, session };
 }
 
-async function checkIsAdmin() {
+function setStoredLoginAttempts(attempts) {
+  try {
+    sessionStorage.setItem(
+      LOGIN_ATTEMPTS_STORAGE_KEY,
+      JSON.stringify({
+        count: Math.max(0, Number(attempts?.count) || 0),
+        timestamp: Math.max(0, Number(attempts?.timestamp) || 0),
+      }),
+    );
+  } catch {}
+}
+
+function clearStoredLoginAttempts() {
+  try {
+    sessionStorage.removeItem(LOGIN_ATTEMPTS_STORAGE_KEY);
+  } catch {}
+}
+
+async function requestAuthSession(email, password) {
+  const sanitizedEmail = sanitizeInput(email);
+  const maskedEmail = maskLoginIdentifier(sanitizedEmail);
+  const controller =
+    typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), 12000)
+    : null;
+
+  logAdminLogin("Calling Supabase password sign-in", {
+    email: maskedEmail,
+  });
+
+  try {
+    const response = await fetch(
+      `${SUPABASE_CONFIG.URL}/auth/v1/token?grant_type=password`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_CONFIG.ANON_KEY,
+        },
+        body: JSON.stringify({ email: sanitizedEmail, password }),
+        signal: controller ? controller.signal : undefined,
+      },
+    );
+
+    const contentType = response.headers.get("content-type") || "";
+    const payload = contentType.includes("application/json")
+      ? await response.json().catch(() => null)
+      : null;
+    const errorText =
+      payload === null ? await response.text().catch(() => "") : "";
+
+    if (!response.ok) {
+      const message = toSafeString(
+        payload?.msg ||
+          payload?.message ||
+          payload?.error_description ||
+          payload?.error ||
+          errorText,
+        response.status === 400 || response.status === 401
+          ? "Invalid email or password."
+          : "Authentication failed.",
+      );
+      warnAdminLogin("Supabase login rejected the request", {
+        email: maskedEmail,
+        status: response.status,
+        message,
+      });
+      return {
+        success: false,
+        message,
+        status: response.status,
+      };
+    }
+
+    const result = payload || {};
+    const session = {
+      access_token: result.access_token,
+      refresh_token: result.refresh_token,
+      expires_at:
+        result.expires_at ||
+        Math.floor(Date.now() / 1000) + (result.expires_in || 3600),
+      user: result.user,
+      email: (result.user && result.user.email) || sanitizedEmail,
+    };
+
+    logAdminLogin("Supabase session received", {
+      email: maskLoginIdentifier(session.email),
+      expiresAt: session.expires_at,
+    });
+    return { success: true, session };
+  } catch (error) {
+    const message =
+      error?.name === "AbortError"
+        ? "Login timed out while contacting Supabase. Please try again."
+        : "Unable to reach Supabase right now. Please check your connection and try again.";
+    console.error("[Admin Login] Supabase sign-in request failed:", error);
+    return { success: false, message, status: 0 };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function checkIsAdmin(options = {}) {
+  const { suppressNotifications = false } = options;
   const result = await secureRequest("/rest/v1/rpc/is_admin", "POST", null, {
     authRequired: true,
+    suppressNotifications,
   });
 
   if (Array.isArray(result)) {
@@ -4460,11 +4248,13 @@ async function checkIsAdmin() {
 
 async function checkLogin(email, password) {
   try {
-    debugLog("Login attempt for:", email);
+    const sanitizedEmail = sanitizeInput(email);
+    const maskedEmail = maskLoginIdentifier(sanitizedEmail);
+    const storedAttempts = getStoredLoginAttempts();
 
-    const storedAttempts = JSON.parse(
-      sessionStorage.getItem("login_attempts") || '{"count":0,"timestamp":0}',
-    );
+    logAdminLogin("Login attempt started", {
+      email: maskedEmail,
+    });
 
     if (storedAttempts.count >= MAX_LOGIN_ATTEMPTS) {
       const timeSinceFirstAttempt = Date.now() - storedAttempts.timestamp;
@@ -4472,57 +4262,105 @@ async function checkLogin(email, password) {
         const remainingMinutes = Math.ceil(
           (LOCKOUT_TIME - timeSinceFirstAttempt) / 60000,
         );
-        showNotification(
-          `Too many login attempts. Try again in ${remainingMinutes} minutes.`,
-          "error",
-        );
-        return false;
+        return {
+          success: false,
+          message: `Too many login attempts. Try again in ${remainingMinutes} minutes.`,
+        };
       } else {
-        sessionStorage.removeItem("login_attempts");
+        clearStoredLoginAttempts();
       }
     }
 
-    const sanitizedEmail = sanitizeInput(email);
     if (!sanitizedEmail || !sanitizedEmail.includes("@")) {
-      showNotification("Please enter a valid admin email.", "error");
-      return false;
+      return {
+        success: false,
+        message: "Please enter a valid admin email.",
+      };
+    }
+
+    if (!toSafeString(password)) {
+      return {
+        success: false,
+        message: "Please enter your password.",
+      };
     }
 
     const authResult = await requestAuthSession(sanitizedEmail, password);
     if (!authResult.success) {
-      storedAttempts.count++;
-      storedAttempts.timestamp =
-        storedAttempts.count === 1 ? Date.now() : storedAttempts.timestamp;
-      sessionStorage.setItem("login_attempts", JSON.stringify(storedAttempts));
-      return false;
+      if (authResult.status >= 400 && authResult.status < 500) {
+        const nextAttempts = {
+          count: storedAttempts.count + 1,
+          timestamp:
+            storedAttempts.count === 0 ? Date.now() : storedAttempts.timestamp,
+        };
+        setStoredLoginAttempts(nextAttempts);
+      }
+      return {
+        success: false,
+        message:
+          authResult.message || "Invalid email or password. Please try again.",
+      };
     }
 
     if (!isSessionTokenUsable(authResult.session)) {
       clearSession();
-      showNotification(
-        "Invalid session returned. Please try logging in again.",
-        "error",
-      );
-      return false;
+      warnAdminLogin("Supabase returned an unusable session", {
+        email: maskedEmail,
+      });
+      return {
+        success: false,
+        message: "Invalid session returned. Please try logging in again.",
+      };
     }
 
     storeSession(authResult.session);
+    logAdminLogin("Checking admin access", {
+      email: maskedEmail,
+    });
 
-    const isAdmin = await checkIsAdmin();
-    if (!isAdmin) {
+    let isAdmin = false;
+    try {
+      isAdmin = await checkIsAdmin({ suppressNotifications: true });
+    } catch (error) {
       clearSession();
-      showNotification("Access denied. Your account is not an admin.", "error");
-      return false;
+      console.error("[Admin Login] Admin access verification failed:", error);
+      return {
+        success: false,
+        message:
+          "Signed in, but admin access could not be verified. Please try again.",
+      };
     }
 
-    sessionStorage.removeItem("login_attempts");
+    if (!isAdmin) {
+      clearSession();
+      warnAdminLogin("Admin access denied", {
+        email: maskedEmail,
+      });
+      return {
+        success: false,
+        message: "Access denied. Your account is not an admin.",
+      };
+    }
+
+    clearStoredLoginAttempts();
     startSessionTimeout();
     setupActivityMonitoring();
-    debugLog("Login successful.");
-    return true;
+    logAdminLogin("Login successful", {
+      email: maskedEmail,
+    });
+    return {
+      success: true,
+      email: authResult.session.email || sanitizedEmail,
+      session: authResult.session,
+      message: "Login successful.",
+    };
   } catch (error) {
-    console.error("Login error:", error);
-    return false;
+    clearSession();
+    console.error("[Admin Login] Unexpected login error:", error);
+    return {
+      success: false,
+      message: "Unexpected login error. Please try again.",
+    };
   }
 }
 
@@ -4566,20 +4404,7 @@ function setupActivityMonitoring() {
 }
 
 async function signOutAdmin() {
-  const session = getStoredSession();
-  if (!session?.access_token) return;
-
-  try {
-    await fetch(`${SUPABASE_CONFIG.URL}/auth/v1/logout`, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_CONFIG.ANON_KEY,
-        Authorization: `Bearer ${session.access_token}`,
-      },
-    });
-  } catch (error) {
-    debugWarn("Supabase logout failed:", error);
-  }
+  return configureAdminAuthCore().signOutAdmin();
 }
 
 // Enhanced logout
@@ -6819,69 +6644,225 @@ function resetCarouselForm() {
 
 /* ================== FIXED INITIALIZATION ================== */
 
-async function initAdminPanel() {
-  debugLog("Initializing Admin Panel v2.1 (with carousel)...");
+async function handleAdminLogin(event) {
+  const loginForm = document.getElementById("login-form");
+  const emailInput = document.getElementById("admin-email");
+  const passwordInput = document.getElementById("admin-password");
+  const submitBtn =
+    document.getElementById("admin-login-submit") ||
+    loginForm?.querySelector("button[type='submit']");
 
-  // Admin session will be validated after login
+  if (!loginForm || !emailInput || !passwordInput) return false;
 
-  // Check session
-  const session = await ensureValidSession();
-  debugLog("Session check:", session);
-
-  if (session?.access_token) {
-    const isAdmin = await checkIsAdmin();
-    if (isAdmin) {
-      currentAdmin = session.email || session.user?.email;
-      document.getElementById("login-screen").style.display = "none";
-      document.getElementById("admin-dashboard").style.display = "block";
-      startSessionTimeout();
-      setupActivityMonitoring();
-      debugLog("Restored existing session.");
-    } else {
-      clearSession();
-      debugLog("Session is not authorized.");
+  const submitViaForm = () => {
+    if (typeof loginForm.requestSubmit === "function") {
+      loginForm.requestSubmit(submitBtn || undefined);
+      return true;
     }
+    return false;
+  };
+
+  if (event?.type === "click") {
+    event.preventDefault();
+    logAdminLogin("Login button clicked");
+    if (submitViaForm()) return false;
   }
 
-  // Check Supabase configuration
+  if (event?.type === "keydown") {
+    const isLoginField =
+      event.target?.id === "admin-email" || event.target?.id === "admin-password";
+    if (!isLoginField || event.key !== "Enter" || event.shiftKey) return false;
+    event.preventDefault();
+    logAdminLogin("Enter key pressed");
+    if (submitViaForm()) return false;
+  }
+
+  if (event?.type === "submit") {
+    event.preventDefault();
+  }
+
   if (!SUPABASE_CONFIG || !SUPABASE_CONFIG.URL || !SUPABASE_CONFIG.ANON_KEY) {
-    const warning = document.createElement("div");
-    warning.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      background: #ff6b6b;
-      color: white;
-      padding: 10px;
-      text-align: center;
-      z-index: 10000;
-      font-weight: bold;
-    `;
-    warning.textContent =
-      "WARNING: Supabase not configured. Please check config.js";
-    document.body.appendChild(warning);
-    return;
+    const message = "Supabase configuration is missing. Please check config.js.";
+    warnAdminLogin("Login blocked because Supabase is not configured");
+    setLoginFeedback(message, "error");
+    showNotification(message, "error");
+    return false;
   }
 
-  // Set current year
-  syncAutoYearBadges();
-  initAdminSyncBadge();
+  const email = sanitizeInput(emailInput.value);
+  const password = passwordInput.value;
+  const maskedEmail = maskLoginIdentifier(email);
 
-  // Setup event listeners
-  setupEventListeners();
-  ensureChatWidgetScriptLoaded();
+  clearLoginFeedback();
+  logAdminLogin("Submitting login request", {
+    email: maskedEmail,
+  });
 
-  // Load initial data if logged in
-  if (currentAdmin) {
-    try {
-      await loadAdminTabData("featured", true);
-      await updateItemCounts();
-      preloadAdminTabsInBackground();
-    } catch (error) {
-      console.error("Error loading initial data:", error);
+  const actionResult = await runAdminAction({
+    actionKey: `login-${email || "attempt"}`,
+    controls: submitBtn ? [submitBtn] : [],
+    progressTitle: "Logging in...",
+    progressText: "Checking credentials...",
+    task: async (progress) => {
+      setLoginFeedback("Signing in...", "info");
+      const loginResult = await checkLogin(email, password);
+      if (!loginResult.success) {
+        progress.fail(loginResult.message || "Login failed");
+        return loginResult;
+      }
+      progress.complete("Login successful");
+      return loginResult;
+    },
+  });
+
+  if (actionResult.skipped) return false;
+
+  const loginResult =
+    actionResult.value ||
+    {
+      success: false,
+      message:
+        actionResult.error?.message || "Login failed. Please try again.",
+    };
+
+  if (!actionResult.ok || !loginResult.success) {
+    const message =
+      loginResult.message || "Login failed. Please check your email and password.";
+    warnAdminLogin("Login failed", {
+      email: maskedEmail,
+      message,
+    });
+    setLoginFeedback(message, "error");
+    showNotification(message, "error");
+    return false;
+  }
+
+  currentAdmin = loginResult.email || email;
+  clearLoginFeedback();
+
+  const loginScreen = document.getElementById("login-screen");
+  const adminDashboard = document.getElementById("admin-dashboard");
+  if (loginScreen) loginScreen.style.display = "none";
+  if (adminDashboard) adminDashboard.style.display = "block";
+
+  passwordInput.value = "";
+  passwordInput.type = "password";
+  const passwordToggle = document.getElementById("admin-password-toggle");
+  if (passwordToggle && typeof passwordToggle.__tbUpdatePasswordToggleUi === "function") {
+    passwordToggle.__tbUpdatePasswordToggleUi();
+  }
+
+  showNotification(`Welcome back, ${currentAdmin}!`, "success");
+  logAdminLogin("Dashboard unlocked", {
+    email: maskLoginIdentifier(currentAdmin),
+  });
+
+  try {
+    resetLoadedTabs();
+    await loadAdminTabData("featured", true);
+    await updateItemCounts();
+    preloadAdminTabsInBackground();
+  } catch (error) {
+    console.error("Error loading admin data after login:", error);
+    showNotification(
+      "Login succeeded, but the dashboard data could not be fully loaded.",
+      "warning",
+    );
+  }
+
+  return true;
+}
+
+let adminPanelInitPromise = null;
+async function initAdminPanel() {
+  if (adminPanelInitPromise) return adminPanelInitPromise;
+
+  adminPanelInitPromise = (async () => {
+    debugLog("Initializing Admin Panel v2.1 (with carousel)...");
+
+    configureAdminAuthCore();
+    syncAutoYearBadges();
+    initAdminSyncBadge();
+    setupEventListeners();
+    ensureChatWidgetScriptLoaded();
+
+    if (!SUPABASE_CONFIG || !SUPABASE_CONFIG.URL || !SUPABASE_CONFIG.ANON_KEY) {
+      const warning = document.createElement("div");
+      warning.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background: #ff6b6b;
+        color: white;
+        padding: 10px;
+        text-align: center;
+        z-index: 10000;
+        font-weight: bold;
+      `;
+      warning.textContent =
+        "WARNING: Supabase not configured. Please check config.js";
+      document.body.appendChild(warning);
+      setLoginFeedback(
+        "Supabase configuration is missing. Please check config.js.",
+        "error",
+      );
+      return false;
     }
-  }
+
+    let session = null;
+    try {
+      session = await ensureValidSession();
+      debugLog("Session check:", session);
+    } catch (error) {
+      console.error("Admin session restore failed:", error);
+      clearSession();
+      warnAdminLogin("Saved session could not be restored", {
+        message: error?.message || "Unknown error",
+      });
+    }
+
+    if (session?.access_token) {
+      try {
+        const isAdmin = await checkIsAdmin({ suppressNotifications: true });
+        if (isAdmin) {
+          currentAdmin = session.email || session.user?.email;
+          const loginScreen = document.getElementById("login-screen");
+          const adminDashboard = document.getElementById("admin-dashboard");
+          if (loginScreen) loginScreen.style.display = "none";
+          if (adminDashboard) adminDashboard.style.display = "block";
+          startSessionTimeout();
+          setupActivityMonitoring();
+          logAdminLogin("Restored existing admin session", {
+            email: maskLoginIdentifier(currentAdmin),
+          });
+        } else {
+          clearSession();
+          warnAdminLogin("Stored session is not authorized for admin access");
+        }
+      } catch (error) {
+        clearSession();
+        console.error("Admin authorization restore failed:", error);
+        warnAdminLogin("Stored session authorization check failed", {
+          message: error?.message || "Unknown error",
+        });
+      }
+    }
+
+    if (currentAdmin) {
+      try {
+        await loadAdminTabData("featured", true);
+        await updateItemCounts();
+        preloadAdminTabsInBackground();
+      } catch (error) {
+        console.error("Error loading initial data:", error);
+      }
+    }
+
+    return true;
+  })();
+
+  return adminPanelInitPromise;
 }
 
 let adminEventListenersBound = false;
@@ -7045,48 +7026,37 @@ function setupEventListeners() {
 
   // Login form
   const loginForm = document.getElementById("login-form");
+  const loginSubmitBtn =
+    document.getElementById("admin-login-submit") ||
+    loginForm?.querySelector("button[type='submit']");
+  const adminEmailInput = document.getElementById("admin-email");
+  const adminPasswordInput = document.getElementById("admin-password");
   if (loginForm) {
-    loginForm.addEventListener("submit", async function (e) {
-      e.preventDefault();
-      debugLog("Login form submitted");
-
-      const email = sanitizeInput(document.getElementById("admin-email").value);
-      const password = document.getElementById("admin-password").value;
-      const submitBtn = loginForm.querySelector("button[type='submit']");
-
-      debugLog("Attempting login with:", email);
-
-      const actionResult = await runAdminAction({
-        actionKey: `login-${email || "attempt"}`,
-        controls: submitBtn ? [submitBtn] : [],
-        progressTitle: "Logging in...",
-        progressText: "Checking credentials...",
-        task: async (progress) => {
-          const isValid = await checkLogin(email, password);
-          if (!isValid) {
-            progress.fail("Login failed");
-            return false;
-          }
-          progress.complete("Login successful");
-          return true;
-        },
+    loginForm.addEventListener("submit", handleAdminLogin);
+    loginForm.addEventListener("keydown", handleAdminLogin);
+  }
+  if (loginSubmitBtn) {
+    loginSubmitBtn.addEventListener("click", handleAdminLogin);
+  }
+  [adminEmailInput, adminPasswordInput]
+    .filter(Boolean)
+    .forEach((field) => {
+      field.addEventListener("input", () => {
+        clearLoginFeedback();
       });
-
-      if (!actionResult.ok || !actionResult.value) {
-        showNotification("Invalid email or password", "error");
-        return;
-      }
-
-      if (actionResult.value) {
-        currentAdmin = email;
-        document.getElementById("login-screen").style.display = "none";
-        document.getElementById("admin-dashboard").style.display = "block";
-        showNotification(`Welcome back, ${email}!`, "success");
-
-        resetLoadedTabs();
-        await loadAdminTabData("featured", true);
-        await updateItemCounts();
-        preloadAdminTabsInBackground();
+      field.addEventListener("change", () => {
+        clearLoginFeedback();
+      });
+    });
+  if (adminPasswordInput) {
+    adminPasswordInput.addEventListener("input", () => {
+      if (adminPasswordInput.type !== "password") return;
+      const passwordToggle = document.getElementById("admin-password-toggle");
+      if (
+        passwordToggle &&
+        typeof passwordToggle.__tbUpdatePasswordToggleUi === "function"
+      ) {
+        passwordToggle.__tbUpdatePasswordToggleUi();
       }
     });
   }
@@ -7493,6 +7463,13 @@ function setupPasswordVisibilityToggle(inputId, toggleId) {
     icon.classList.toggle("fa-eye-slash", isVisible);
   };
 
+  toggle.__tbUpdatePasswordToggleUi = updateUi;
+  if (toggle.dataset.passwordToggleBound === "true") {
+    updateUi();
+    return;
+  }
+
+  toggle.dataset.passwordToggleBound = "true";
   toggle.addEventListener("click", (event) => {
     event.preventDefault();
     input.type = input.type === "password" ? "text" : "password";

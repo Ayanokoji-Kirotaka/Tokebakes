@@ -306,6 +306,7 @@
     <script src="scripts/config.js" defer></script>
     <script src="scripts/update-sync.js" defer></script>
     <script src="scripts/theme-manager.js" defer></script>
+    <script src="scripts/admin-auth-core.js" defer></script>
     <style>
       .btn-options {
         background: var(--surface);
@@ -493,10 +494,22 @@
           </div>
 
           <div class="form-group">
-            <button type="submit" class="btn btn-admin">
+            <button
+              type="submit"
+              class="btn btn-admin"
+              id="admin-login-submit"
+            >
               <i class="fas fa-sign-in-alt"></i> Login
             </button>
           </div>
+
+          <div
+            id="login-feedback"
+            class="login-feedback"
+            aria-live="polite"
+            aria-atomic="true"
+            hidden
+          ></div>
 
           <div class="login-note">
             <p>

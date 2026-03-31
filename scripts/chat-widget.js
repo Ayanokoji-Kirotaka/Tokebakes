@@ -47,8 +47,24 @@
       .tb-chat-widget-root {
         --tb-chat-bg: var(--background, #ffffff);
         --tb-chat-surface: var(--surface, #f8f6f3);
+        --tb-chat-card: color-mix(in srgb, var(--tb-chat-surface) 92%, white);
+        --tb-chat-card-strong: color-mix(
+          in srgb,
+          var(--tb-chat-surface) 96%,
+          white
+        );
+        --tb-chat-input-bg: color-mix(
+          in srgb,
+          var(--tb-chat-surface) 94%,
+          white
+        );
         --tb-chat-text: var(--text, #222222);
         --tb-chat-muted: var(--text-light, #666666);
+        --tb-chat-placeholder: color-mix(
+          in srgb,
+          var(--tb-chat-muted) 86%,
+          transparent
+        );
         --tb-chat-border: var(--border, rgba(0, 0, 0, 0.08));
         --tb-chat-primary: var(--primary, #1ebe5b);
         --tb-chat-shadow: 0 28px 58px rgba(20, 20, 20, 0.22);
@@ -57,6 +73,18 @@
         bottom: 1.1rem;
         z-index: 13000;
         pointer-events: none;
+      }
+      [data-theme="dark"] .tb-chat-widget-root {
+        --tb-chat-bg: var(--background, #140f0c);
+        --tb-chat-surface: color-mix(in srgb, var(--surface, #241b17) 96%, #120e0b);
+        --tb-chat-card: rgba(32, 24, 20, 0.98);
+        --tb-chat-card-strong: rgba(38, 29, 24, 0.98);
+        --tb-chat-input-bg: rgba(24, 18, 15, 0.96);
+        --tb-chat-text: var(--text, #f6eee6);
+        --tb-chat-muted: var(--text-light, #ddd0c4);
+        --tb-chat-placeholder: rgba(221, 208, 196, 0.78);
+        --tb-chat-border: rgba(164, 122, 96, 0.32);
+        --tb-chat-shadow: 0 30px 64px rgba(0, 0, 0, 0.48);
       }
       .tb-chat-widget-button {
         pointer-events: auto;
@@ -99,7 +127,11 @@
         width: min(380px, calc(100vw - 1.5rem));
         max-height: min(74vh, 520px);
         background:
-          linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 247, 240, 0.94)),
+          linear-gradient(
+            180deg,
+            color-mix(in srgb, var(--tb-chat-card) 96%, white),
+            var(--tb-chat-card-strong)
+          ),
           var(--tb-chat-bg);
         color: var(--tb-chat-text);
         border-radius: 22px;
@@ -125,8 +157,12 @@
         gap: 0.65rem;
         padding: 0.9rem 0.95rem;
         background:
-          linear-gradient(135deg, rgba(37, 211, 102, 0.18), rgba(255, 255, 255, 0.7)),
-          color-mix(in srgb, var(--tb-chat-surface) 88%, white);
+          linear-gradient(
+            135deg,
+            rgba(37, 211, 102, 0.18),
+            color-mix(in srgb, var(--tb-chat-card) 84%, transparent)
+          ),
+          var(--tb-chat-card-strong);
         border-bottom: 1px solid var(--tb-chat-border);
       }
       .tb-chat-widget-avatar {
@@ -172,7 +208,11 @@
         font-size: 0.86rem;
         line-height: 1.4;
         background:
-          linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(244, 255, 248, 0.94)),
+          linear-gradient(
+            135deg,
+            color-mix(in srgb, var(--tb-chat-card) 94%, white),
+            var(--tb-chat-card)
+          ),
           var(--tb-chat-surface);
         color: var(--tb-chat-text);
         border: 1px solid var(--tb-chat-border);
@@ -188,10 +228,20 @@
         width: 100%;
         border: 1px solid var(--tb-chat-border);
         border-radius: 14px;
-        background: rgba(255, 255, 255, 0.82);
+        background: var(--tb-chat-input-bg);
         color: var(--tb-chat-text);
         padding: 0.72rem 0.8rem;
         font: inherit;
+        caret-color: var(--tb-chat-primary);
+      }
+      .tb-chat-widget-input::placeholder {
+        color: var(--tb-chat-placeholder);
+        opacity: 1;
+      }
+      .tb-chat-widget-input:focus {
+        outline: none;
+        border-color: color-mix(in srgb, var(--tb-chat-primary) 44%, var(--tb-chat-border));
+        box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.16);
       }
       .tb-chat-widget-send {
         border: none;

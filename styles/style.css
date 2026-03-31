@@ -18,10 +18,11 @@
   --motion-medium: 320ms;
   --motion-slow: 480ms;
   --nav-height: 72px;
-  --bg-primary: #1a1a1a;
-  --bg-secondary: #2d2d2d;
-  --text-primary: #ffffff;
-  --text-secondary: #cccccc;
+  --bg-primary: #140f0c;
+  --bg-secondary: #211915;
+  --bg-card: rgba(31, 23, 19, 0.96);
+  --text-primary: #fbf4ec;
+  --text-secondary: #ded1c5;
   --border-dark: #444;
 }
 
@@ -29,7 +30,7 @@
   --text: var(--text-primary);
   --text-light: var(--text-secondary);
   --background: var(--bg-primary);
-  --surface: var(--bg-secondary);
+  --surface: var(--bg-card);
   --border: var(--border-dark);
   --shadow: rgba(0, 0, 0, 0.3);
 }
@@ -2370,9 +2371,63 @@ html {
   font-weight: 400;
 }
 
+.login-feedback {
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  text-align: left;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  background: rgba(47, 122, 224, 0.08);
+  color: #1c4f9d;
+}
+
+.login-feedback[data-state="error"] {
+  background: rgba(230, 74, 74, 0.08);
+  border-color: rgba(230, 74, 74, 0.16);
+  color: #a53030;
+}
+
+.login-feedback[data-state="success"] {
+  background: rgba(46, 160, 67, 0.1);
+  border-color: rgba(46, 160, 67, 0.16);
+  color: #1f6d32;
+}
+
+.login-feedback[data-state="warning"] {
+  background: rgba(229, 138, 19, 0.12);
+  border-color: rgba(229, 138, 19, 0.18);
+  color: #8a4c07;
+}
+
+[data-theme="dark"] .login-feedback {
+  background: rgba(47, 122, 224, 0.16);
+  border-color: rgba(47, 122, 224, 0.24);
+  color: #d6e7ff;
+}
+
+[data-theme="dark"] .login-feedback[data-state="error"] {
+  background: rgba(230, 74, 74, 0.16);
+  border-color: rgba(255, 116, 116, 0.24);
+  color: #ffd9d9;
+}
+
+[data-theme="dark"] .login-feedback[data-state="success"] {
+  background: rgba(46, 160, 67, 0.18);
+  border-color: rgba(46, 160, 67, 0.24);
+  color: #d8f7e0;
+}
+
+[data-theme="dark"] .login-feedback[data-state="warning"] {
+  background: rgba(229, 138, 19, 0.2);
+  border-color: rgba(229, 138, 19, 0.24);
+  color: #ffe4bf;
+}
+
 .admin-dashboard {
   min-height: 100vh;
-  background: var(--surface);
+  background: var(--background);
   position: relative;
 }
 
@@ -5101,22 +5156,23 @@ body.spa-navigating button {
   --page-transition-duration: 200ms;
   --primary-color: var(--primary);
   --secondary-color: var(--primary-strong);
-  --bg-primary: #151210;
-  --bg-secondary: #1b1714;
-  --text-primary: #f6eee6;
-  --text-secondary: #c9b8ab;
+  --bg-primary: #120e0b;
+  --bg-secondary: #1b1410;
+  --bg-card: rgba(32, 24, 20, 0.96);
+  --text-primary: #faf3eb;
+  --text-secondary: #ddd0c4;
 }
 
 [data-theme="dark"] {
   --text: var(--text-primary);
   --text-light: var(--text-secondary);
-  --background: #140f0c;
-  --surface: rgba(24, 18, 15, 0.88);
-  --surface-2: rgba(34, 26, 22, 0.92);
+  --background: var(--bg-primary);
+  --surface: var(--bg-card);
+  --surface-2: rgba(40, 30, 25, 0.96);
   --surface-secondary: var(--surface-2);
-  --border: rgba(120, 88, 70, 0.45);
-  --border-subtle: rgba(120, 88, 70, 0.28);
-  --border-strong: rgba(164, 122, 96, 0.65);
+  --border: rgba(150, 116, 92, 0.5);
+  --border-subtle: rgba(150, 116, 92, 0.34);
+  --border-strong: rgba(198, 158, 131, 0.74);
   --shadow: rgba(0, 0, 0, 0.45);
   --shadow-sm: 0 8px 22px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 16px 40px rgba(0, 0, 0, 0.5);
@@ -5182,6 +5238,47 @@ button {
 :focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+    [type="file"]
+  ):not([type="hidden"]),
+textarea,
+select {
+  color: var(--text);
+  caret-color: var(--primary);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--text-light) 82%, transparent);
+  opacity: 1;
+}
+
+[data-theme="dark"]
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+    [type="file"]
+  ):not([type="hidden"]),
+[data-theme="dark"] textarea,
+[data-theme="dark"] select {
+  background: color-mix(in srgb, var(--surface-2) 94%, #120e0b);
+  color: var(--text);
+  caret-color: var(--primary);
+  border-color: var(--border-strong);
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: rgba(221, 208, 196, 0.82);
+}
+
+[data-theme="dark"]
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+    [type="file"]
+  ):not([type="hidden"]):focus,
+[data-theme="dark"] textarea:focus,
+[data-theme="dark"] select:focus {
+  background: color-mix(in srgb, var(--surface-2) 98%, #120e0b);
 }
 
 header {
@@ -6214,7 +6311,18 @@ main h2 {
 }
 
 [data-theme="dark"] .featured-card-body p {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-light);
+}
+
+[data-theme="dark"] .admin-login-box,
+[data-theme="dark"] .admin-form-container,
+[data-theme="dark"] .item-card,
+[data-theme="dark"] .settings-card,
+[data-theme="dark"] .stats-card,
+[data-theme="dark"] .stats-table-card,
+[data-theme="dark"] .theme-card,
+[data-theme="dark"] .confirmation-content {
+  background: var(--bg-card);
 }
 
 #specials-container {
