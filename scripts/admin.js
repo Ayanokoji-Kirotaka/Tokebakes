@@ -342,7 +342,17 @@ function getAdminDiagnosticsState() {
 }
 
 const adminDiagnosticsState = getAdminDiagnosticsState();
-const dataSync = new DataSyncManager();
+let dataSyncManager = null;
+function ensureDataSyncManager() {
+  if (dataSyncManager) return dataSyncManager;
+  dataSyncManager = new DataSyncManager();
+  return dataSyncManager;
+}
+const dataSync = {
+  notifyDataChanged(...args) {
+    ensureDataSyncManager().notifyDataChanged(...args);
+  },
+};
 let adminPopupActive = false;
 const adminToastLastShownAt = new Map();
 const adminActionLocks = new Set();
@@ -6800,6 +6810,7 @@ async function initAdminPanel() {
   adminPanelInitPromise = (async () => {
     debugLog("Initializing Admin Panel v2.1 (with carousel)...");
 
+    ensureDataSyncManager();
     configureAdminAuthCore();
     syncAutoYearBadges();
     initAdminSyncBadge();

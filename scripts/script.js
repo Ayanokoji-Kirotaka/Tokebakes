@@ -2252,7 +2252,7 @@ function getComputedDiscount(originalPrice, price) {
 
 function resolveCardCtaLabel(item, context) {
   if (context === "menu") {
-    return toSafeString(item?.cta_label, "Preferences");
+    return toSafeString(item?.cta_label, "Customize");
   }
   return toSafeString(item?.cta_label, "Order Now");
 }
@@ -2260,7 +2260,7 @@ function resolveCardCtaLabel(item, context) {
 function renderProductCard(item, context = "specials", index = 0) {
   const contextKey = toSafeString(context, "specials").toLowerCase();
   const isMenuCard = contextKey === "menu";
-  const showActionCta = contextKey !== "featured";
+  const showActionCta = contextKey === "specials";
   const imageHints = getAdaptiveImageHints(index);
   const placeholder =
     PUBLIC_IMAGE_PLACEHOLDERS[contextKey] || PUBLIC_IMAGE_PLACEHOLDERS.specials;
@@ -2299,7 +2299,7 @@ function renderProductCard(item, context = "specials", index = 0) {
     card.dataset.menuItem = "true";
     card.setAttribute("role", "button");
     card.setAttribute("tabindex", "0");
-    card.setAttribute("aria-label", `Preferences for ${titleText}`);
+    card.setAttribute("aria-label", `Customize ${titleText}`);
   } else {
     card.dataset.orderItem = "true";
   }
@@ -5339,18 +5339,28 @@ function ensureModern3DStyles() {
       .specials-card.interactive-3d {
         --tilt-x: 0deg;
         --tilt-y: 0deg;
-        --lift-3d: -6px;
+        --lift-3d: -16px;
+        --zoom-3d: 1.04;
+        --tb-card-perspective: 1800px;
+        transform: perspective(var(--tb-card-perspective)) translate3d(0, 0, 0)
+          scale(1) rotateX(0deg) rotateY(0deg);
         transform-style: preserve-3d;
         will-change: transform, box-shadow, filter;
-        transition: transform 380ms var(--ease-soft), box-shadow 320ms ease,
-          filter 320ms ease;
+        transition: transform 420ms cubic-bezier(0.18, 0.88, 0.28, 1),
+          box-shadow 360ms ease, filter 320ms ease;
         backface-visibility: hidden;
+      }
+
+      .menu-item.interactive-3d {
+        --lift-3d: -13px;
+        --zoom-3d: 1.03;
       }
 
       .featured-card.interactive-3d,
       .product-card.interactive-3d,
       .specials-card.interactive-3d {
-        --lift-3d: -6px;
+        --lift-3d: -16px;
+        --zoom-3d: 1.04;
       }
 
       .feature.interactive-3d:hover,
@@ -5363,10 +5373,11 @@ function ensureModern3DStyles() {
       .product-card.interactive-3d.is-interacting,
       .specials-card.interactive-3d:hover,
       .specials-card.interactive-3d.is-interacting {
-        transform: translate3d(0, var(--lift-3d), 0) scale(1.02)
+        transform: perspective(var(--tb-card-perspective))
+          translate3d(0, var(--lift-3d), 0) scale(var(--zoom-3d))
           rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
-        box-shadow: 0 18px 40px rgba(20, 14, 10, 0.2);
-        filter: saturate(1.04);
+        box-shadow: 0 34px 78px rgba(20, 14, 10, 0.26);
+        filter: saturate(1.08) brightness(1.02);
       }
     }
 
@@ -5406,6 +5417,8 @@ function resetModern3DCard(card) {
   card.classList.remove("is-interacting");
   card.style.removeProperty("--tilt-x");
   card.style.removeProperty("--tilt-y");
+  card.style.removeProperty("--tb-card-pan-x");
+  card.style.removeProperty("--tb-card-pan-y");
 }
 
 function bindModern3DCard(card) {
@@ -5425,11 +5438,15 @@ function bindModern3DCard(card) {
 
     const posX = clamp((pendingPoint.x - rect.left) / rect.width, 0, 1);
     const posY = clamp((pendingPoint.y - rect.top) / rect.height, 0, 1);
-    const tiltY = (posX - 0.5) * 8;
-    const tiltX = (0.5 - posY) * 6;
+    const tiltY = (posX - 0.5) * 12;
+    const tiltX = (0.5 - posY) * 10;
+    const panX = (posX - 0.5) * 28;
+    const panY = (posY - 0.5) * 24;
 
     card.style.setProperty("--tilt-x", `${tiltX.toFixed(2)}deg`);
     card.style.setProperty("--tilt-y", `${tiltY.toFixed(2)}deg`);
+    card.style.setProperty("--tb-card-pan-x", `${panX.toFixed(2)}px`);
+    card.style.setProperty("--tb-card-pan-y", `${panY.toFixed(2)}px`);
     card.classList.add("is-interacting");
   };
 
