@@ -1,4 +1,4 @@
-const SW_VERSION = "v21";
+const SW_VERSION = "v23";
 const CACHE_PREFIX = "toke-bakes";
 const CACHE_NAMES = {
   precache: `${CACHE_PREFIX}-precache-${SW_VERSION}`,

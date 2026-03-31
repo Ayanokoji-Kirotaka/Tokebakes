@@ -2260,8 +2260,7 @@ function resolveCardCtaLabel(item, context) {
 function renderProductCard(item, context = "specials", index = 0) {
   const contextKey = toSafeString(context, "specials").toLowerCase();
   const isMenuCard = contextKey === "menu";
-  const isDirectOrderCard =
-    contextKey === "featured" || contextKey === "specials";
+  const showActionCta = contextKey !== "featured";
   const imageHints = getAdaptiveImageHints(index);
   const placeholder =
     PUBLIC_IMAGE_PLACEHOLDERS[contextKey] || PUBLIC_IMAGE_PLACEHOLDERS.specials;
@@ -2294,6 +2293,7 @@ function renderProductCard(item, context = "specials", index = 0) {
   card.dataset.item = titleText;
   card.dataset.description = descriptionText;
   card.dataset.price = String(priceValue);
+  card.dataset.hasCta = showActionCta ? "true" : "false";
 
   if (isMenuCard) {
     card.dataset.menuItem = "true";
@@ -2386,24 +2386,26 @@ function renderProductCard(item, context = "specials", index = 0) {
   }
   body.appendChild(pricing);
 
-  const actions = document.createElement("div");
-  actions.className = "product-card-actions";
-  const cta = document.createElement("button");
-  cta.type = "button";
-  cta.className = "product-card-cta";
-  cta.dataset.ripple = "true";
-  cta.textContent = ctaLabel;
+  if (showActionCta) {
+    const actions = document.createElement("div");
+    actions.className = "product-card-actions";
+    const cta = document.createElement("button");
+    cta.type = "button";
+    cta.className = "product-card-cta";
+    cta.dataset.ripple = "true";
+    cta.textContent = ctaLabel;
 
-  if (isMenuCard) {
-    cta.dataset.openConfigurator = "true";
-    cta.setAttribute("aria-label", `Customize ${titleText}`);
-  } else {
-    cta.dataset.orderDirect = "true";
-    cta.setAttribute("aria-label", `Order ${titleText}`);
+    if (isMenuCard) {
+      cta.dataset.openConfigurator = "true";
+      cta.setAttribute("aria-label", `Customize ${titleText}`);
+    } else {
+      cta.dataset.orderDirect = "true";
+      cta.setAttribute("aria-label", `Order ${titleText}`);
+    }
+
+    actions.appendChild(cta);
+    body.appendChild(actions);
   }
-
-  actions.appendChild(cta);
-  body.appendChild(actions);
 
   card.appendChild(body);
   return card;
@@ -5337,7 +5339,7 @@ function ensureModern3DStyles() {
       .specials-card.interactive-3d {
         --tilt-x: 0deg;
         --tilt-y: 0deg;
-        --lift-3d: -8px;
+        --lift-3d: -6px;
         transform-style: preserve-3d;
         will-change: transform, box-shadow, filter;
         transition: transform 380ms var(--ease-soft), box-shadow 320ms ease,
@@ -5348,7 +5350,7 @@ function ensureModern3DStyles() {
       .featured-card.interactive-3d,
       .product-card.interactive-3d,
       .specials-card.interactive-3d {
-        --lift-3d: -11px;
+        --lift-3d: -6px;
       }
 
       .feature.interactive-3d:hover,
@@ -5361,10 +5363,10 @@ function ensureModern3DStyles() {
       .product-card.interactive-3d.is-interacting,
       .specials-card.interactive-3d:hover,
       .specials-card.interactive-3d.is-interacting {
-        transform: translateY(var(--lift-3d))
+        transform: translate3d(0, var(--lift-3d), 0) scale(1.02)
           rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
-        box-shadow: 0 26px 52px rgba(20, 14, 10, 0.24);
-        filter: saturate(1.06);
+        box-shadow: 0 18px 40px rgba(20, 14, 10, 0.2);
+        filter: saturate(1.04);
       }
     }
 
@@ -5423,8 +5425,8 @@ function bindModern3DCard(card) {
 
     const posX = clamp((pendingPoint.x - rect.left) / rect.width, 0, 1);
     const posY = clamp((pendingPoint.y - rect.top) / rect.height, 0, 1);
-    const tiltY = (posX - 0.5) * 12;
-    const tiltX = (0.5 - posY) * 10;
+    const tiltY = (posX - 0.5) * 8;
+    const tiltX = (0.5 - posY) * 6;
 
     card.style.setProperty("--tilt-x", `${tiltX.toFixed(2)}deg`);
     card.style.setProperty("--tilt-y", `${tiltY.toFixed(2)}deg`);

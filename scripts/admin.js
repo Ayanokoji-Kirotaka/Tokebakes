@@ -100,8 +100,6 @@ class DataSyncManager {
   }
 }
 
-const dataSync = new DataSyncManager();
-
 // Debug logger (disabled for production)
 const DEBUG = false;
 const debugLog = (...args) => {
@@ -320,11 +318,31 @@ const ADMIN_ERROR_LOG_LIMIT = 30;
 const ADMIN_ACTIVITY_LOG_LIMIT = 60;
 const ADMIN_TOAST_DEDUP_WINDOW_MS = 600;
 const ADMIN_POPUP_QUEUE = [];
-const adminDiagnosticsState = {
-  errors: [],
-  logs: [],
-  lastCachePurgeAt: 0,
-};
+function getAdminDiagnosticsState() {
+  const host =
+    typeof window !== "undefined"
+      ? window
+      : typeof globalThis !== "undefined"
+        ? globalThis
+        : {};
+
+  if (
+    host.__tbAdminDiagnosticsState &&
+    typeof host.__tbAdminDiagnosticsState === "object"
+  ) {
+    return host.__tbAdminDiagnosticsState;
+  }
+
+  host.__tbAdminDiagnosticsState = {
+    errors: [],
+    logs: [],
+    lastCachePurgeAt: 0,
+  };
+  return host.__tbAdminDiagnosticsState;
+}
+
+const adminDiagnosticsState = getAdminDiagnosticsState();
+const dataSync = new DataSyncManager();
 let adminPopupActive = false;
 const adminToastLastShownAt = new Map();
 const adminActionLocks = new Set();
@@ -439,6 +457,7 @@ function setStoredLastChangeType(changeType) {
 }
 
 function recordAdminError(type, message, details = null) {
+  const diagnostics = getAdminDiagnosticsState();
   const entry = {
     ts: Date.now(),
     type: toSafeString(type, "error"),
@@ -448,9 +467,9 @@ function recordAdminError(type, message, details = null) {
         ? JSON.stringify(details).slice(0, 500)
         : toSafeString(details).slice(0, 500),
   };
-  adminDiagnosticsState.errors.unshift(entry);
-  if (adminDiagnosticsState.errors.length > ADMIN_ERROR_LOG_LIMIT) {
-    adminDiagnosticsState.errors.length = ADMIN_ERROR_LOG_LIMIT;
+  diagnostics.errors.unshift(entry);
+  if (diagnostics.errors.length > ADMIN_ERROR_LOG_LIMIT) {
+    diagnostics.errors.length = ADMIN_ERROR_LOG_LIMIT;
   }
   if (typeof document !== "undefined" && document.getElementById("debug-errors-body")) {
     renderDebugErrorLog();
@@ -459,19 +478,20 @@ function recordAdminError(type, message, details = null) {
 }
 
 function recordAdminLog(type, message, details = null) {
+  const diagnostics = getAdminDiagnosticsState();
   const suffix =
     details && typeof details === "object"
       ? ` ${JSON.stringify(details).slice(0, 220)}`
       : details
         ? ` ${toSafeString(details).slice(0, 220)}`
         : "";
-  adminDiagnosticsState.logs.unshift({
+  diagnostics.logs.unshift({
     ts: Date.now(),
     type: toSafeString(type, "info"),
     message: `${toSafeString(message, "Event")}${suffix}`.trim(),
   });
-  if (adminDiagnosticsState.logs.length > ADMIN_ACTIVITY_LOG_LIMIT) {
-    adminDiagnosticsState.logs.length = ADMIN_ACTIVITY_LOG_LIMIT;
+  if (diagnostics.logs.length > ADMIN_ACTIVITY_LOG_LIMIT) {
+    diagnostics.logs.length = ADMIN_ACTIVITY_LOG_LIMIT;
   }
   if (typeof document !== "undefined" && document.getElementById("debug-logs-body")) {
     renderDebugActivityLog();
