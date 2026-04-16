@@ -533,89 +533,109 @@
 
     <main id="main-content">
       <section class="hero">
-        <!-- Carousel Layer -->
         <div class="hero-carousel">
-          <div class="carousel-track">
-            <!-- Slides will be dynamically inserted here by carousel.js -->
-            <!-- Example of what gets inserted:
-        <div class="carousel-slide active" data-index="0">
-          <img src="image-from-database.jpg" alt="Carousel image" class="slide-image">
-        </div>
-      -->
-          </div>
-
-          <!-- Dark overlay gradient -->
+          <div class="carousel-track"></div>
           <div class="carousel-overlay"></div>
-
-          <!-- Navigation dots -->
-          <div class="carousel-dots">
-            <!-- Dots will be dynamically inserted here by carousel.js -->
-            <!-- Example:
-        <button class="carousel-dot active" data-index="0" aria-label="Go to slide 1"></button>
-      -->
-          </div>
-
-          <!-- Navigation arrows -->
-          <div class="carousel-nav">
-            <!-- Arrows will be dynamically inserted here by carousel.js -->
-            <!-- Example:
-        <button class="carousel-prev" aria-label="Previous slide">
-          <svg>? arrow SVG</svg>
-        </button>
-        <button class="carousel-next" aria-label="Next slide">
-          <svg>? arrow SVG</svg>
-        </button>
-      -->
-          </div>
+          <div class="carousel-dots"></div>
+          <div class="carousel-nav"></div>
         </div>
 
-        <!-- Hero Content (Your existing content - stays exactly as is) -->
-        <div class="hero-content">
-          <img
-            src="images/logo.webp"
-            alt="Toke Bakes logo"
-            class="hero-logo"
-            width="170"
-            height="170"
-            decoding="async"
-          />
-          <h2>Baking Love, One Slice at a Time</h2>
-          <p class="lead">
-            Artisan cakes, cupcakes & pastries baked with passion and precision.
-            Small-batch, handcrafted, unforgettable.
-          </p>
-          <a class="btn" href="menu.html">Explore Our Menu</a>
+        <div class="hero-inner">
+          <div class="hero-copy">
+            <img
+              src="images/logo.webp"
+              alt="Toke Bakes logo"
+              class="hero-logo"
+              width="170"
+              height="170"
+              decoding="async"
+            />
+            <span class="eyebrow">Artisan bakery for celebrations & everyday rituals</span>
+            <h2>Soft butter cake, caramel lace, warm velvet crumbs.</h2>
+            <p class="lead">
+              A premium bakery experience shaped by small batches, rich ingredients,
+              and elegant presentation. Every order is crafted to feel indulgent
+              and unforgettable.
+            </p>
+            <div class="hero-actions">
+              <a class="btn" href="menu.html">Explore the menu</a>
+              <a class="btn btn-secondary" href="specials.html">Seasonal specials</a>
+            </div>
+          </div>
+
+          <div class="hero-panels">
+            <div class="hero-panel hero-panel--signature">
+              <span class="panel-label">Signature layering</span>
+              <h3>Salted caramel hazelnut</h3>
+              <p>
+                Decadent cake layers folded with toasted hazelnut praline, slow
+                caramel, and a finishing sprinkle of fleur de sel.
+              </p>
+            </div>
+            <div class="hero-panel hero-panel--mini">
+              <span class="panel-label">Bakery ritual</span>
+              <p>
+                Made daily in small batches with real butter, fine flour, and
+                deliberate finishing touches.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
 
       <section class="about-preview">
-        <h3>Our Story</h3>
-        <p>
-          Founded in 2020, Toke Bakes blends traditional techniques with modern
-          flavors. From custom wedding cakes to everyday treats, our goal is to
-          make every moment sweeter.
-        </p>
-        <div class="about-features">
-          <div class="feature">
-            <h4>Handcrafted</h4>
-            <p>Every item is made by hand with attention to detail.</p>
-          </div>
-          <div class="feature">
-            <h4>Premium Ingredients</h4>
+        <div class="about-grid">
+          <div class="about-copy">
+            <span class="eyebrow">Behind every slice</span>
+            <h3>Warm, indulgent baking with editorial detail.</h3>
             <p>
-              We only use the best ingredients: real butter, quality chocolate,
-              and fresh fruit.
+              From curated celebration cakes to everyday pastries, we layer
+              thoughtful flavors and careful craftsmanship into every order.
             </p>
+            <div class="about-meta">
+              <div>
+                <strong>Small-batch craft</strong> finished with soft edges,
+                glossy drips, and gentle textures.
+              </div>
+              <div>
+                <strong>Premium ingredients</strong> like single-origin chocolate,
+                slow caramel, and lightly toasted nuts.
+              </div>
+            </div>
           </div>
-          <div class="feature">
-            <h4>Tell us your vision</h4>
-            <p>we bring it to life with flavor and style.</p>
+
+          <div class="about-features">
+            <article class="feature">
+              <h4>Small-batch craft</h4>
+              <p>
+                Each bake is shaped by hand, from whisk to finish, with a focus on
+                warm texture and soft, layered flavor.
+              </p>
+            </article>
+            <article class="feature">
+              <h4>Thoughtful ingredients</h4>
+              <p>
+                Real butter, premium chocolate, and seasonally inspired accents are
+                the foundation of every treat.
+              </p>
+            </article>
+            <article class="feature">
+              <h4>Tailored for moments</h4>
+              <p>
+                We design gifts, gatherings, and everyday indulgences that feel
+                considered and beautifully presented.
+              </p>
+            </article>
           </div>
         </div>
       </section>
 
       <section class="featured">
         <h3>Featured Creations</h3>
+        <p class="section-copy">
+          Our editorial selection of cakes, pastries and favorites curated for special moments,
+          everyday indulgence, and gift-worthy treats.
+        </p>
         <div id="featured-container" class="featured-grid">
           <!-- Content will be loaded dynamically by JavaScript -->
           <div class="loading-message">Loading featured items...</div>
