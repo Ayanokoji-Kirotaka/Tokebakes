@@ -1,8 +1,8 @@
 // config.js - WORKING VERSION (FIXED)
 const SUPABASE_CONFIG = {
-  URL: "https://lmqoflcikfcxoeyinjus.supabase.co",
+  URL: "https://pxegqpnugoygqccpvdqf.supabase.co",
   ANON_KEY:
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxtcW9mbGNpa2ZjeG9leWluanVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUyMzAyOTQsImV4cCI6MjA4MDgwNjI5NH0.eiKT9S_HHtNUO0yXHHDE-rfL8BhZXj5p90mT4FKdpWo",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4ZWdxcG51Z295Z3FjY3B2ZHFmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ5MjI5NzgsImV4cCI6MjEwMDQ5ODk3OH0.yAQ4jDh1HoyFAbHck66H2vD2U7JEv-cEKzd6XB3gOCc",
 };
 
 const API_ENDPOINTS = {
