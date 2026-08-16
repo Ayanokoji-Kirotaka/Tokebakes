@@ -11,6 +11,25 @@ const CAROUSEL_LAST_UPDATE_KEY = "toke_bakes_last_update";
 const CAROUSEL_LAST_PAYLOAD_KEY = "toke_bakes_last_update_payload";
 const CAROUSEL_DB_LAST_UPDATED_KEY = "toke_bakes_db_last_updated";
 const CAROUSEL_ASSET_VERSION_PARAM = "cv";
+const CAROUSEL_KNOWN_PUBLIC_IMAGE_FILES = new Set([
+  "favicon.webp",
+  "logo.webp",
+  "default-theme-preview.webp",
+  "valatine-theme-preview.webp",
+  "ramadan-theme-preview.webp",
+  "christmas-logo.webp",
+  "halloween-logo.webp",
+  "independence-day-logo.webp",
+  "independence-day-logo.jpg",
+  "ramadan-logo.webp",
+  "valantine-logo.webp",
+  "icon-192.png",
+  "icon-192-v2.png",
+  "icon-192-v3.png",
+  "icon-512.png",
+  "icon-512-v2.png",
+  "icon-512-v3.png",
+]);
 const CAROUSEL_RUNTIME_CONNECTION =
   typeof navigator !== "undefined"
     ? navigator.connection || navigator.mozConnection || navigator.webkitConnection
@@ -130,6 +149,14 @@ const normalizeCarouselAsset = (value) => {
   const normalized = String(value)
     .trim()
     .replace(/\s+\.(?=[a-z0-9]+($|\?))/gi, ".");
+  const lower = normalized.toLowerCase();
+  if (lower.startsWith("data:") || lower.startsWith("blob:")) return normalized;
+  if (lower.startsWith("http://") || lower.startsWith("https://") || lower.startsWith("//")) return appendCarouselAssetVersion(normalized);
+  if (lower.startsWith("images/") || lower.startsWith("/images/")) {
+    const path = lower.replace(/^\/+/, "").split("?")[0].split("#")[0];
+    const filename = path.split("/").pop();
+    if (!CAROUSEL_KNOWN_PUBLIC_IMAGE_FILES.has(filename)) return "";
+  }
   return appendCarouselAssetVersion(normalized);
 };
 

@@ -682,18 +682,40 @@ const PUBLIC_IMAGE_PLACEHOLDERS = {
     "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlNwZWNpYWw8L3RleHQ+PC9zdmc+=",
 };
 
+const KNOWN_PUBLIC_IMAGE_FILES = new Set([
+  "favicon.webp",
+  "logo.webp",
+  "default-theme-preview.webp",
+  "valatine-theme-preview.webp",
+  "ramadan-theme-preview.webp",
+  "christmas-logo.webp",
+  "halloween-logo.webp",
+  "independence-day-logo.webp",
+  "independence-day-logo.jpg",
+  "ramadan-logo.webp",
+  "valantine-logo.webp",
+  "icon-192.png",
+  "icon-192-v2.png",
+  "icon-192-v3.png",
+  "icon-512.png",
+  "icon-512-v2.png",
+  "icon-512-v3.png",
+]);
+
 function looksLikeImageSrc(value) {
-  const raw = toSafeString(value).toLowerCase();
+  const raw = toSafeString(value).trim();
   if (!raw) return false;
-  if (raw.startsWith("data:image/")) return true;
-  if (raw.startsWith("blob:")) return true;
-  if (raw.startsWith("http://") || raw.startsWith("https://")) return true;
-  if (raw.startsWith("//")) return true;
-  if (raw.startsWith("/") || raw.startsWith("./") || raw.startsWith("../")) {
-    return true;
+  const lower = raw.toLowerCase();
+  if (lower.startsWith("data:image/")) return true;
+  if (lower.startsWith("blob:")) return true;
+  if (lower.startsWith("http://") || lower.startsWith("https://")) return true;
+  if (lower.startsWith("//")) return true;
+  if (lower.startsWith("images/") || lower.startsWith("/images/")) {
+    const path = lower.replace(/^\/+/, "").split("?")[0].split("#")[0];
+    const filename = path.split("/").pop();
+    return KNOWN_PUBLIC_IMAGE_FILES.has(filename);
   }
-  if (raw.startsWith("images/")) return true;
-  return raw.includes("/");
+  return false;
 }
 
 function getLatestContentUpdateToken() {
@@ -2300,7 +2322,8 @@ function renderProductCard(item, context = "specials", index = 0) {
     card.setAttribute("role", "button");
     card.setAttribute("tabindex", "0");
     card.setAttribute("aria-label", `Customize ${titleText}`);
-  } else {
+  } else if (contextKey === "specials") {
+    // Specials are orderable; featured are view-only
     card.dataset.orderItem = "true";
   }
 
@@ -5857,7 +5880,9 @@ function applyHomeScrollEffect() {
   const liteMotion = shouldUseConservativePerfMode();
 
   const hero = document.querySelector(".hero");
-  const content = document.querySelector(".hero-content");
+  const content =
+    document.querySelector(".hero-content") ||
+    document.querySelector(".hero-inner");
   if (!hero || !content) return;
 
   const y = Math.max(0, window.scrollY || window.pageYOffset || 0);

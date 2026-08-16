@@ -36,15 +36,15 @@
 }
 
 [data-theme="dark"] {
-  --text: var(--text-primary);
-  --text-light: var(--text-secondary);
+  --text: #f9f1e7;
+  --text-light: #eddec9;
   --background: #15110d;
-  --surface: rgba(38, 27, 19, 0.94);
-  --surface-2: rgba(42, 28, 18, 0.96);
-  --surface-secondary: rgba(35, 24, 16, 0.98);
-  --border: rgba(158, 113, 74, 0.35);
-  --border-subtle: rgba(158, 113, 74, 0.22);
-  --border-strong: rgba(210, 161, 117, 0.55);
+  --surface: rgba(42, 31, 21, 0.96);
+  --surface-2: rgba(48, 35, 24, 0.98);
+  --surface-secondary: rgba(43, 33, 23, 0.98);
+  --border: rgba(190, 142, 101, 0.45);
+  --border-subtle: rgba(190, 142, 101, 0.28);
+  --border-strong: rgba(220, 170, 120, 0.62);
   --shadow: rgba(0, 0, 0, 0.45);
   --shadow-sm: 0 10px 28px rgba(0, 0, 0, 0.32);
   --shadow-md: 0 20px 48px rgba(0, 0, 0, 0.42);
@@ -186,7 +186,7 @@ header {
 .header-inner {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 1rem 1.25rem;
+  padding: 0.75rem 1.25rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -604,7 +604,8 @@ header {
   grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
   gap: 2rem;
   align-items: center;
-  padding: clamp(3rem, 7vw, 5.5rem) 0;
+  padding: clamp(1.5rem, 4vw, 3.5rem) 0 2rem;
+  transform: translateZ(0);
 }
 
 .hero-copy {
@@ -638,14 +639,6 @@ header {
   margin: 0;
   letter-spacing: -0.03em;
   color: var(--text);
-}
-
-.hero .lead {
-  font-size: clamp(1rem, 1.05vw, 1.15rem);
-  max-width: 620px;
-  line-height: 1.8;
-  color: var(--text-light);
-  margin: 0;
 }
 
 .hero-actions {
@@ -713,6 +706,21 @@ header {
   line-height: 1.85;
 }
 
+[data-theme="dark"] .hero-panel {
+  background: rgba(33, 25, 18, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="dark"] .hero-panel::before {
+  background: rgba(230, 122, 0, 0.18);
+}
+
+[data-theme="dark"] .hero-panel h3,
+[data-theme="dark"] .hero-panel p {
+  color: var(--text);
+}
+
 .carousel-dots {
   position: absolute;
   bottom: 28px;
@@ -776,10 +784,12 @@ header {
   .hero-content {
     grid-template-columns: 1fr;
     gap: 1.5rem;
+    padding: 2.5rem 1.5rem 3rem;
   }
 
   .hero {
     min-height: auto;
+    max-height: none;
     padding-bottom: 3rem;
   }
 
@@ -1110,11 +1120,10 @@ header {
   border-radius: 24px;
   overflow: hidden;
   position: relative;
-  border: 1px solid var(--border-subtle);
+  border: none;
   box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.08),
-    0 2px 16px rgba(0, 0, 0, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    0 10px 30px rgba(0, 0, 0, 0.08),
+    0 4px 12px rgba(0, 0, 0, 0.08);
   transition:
     transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.1),
     box-shadow 0.4s ease,
@@ -2627,6 +2636,11 @@ html {
 }
 
 .admin-dashboard {
+  --admin-card-min-width: 300px;
+  --admin-card-max-width: 360px;
+  --admin-card-gap: clamp(1.25rem, 2vw, 1.75rem);
+  --admin-card-media-height: 250px;
+  --admin-card-content-padding: clamp(1rem, 1.25vw, 1.2rem);
   min-height: 100vh;
   background: var(--background);
   position: relative;
@@ -3149,8 +3163,56 @@ html {
 
 .items-list {
   display: grid;
-  gap: 2rem;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--admin-card-gap);
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(100%, var(--admin-card-min-width)), var(--admin-card-max-width))
+  );
+  justify-content: center;
+  justify-items: stretch;
+  align-items: start;
+}
+
+/* Keep admin cards visually compact even when there's only one item */
+.items-list .item-card,
+.specials-admin-grid .specials-admin-item,
+.carousel-admin-grid .carousel-admin-item {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  justify-self: stretch;
+  border: none !important;
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.08),
+    0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.items-list .item-card {
+  min-height: auto;
+  max-height: none;
+}
+
+.items-list .item-card .item-card-img,
+.specials-admin-grid .specials-admin-item > img,
+.carousel-admin-grid .carousel-admin-item > img {
+  height: var(--admin-card-media-height);
+}
+
+.items-list .item-card .item-card-content {
+  padding: var(--admin-card-content-padding);
+  min-height: 120px;
+}
+
+@media (max-width: 640px) {
+  .items-list .item-card,
+  .specials-admin-grid .specials-admin-item,
+  .carousel-admin-grid .carousel-admin-item {
+    max-width: 100%;
+    margin: 0;
+    justify-self: stretch;
+  }
 }
 
 .item-card {
@@ -3168,18 +3230,17 @@ html {
     box-shadow 0.4s ease,
     background 0.3s ease,
     border-color 0.3s ease;
-  border: 1px solid rgba(230, 122, 0, 0.1);
+  border: none;
   cursor: pointer;
   will-change: transform;
 }
 
 [data-theme="dark"] .item-card {
   background: rgba(45, 45, 45, 0.95);
-  border: 1px solid rgba(230, 122, 0, 0.2);
+  border: none;
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.15),
-    0 2px 16px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    0 2px 16px rgba(0, 0, 0, 0.08);
 }
 
 .item-card:hover {
@@ -3193,11 +3254,12 @@ html {
 }
 
 .item-card-img {
-  height: 220px;
+  height: 250px;
   width: 100%;
   object-fit: cover;
   transition: transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   position: relative;
+  height: 250px;
 }
 
 .item-card:hover .item-card-img {
@@ -3328,9 +3390,14 @@ html {
 
 .specials-admin-grid {
   display: grid;
-  gap: 2.5rem;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--admin-card-gap);
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(100%, var(--admin-card-min-width)), var(--admin-card-max-width))
+  );
+  justify-content: center;
   padding: 0.5rem;
+  align-items: start;
 }
 
 .specials-admin-item {
@@ -3436,9 +3503,14 @@ html {
 /* ================== CAROUSEL ADMIN STYLES ================== */
 .carousel-admin-grid {
   display: grid;
-  gap: 2.5rem;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--admin-card-gap);
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(100%, var(--admin-card-min-width)), var(--admin-card-max-width))
+  );
+  justify-content: center;
   padding: 0.5rem;
+  align-items: start;
 }
 
 .carousel-admin-item {
@@ -3447,10 +3519,10 @@ html {
   overflow: hidden;
   box-shadow:
     0 10px 30px rgba(0, 0, 0, 0.08),
-    0 4px 12px rgba(230, 122, 0, 0.05);
+    0 4px 12px rgba(0, 0, 0, 0.08);
   transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-  border: 1px solid rgba(230, 122, 0, 0.12);
-  background: var(--surface);
+  border: none;
+  background: transparent;
 }
 
 .carousel-admin-item:hover {
@@ -3468,6 +3540,7 @@ html {
   transition: all 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
   filter: saturate(0.95) brightness(0.98);
   transform: scale(0.98);
+  background: transparent;
 }
 
 .carousel-admin-item:hover img {
@@ -4675,8 +4748,15 @@ body.spa-navigating button {
 /* Tablets and Small Desktops (769px to 1024px) */
 @media (min-width: 769px) and (max-width: 1024px) {
   .items-list,
-  .specials-admin-grid {
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  .specials-admin-grid,
+  .carousel-admin-grid {
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(
+        min(100%, var(--admin-card-min-width)),
+        var(--admin-card-max-width)
+      )
+    );
   }
 
   .settings-grid {
@@ -4987,6 +5067,7 @@ body.spa-navigating button {
 
   .items-list,
   .specials-admin-grid,
+  .carousel-admin-grid,
   .settings-grid {
     grid-template-columns: 1fr;
   }
@@ -5234,10 +5315,13 @@ body.spa-navigating button {
   .featured-item {
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
+    border: none;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
   }
 
   .featured-item img {
-    aspect-ratio: 3/2;
+    aspect-ratio: 4/3;
+    height: 250px;
   }
 
   .featured-item:hover img {
@@ -5281,8 +5365,7 @@ body.spa-navigating button {
 /* Carousel Admin Responsive */
 @media (max-width: 768px) {
   .carousel-admin-grid {
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1.5rem;
+    gap: var(--admin-card-gap);
   }
 
   .carousel-slide-badge {
@@ -5366,15 +5449,15 @@ body.spa-navigating button {
 }
 
 [data-theme="dark"] {
-  --text: var(--text-primary);
-  --text-light: var(--text-secondary);
+  --text: #f9f1e7;
+  --text-light: #eddec9;
   --background: #15110d;
-  --surface: rgba(38, 27, 19, 0.94);
-  --surface-2: rgba(42, 28, 18, 0.96);
-  --surface-secondary: rgba(35, 24, 16, 0.98);
-  --border: rgba(158, 113, 74, 0.35);
-  --border-subtle: rgba(158, 113, 74, 0.22);
-  --border-strong: rgba(210, 161, 117, 0.55);
+  --surface: rgba(42, 31, 21, 0.96);
+  --surface-2: rgba(48, 35, 24, 0.98);
+  --surface-secondary: rgba(43, 33, 23, 0.98);
+  --border: rgba(190, 142, 101, 0.45);
+  --border-subtle: rgba(190, 142, 101, 0.28);
+  --border-strong: rgba(220, 170, 120, 0.62);
   --shadow: rgba(0, 0, 0, 0.45);
   --shadow-sm: 0 10px 28px rgba(0, 0, 0, 0.32);
   --shadow-md: 0 20px 48px rgba(0, 0, 0, 0.42);
@@ -5492,8 +5575,9 @@ header {
 }
 
 [data-theme="dark"] header {
-  background: rgba(25, 18, 12, 0.92);
-  border-bottom-color: rgba(158, 113, 74, 0.24);
+  background: rgba(18, 12, 8, 0.92);
+  border-bottom-color: rgba(190, 142, 101, 0.32);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
 }
 
 .brand h1 {
@@ -5557,8 +5641,20 @@ header {
 .navbar a:hover,
 .navbar a.active {
   color: var(--primary);
-  background: rgba(230, 122, 0, 0.08);
+  background: rgba(230, 122, 0, 0.12);
   transform: none;
+}
+
+[data-theme="dark"] .navbar a {
+  color: var(--text-light);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+[data-theme="dark"] .navbar a:hover,
+[data-theme="dark"] .navbar a.active {
+  color: var(--primary);
+  background: rgba(230, 122, 0, 0.14);
 }
 
 .cart-link {
@@ -5681,7 +5777,7 @@ header {
 .cms-menu-item,
 .item-card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   backdrop-filter: blur(10px);
@@ -7308,13 +7404,21 @@ html[data-overlay-ready="0"] #order-bottom-sheet {
 
 .items-list,
 .specials-admin-grid,
+.carousel-admin-grid,
 .settings-grid {
-  gap: clamp(1.15rem, 2vw, 1.55rem);
+  gap: var(--admin-card-gap, 1.25rem);
 }
 
 .items-list,
-.specials-admin-grid {
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+.specials-admin-grid,
+.carousel-admin-grid {
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(
+      min(100%, var(--admin-card-min-width, 300px)),
+      var(--admin-card-max-width, 360px)
+    )
+  );
 }
 
 .item-card,
@@ -7324,8 +7428,8 @@ html[data-overlay-ready="0"] #order-bottom-sheet {
   flex-direction: column;
   min-height: 100%;
   border-radius: 24px;
-  border: 1px solid rgba(230, 122, 0, 0.12);
-  box-shadow: 0 12px 28px rgba(18, 12, 8, 0.1);
+  border: none;
+  box-shadow: 0 12px 28px rgba(18, 12, 8, 0.08);
   transition:
     transform 0.3s ease,
     box-shadow 0.3s ease,
@@ -7337,7 +7441,7 @@ html[data-overlay-ready="0"] #order-bottom-sheet {
 [data-theme="dark"] .item-card,
 [data-theme="dark"] .specials-admin-item,
 [data-theme="dark"] .carousel-admin-item {
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.24);
 }
 
 .item-card:hover,
@@ -7357,8 +7461,13 @@ html[data-overlay-ready="0"] #order-bottom-sheet {
   object-fit: cover;
   display: block;
   padding: 0;
-  background: var(--surface);
+  background: transparent;
   transition: transform 0.3s ease, filter 0.3s ease;
+}
+
+.carousel-admin-item > img {
+  transform: none;
+  filter: none;
 }
 
 .item-card:hover .item-card-img,
@@ -7424,6 +7533,12 @@ html[data-overlay-ready="0"] #order-bottom-sheet {
   border-top: 1px solid rgba(230, 122, 0, 0.12);
 }
 
+.carousel-admin-overlay {
+  background: transparent;
+  border-top: 0;
+  padding-top: 0.85rem;
+}
+
 .specials-admin-item:hover .specials-admin-overlay,
 .specials-admin-item:focus-within .specials-admin-overlay,
 .carousel-admin-item:hover .carousel-admin-overlay,
@@ -7431,6 +7546,12 @@ html[data-overlay-ready="0"] #order-bottom-sheet {
 .carousel-admin-item:focus-within .carousel-admin-overlay {
   transform: none;
   padding: 1rem 1rem 1.1rem;
+}
+
+.carousel-admin-item:hover .carousel-admin-overlay,
+.carousel-admin-item.show-overlay .carousel-admin-overlay,
+.carousel-admin-item:focus-within .carousel-admin-overlay {
+  padding-top: 0.85rem;
 }
 
 .specials-admin-overlay p,
@@ -7632,7 +7753,8 @@ html[data-overlay-ready="0"] #order-bottom-sheet {
   .menu-grid,
   .specials-grid,
   .items-list,
-  .specials-admin-grid {
+  .specials-admin-grid,
+  .carousel-admin-grid {
     grid-template-columns: 1fr;
     gap: 1.15rem;
   }

@@ -2199,6 +2199,38 @@ function parseRecordBoolean(value, fallback = false) {
   return fallback;
 }
 
+function attachImagePreviewHandler(imageFieldId, previewContainerId) {
+  const imageField = document.getElementById(imageFieldId);
+  const previewContainer = document.getElementById(previewContainerId);
+  if (!imageField || !previewContainer) return;
+
+  imageField.addEventListener("change", (event) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      previewContainer.innerHTML = "";
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      previewContainer.innerHTML = "";
+      showNotification("Please select a valid image file.", "error");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result || "";
+      previewContainer.innerHTML = `
+        <img src="${result}" alt="Selected image preview" style="max-height: 150px; border-radius: 8px;" decoding="async" />
+      `;
+    };
+    reader.onerror = () => {
+      previewContainer.innerHTML = "";
+      showNotification("Unable to preview selected image.", "error");
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function compareRecordsByDisplayOrder(a, b) {
   const aOrder = parseDisplayOrderValue(a?.display_order, 0);
   const bOrder = parseDisplayOrderValue(b?.display_order, 0);
@@ -2374,8 +2406,9 @@ function buildSpecialsAdminCardElement(item = {}, badgeOrder = null) {
   card.dataset.id = id;
   card.dataset.order = String(orderValue);
   card.innerHTML = `
-    <img src="${imgSrc}" alt="${escapeHtml(title)}" loading="lazy" decoding="async"
-         onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.specials}';">
+      <div class="carousel-slide-number" data-order-badge="true">${badgeValue}</div>
+      <img src="${imgSrc}" alt="${escapeHtml(title)}" loading="lazy" decoding="async"
+        onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.specials}';">
     <div class="specials-admin-overlay">
       ${
         discountMeta
@@ -2902,19 +2935,40 @@ const ADMIN_IMAGE_PLACEHOLDERS = {
     "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZlNWNjIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyNCIgZmlsbD0iIzMzMyIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkNhcm91c2VsPC90ZXh0Pjwvc3ZnPg==",
 };
 
+const KNOWN_PUBLIC_IMAGE_FILES = new Set([
+  "favicon.webp",
+  "logo.webp",
+  "default-theme-preview.webp",
+  "valatine-theme-preview.webp",
+  "ramadan-theme-preview.webp",
+  "christmas-logo.webp",
+  "halloween-logo.webp",
+  "independence-day-logo.webp",
+  "independence-day-logo.jpg",
+  "ramadan-logo.webp",
+  "valantine-logo.webp",
+  "icon-192.png",
+  "icon-192-v2.png",
+  "icon-192-v3.png",
+  "icon-512.png",
+  "icon-512-v2.png",
+  "icon-512-v3.png",
+]);
+
 function looksLikeImageSrc(value) {
-  const raw = toSafeString(value).toLowerCase();
+  const raw = toSafeString(value).trim();
   if (!raw) return false;
-  if (raw.startsWith("data:image/")) return true;
-  if (raw.startsWith("blob:")) return true;
-  if (raw.startsWith("http://") || raw.startsWith("https://")) return true;
-  if (raw.startsWith("//")) return true;
-  if (raw.startsWith("/") || raw.startsWith("./") || raw.startsWith("../")) {
-    return true;
+  const lower = raw.toLowerCase();
+  if (lower.startsWith("data:image/")) return true;
+  if (lower.startsWith("blob:")) return true;
+  if (lower.startsWith("http://") || lower.startsWith("https://")) return true;
+  if (lower.startsWith("//")) return true;
+  if (lower.startsWith("images/") || lower.startsWith("/images/")) {
+    const path = lower.replace(/^\/+/, "").split("?")[0].split("#")[0];
+    const filename = path.split("/").pop();
+    return KNOWN_PUBLIC_IMAGE_FILES.has(filename);
   }
-  if (raw.startsWith("images/")) return true;
-  // Accept path-like values (e.g., storage paths) so we don't break older rows.
-  return raw.includes("/");
+  return false;
 }
 
 function getAdminAssetVersionToken() {
@@ -3088,9 +3142,11 @@ function showPopupInternal(options) {
     const messageEl = document.createElement("div");
     messageEl.style.cssText = `
       padding: 2rem;
+    card.dataset.order = String(orderValue);
       color: #333;
       line-height: 1.6;
       text-align: center;
+      <div class="carousel-slide-number" data-order-badge="true">${orderValue + 1}</div>
       font-size: 1rem;
     `;
     const messageText = document.createElement("p");
@@ -3630,12 +3686,13 @@ async function getNextDisplayOrder(endpoint) {
     { authRequired: true },
   );
 
+  // Use 0 as the fallback max so the first item will receive display order 1
   const maxValue =
     Array.isArray(result) && result[0] && result[0].display_order !== null
       ? Number(result[0].display_order)
-      : -1;
+      : 0;
 
-  return Number.isFinite(maxValue) ? maxValue + 1 : 0;
+  return Number.isFinite(maxValue) ? maxValue + 1 : 1;
 }
 
 async function prefillNextDisplayOrder(itemType, fieldId) {
@@ -3653,8 +3710,10 @@ async function prefillNextDisplayOrder(itemType, fieldId) {
   input.setAttribute("data-auto-order-loading", "true");
   try {
     const nextValue = await getNextDisplayOrder(endpoint);
+    // Always show the computed next value explicitly so the admin sees the
+    // concrete next display position (1-based) rather than an empty "Auto".
     if (toSafeString(input.value).trim() === "") {
-      input.value = String(Math.max(0, Number(nextValue) || 0));
+      input.value = String(nextValue);
     }
   } catch (error) {
     debugWarn(`Failed to prefill display order for ${itemType}:`, error);
@@ -4657,8 +4716,11 @@ async function renderFeaturedItems(forceRefresh = false) {
           resolveRecordImage(item),
           ADMIN_IMAGE_PLACEHOLDERS.featured,
         );
+        const orderValue = parseDisplayOrderValue(item.display_order, 0);
+        const badgeValue = orderValue + 1;
         return `
-      <div class="item-card" data-id="${item.id}">
+      <div class="item-card" data-id="${item.id}" data-order="${orderValue}">
+        <div class="carousel-slide-number" data-order-badge="true">${badgeValue}</div>
         <img src="${imgSrc}" alt="${item.title}" class="item-card-img" loading="lazy" decoding="async"
              onerror="this.onerror=null; this.src='${ADMIN_IMAGE_PLACEHOLDERS.featured}';">
         <div class="item-card-content">
@@ -6306,7 +6368,7 @@ async function editCarouselItem(id) {
   }
 }
 
-/* ================== ENHANCED STORAGE MANAGEMENT ================== */
+/* ================== ESTIMATED STORAGE MANAGEMENT ================== */
 
 async function updateStorageUsage() {
   try {
@@ -6314,68 +6376,70 @@ async function updateStorageUsage() {
       loadDataFromSupabase(API_ENDPOINTS.FEATURED),
       loadDataFromSupabase(API_ENDPOINTS.MENU),
       loadDataFromSupabase(SPECIALS_ENDPOINT),
-      loadDataFromSupabase(API_ENDPOINTS.CAROUSEL), // Added carousel
+      loadDataFromSupabase(API_ENDPOINTS.CAROUSEL),
     ]);
 
-    const allItems = [...featured, ...menu, ...specials, ...carousel];
+    const allItems = [
+      ...(Array.isArray(featured) ? featured : []),
+      ...(Array.isArray(menu) ? menu : []),
+      ...(Array.isArray(specials) ? specials : []),
+      ...(Array.isArray(carousel) ? carousel : []),
+    ];
     let totalBytes = 0;
     const unknownItems = [];
 
     allItems.forEach((item) => {
-      if (Number.isFinite(item.file_size)) {
-        totalBytes += Number(item.file_size);
+      const fileSize = Number(item?.file_size);
+      if (Number.isFinite(fileSize) && fileSize > 0) {
+        totalBytes += fileSize;
       } else if (resolveRecordImage(item)) {
         unknownItems.push(item);
       }
     });
 
-    // Fetch sizes for unknown items
     if (unknownItems.length > 0) {
       const sizePromises = unknownItems.map(async (item) => {
         const imageUrl = resolveRecordImage(item);
-        if (imageUrl) {
-          try {
-            const response = await fetch(imageUrl, { method: "HEAD" });
-            const contentLength = response.headers.get("content-length");
-            return contentLength ? parseInt(contentLength, 10) : 0;
-          } catch (error) {
-            console.warn("Failed to fetch image size for", imageUrl, error);
-            return 0; // Estimate or skip
-          }
+        if (!imageUrl) return 0;
+
+        try {
+          const response = await fetch(imageUrl, { method: "HEAD" });
+          const contentLength = Number(response.headers.get("content-length"));
+          return Number.isFinite(contentLength) ? contentLength : 0;
+        } catch (error) {
+          console.warn("Failed to fetch image size for", imageUrl, error);
+          return 0;
         }
-        return 0;
       });
       const sizes = await Promise.all(sizePromises);
-      sizes.forEach((size) => (totalBytes += size));
+      sizes.forEach((size) => {
+        totalBytes += size;
+      });
     }
 
     const mbUsed = (totalBytes / (1024 * 1024)).toFixed(2);
-    const percentage = Math.min((mbUsed / 500) * 100, 100).toFixed(1);
+    const percentage = Math.min((Number(mbUsed) / 500) * 100, 100).toFixed(1);
 
-    // Update UI
     const storageUsedEl = document.getElementById("storage-used");
     const storageFillEl = document.getElementById("storage-fill");
     const storageInfoEl = document.getElementById("storage-info");
 
     if (storageUsedEl) storageUsedEl.textContent = mbUsed;
     if (storageFillEl) storageFillEl.style.width = `${percentage}%`;
-    if (storageInfoEl) {
-      storageInfoEl.textContent = `${mbUsed} MB / 500 MB`;
-    }
+    if (storageInfoEl) storageInfoEl.textContent = `${mbUsed} MB / 500 MB`;
 
-    // Add warnings
-    if (mbUsed > 450) {
-      showNotification("CRITICAL: Storage usage is at 90%+!", "error");
-    } else if (mbUsed > 400) {
+    if (Number(mbUsed) > 450) {
+      showNotification("CRITICAL: Estimated media usage is at 90%+!", "error");
+    } else if (Number(mbUsed) > 400) {
       showNotification(
-        `Warning: Storage usage is high (${mbUsed}MB).`,
+        `Warning: estimated media usage is high (${mbUsed} MB).`,
         "warning",
       );
     }
 
     return { mbUsed, itemCount: allItems.length };
   } catch (error) {
-    console.error("Error updating storage usage:", error);
+    console.error("Error updating estimated storage usage:", error);
     return { mbUsed: 0, itemCount: 0 };
   }
 }
@@ -7322,6 +7386,11 @@ function setupEventListeners() {
     // Added
     cancelCarousel.addEventListener("click", resetCarouselForm);
   }
+
+  attachImagePreviewHandler("featured-image", "featured-image-preview");
+  attachImagePreviewHandler("menu-image", "menu-image-preview");
+  attachImagePreviewHandler("specials-image", "specials-image-preview");
+  attachImagePreviewHandler("carousel-image", "carousel-image-preview");
 
   // Data management buttons
   const exportDataBtn = document.getElementById("export-data");
