@@ -2812,12 +2812,55 @@ html {
 
 .storage-info {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.75rem;
   color: var(--text-light);
   font-size: 0.95rem;
   flex: 1;
   min-width: 200px;
+}
+
+.storage-info i {
+  margin-top: 0.25rem;
+  color: var(--primary);
+}
+
+.storage-copy {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.storage-label {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.storage-metrics {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.storage-metrics strong {
+  color: var(--text);
+}
+
+.storage-percent {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.35rem;
+  padding: 0.16rem 0.48rem;
+  border-radius: var(--radius-pill, 999px);
+  background: rgba(230, 122, 0, 0.1);
+  color: var(--primary);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+#storage-source {
+  color: var(--text-light);
+  line-height: 1.4;
 }
 
 .storage-bar {
@@ -2842,6 +2885,14 @@ html {
   width: 0%;
   position: relative;
   overflow: hidden;
+}
+
+.storage-fill[data-state="warning"] {
+  background: linear-gradient(90deg, #f59e0b, #e67a00);
+}
+
+.storage-fill[data-state="danger"] {
+  background: linear-gradient(90deg, #ef4444, #b91c1c);
 }
 
 .storage-fill::after {
@@ -8313,16 +8364,6 @@ html[data-overlay-ready="0"] #order-bottom-sheet {
 
 .product-card[data-context="featured"] .product-card-media {
   aspect-ratio: 1 / 1.08;
-}
-
-.product-card[data-context="featured"] .product-card-pricing {
-  width: min(100%, 15rem);
-  align-self: center;
-}
-
-.product-card[data-context="featured"] .product-card-current,
-.product-card[data-context="featured"] .product-card-now {
-  font-size: clamp(1.32rem, 2.9vw, 1.78rem);
 }
 
 .product-card[data-menu-item="true"] {

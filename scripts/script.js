@@ -2283,6 +2283,7 @@ function renderProductCard(item, context = "specials", index = 0) {
   const contextKey = toSafeString(context, "specials").toLowerCase();
   const isMenuCard = contextKey === "menu";
   const showActionCta = contextKey === "specials";
+  const showPricing = contextKey !== "featured";
   const imageHints = getAdaptiveImageHints(index);
   const placeholder =
     PUBLIC_IMAGE_PLACEHOLDERS[contextKey] || PUBLIC_IMAGE_PLACEHOLDERS.specials;
@@ -2316,6 +2317,7 @@ function renderProductCard(item, context = "specials", index = 0) {
   card.dataset.description = descriptionText;
   card.dataset.price = String(priceValue);
   card.dataset.hasCta = showActionCta ? "true" : "false";
+  card.dataset.hasPricing = showPricing ? "true" : "false";
 
   if (isMenuCard) {
     card.dataset.menuItem = "true";
@@ -2389,25 +2391,28 @@ function renderProductCard(item, context = "specials", index = 0) {
     body.appendChild(description);
   }
 
-  const pricing = document.createElement("div");
-  pricing.className = "product-card-pricing";
-  if (discount) {
-    const wasLine = document.createElement("p");
-    wasLine.className = "product-card-was";
-    wasLine.textContent = `Was ${formatNairaValue(discount.originalPrice)}`;
-    pricing.appendChild(wasLine);
+  if (showPricing) {
+    const pricing = document.createElement("div");
+    pricing.className = "product-card-pricing";
+    if (discount) {
+      const wasLine = document.createElement("p");
+      wasLine.className = "product-card-was";
+      wasLine.textContent = `Was ${formatNairaValue(discount.originalPrice)}`;
+      pricing.appendChild(wasLine);
 
-    const nowLine = document.createElement("p");
-    nowLine.className = "product-card-now";
-    nowLine.textContent = `Now ${formatNairaValue(discount.currentPrice)}`;
-    pricing.appendChild(nowLine);
-  } else {
-    const priceLine = document.createElement("p");
-    priceLine.className = "product-card-current";
-    priceLine.textContent = priceValue > 0 ? formatNairaValue(priceValue) : "";
-    pricing.appendChild(priceLine);
+      const nowLine = document.createElement("p");
+      nowLine.className = "product-card-now";
+      nowLine.textContent = `Now ${formatNairaValue(discount.currentPrice)}`;
+      pricing.appendChild(nowLine);
+    } else {
+      const priceLine = document.createElement("p");
+      priceLine.className = "product-card-current";
+      priceLine.textContent =
+        priceValue > 0 ? formatNairaValue(priceValue) : "";
+      pricing.appendChild(priceLine);
+    }
+    body.appendChild(pricing);
   }
-  body.appendChild(pricing);
 
   if (showActionCta) {
     const actions = document.createElement("div");
@@ -3169,7 +3174,7 @@ function showNotification(message, type = "success") {
       normalizeAssetPath(window.__tbInitialLoaderLogo) ||
       resolveStoredThemeLogo() ||
       normalizeAssetPath(window.ThemeManager?.currentLogo) ||
-      "images/logo.webp"
+      "images/logos/logo.webp"
     );
   };
   let DEFAULT_LOADER_LOGO = getLoaderLogo();
@@ -6268,7 +6273,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   debugLog("Initializing Toke Bakes with Enhanced Sync...");
 
   ensureContentCacheVersion();
-  warmImageInBackground("images/logo.webp", "high");
+  warmImageInBackground("images/logos/logo.webp", "high");
   document
     .querySelectorAll("img.logo-sm, img.hero-logo, #loader img")
     .forEach((img) => {

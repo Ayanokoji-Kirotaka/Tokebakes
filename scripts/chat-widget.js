@@ -8,7 +8,7 @@
     storeName: "Toke Bakes",
     replyTimeText: "Typically replies within 10 minutes",
     welcomeMessage: "Hi there. Tell us what you'd like to order.",
-    avatarUrl: "images/logo.webp",
+    avatarUrl: "images/logos/logo.webp",
     defaultPrefillTemplate:
       "Hello Toke Bakes, I would like to place an order. Please assist.",
   };

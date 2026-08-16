@@ -274,7 +274,7 @@
         }, 5200);
       })();
     </script>
-    <link rel="shortcut icon" href="images/favicon.webp" type="image/png" />
+    <link rel="shortcut icon" href="images/icons/favicon.webp" type="image/png" />
     <link
       rel="preload"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/webfonts/fa-solid-900.woff2"
@@ -296,10 +296,10 @@
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
     />
     <link rel="manifest" href="manifest.json?v=3" />
-    <link rel="icon" href="images/favicon.webp" type="image/webp" />
+    <link rel="icon" href="images/icons/favicon.webp" type="image/webp" />
     <link
       rel="preload"
-      href="images/logo.webp"
+      href="images/logos/logo.webp"
       as="image"
       fetchpriority="high"
     />
@@ -444,7 +444,7 @@
       <div class="admin-login-box">
         <div class="admin-brand">
           <img
-            src="images/logo.webp"
+            src="images/logos/logo.webp"
             alt="Toke Bakes"
             class="admin-logo"
             width="100"
@@ -528,7 +528,7 @@
         <div class="header-inner">
           <div class="brand">
             <img
-              src="images/logo.webp"
+              src="images/logos/logo.webp"
               alt="Toke Bakes logo"
               class="logo-sm"
               width="48"
@@ -600,16 +600,29 @@
           </button>
         </div>
 
-        <!-- Estimated Media Storage -->
+        <!-- Media Storage -->
         <div class="storage-status">
           <div class="storage-info">
             <i class="fas fa-database"></i>
-            <span>
-              Estimated media:
-              <span id="storage-used">0.00</span> MB / 500 MB
+            <span class="storage-copy">
+              <span class="storage-label">Media storage</span>
+              <span class="storage-metrics">
+                <strong id="storage-used">0.00 MB</strong> used
+                <span aria-hidden="true">/</span>
+                <strong id="storage-left">500.00 MB</strong> left
+                <span class="storage-percent" id="storage-percent">0.0%</span>
+              </span>
+              <small id="storage-source">Checking storage usage...</small>
             </span>
           </div>
-          <div class="storage-bar" aria-label="Estimated media storage usage">
+          <div
+            class="storage-bar"
+            role="progressbar"
+            aria-label="Media storage usage"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+          >
             <div class="storage-fill" id="storage-fill"></div>
           </div>
         </div>
@@ -1275,11 +1288,11 @@
               <div
                 class="theme-card active"
                 data-theme-file="styles/style.css"
-                data-theme-logo="images/logo.webp"
+                data-theme-logo="images/logos/logo.webp"
               >
                 <div class="theme-preview">
                   <img
-                    src="images/default-theme-preview.webp"
+                    src="images/previews/default-theme-preview.webp"
                     alt="Default Theme Preview"
                     onerror="
                       this.src =
@@ -1311,11 +1324,11 @@
               <div
                 class="theme-card"
                 data-theme-file="styles/theme-valentine.css"
-                data-theme-logo="images/valantine-logo.webp"
+                data-theme-logo="images/logos/valantine-logo.webp"
               >
                 <div class="theme-preview">
                   <img
-                    src="images/valatine-theme-preview.webp"
+                    src="images/previews/valentine-theme-preview.png"
                     alt="Valentine Theme Preview"
                     onerror="
                       this.src =
@@ -1347,11 +1360,11 @@
               <div
                 class="theme-card"
                 data-theme-file="styles/theme-ramadan.css"
-                data-theme-logo="images/ramadan-logo.webp"
+                data-theme-logo="images/logos/ramadan-logo.webp"
               >
                 <div class="theme-preview">
                   <img
-                    src="images/theme-preview-ramadan.jpg"
+                    src="images/previews/theme-preview-ramadan.png"
                     alt="Ramadan Theme Preview"
                     onerror="
                       this.src =
@@ -1383,11 +1396,11 @@
               <div
                 class="theme-card"
                 data-theme-file="styles/theme-christmas.css"
-                data-theme-logo="images/christmas-logo.webp"
+                data-theme-logo="images/logos/christmas-logo.webp"
               >
                 <div class="theme-preview">
                   <img
-                    src="images/theme-preview-christmas.jpg"
+                    src="images/previews/theme-preview-christmas.png"
                     alt="Christmas Theme Preview"
                     onerror="
                       this.src =
@@ -1419,11 +1432,11 @@
               <div
                 class="theme-card"
                 data-theme-file="styles/theme-halloween.css"
-                data-theme-logo="images/halloween-logo.webp"
+                data-theme-logo="images/logos/halloween-logo.webp"
               >
                 <div class="theme-preview">
                   <img
-                    src="images/theme-preview-halloween.jpg"
+                    src="images/previews/theme-preview-halloween.png"
                     alt="Halloween Theme Preview"
                     onerror="
                       this.src =
@@ -1455,11 +1468,11 @@
               <div
                 class="theme-card"
                 data-theme-file="styles/theme-independenceday.css"
-                data-theme-logo="images/independence-day-logo.webp"
+                data-theme-logo="images/logos/independence-day-logo.webp"
               >
                 <div class="theme-preview">
                   <img
-                    src="images/theme-preview-independenceday.jpg"
+                    src="images/previews/theme-preview-independenceday.png"
                     alt="Independence Day Theme Preview"
                     onerror="
                       this.src =
@@ -1858,8 +1871,10 @@
                 <div class="system-info">
                   <p><strong>Version:</strong> 2.0.0</p>
                   <p>
-                    <strong>Estimated Media:</strong>
-                    <span id="storage-info">0 MB / 500 MB</span>
+                    <strong>Media Storage:</strong>
+                    <span id="storage-info"
+                      >0.00 MB used / 500 MB total (500.00 MB left)</span
+                    >
                   </p>
                   <p><strong>Items Count:</strong></p>
                   <ul>

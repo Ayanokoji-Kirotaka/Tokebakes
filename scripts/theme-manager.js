@@ -18,7 +18,7 @@ const THEME_STORAGE_KEYS = {
 const ThemeManager = {
   currentTheme: "styles/style.css",
   currentMode: "light",
-  currentLogo: "images/logo.webp",
+  currentLogo: "images/logos/logo.webp",
   lastThemeUpdate: 0,
   lastDbCheck: 0,
   dbCheckInterval: 30000,
@@ -707,14 +707,14 @@ const ThemeManager = {
   /* ================== THEME LOGOS + DB SYNC ================== */
   getLogoForTheme(cssFile) {
     const logos = {
-      "styles/style.css": "images/logo.webp",
-      "styles/theme-valentine.css": "images/valantine-logo.webp",
-      "styles/theme-ramadan.css": "images/ramadan-logo.webp",
-      "styles/theme-halloween.css": "images/halloween-logo.webp",
-      "styles/theme-independenceday.css": "images/independence-day-logo.webp",
-      "styles/theme-christmas.css": "images/christmas-logo.webp",
+      "styles/style.css": "images/logos/logo.webp",
+      "styles/theme-valentine.css": "images/logos/valantine-logo.webp",
+      "styles/theme-ramadan.css": "images/logos/ramadan-logo.webp",
+      "styles/theme-halloween.css": "images/logos/halloween-logo.webp",
+      "styles/theme-independenceday.css": "images/logos/independence-day-logo.webp",
+      "styles/theme-christmas.css": "images/logos/christmas-logo.webp",
     };
-    return logos[cssFile] || "images/logo.webp";
+    return logos[cssFile] || "images/logos/logo.webp";
   },
 
   normalizeSyncChangeType(raw) {
@@ -822,7 +822,7 @@ const ThemeManager = {
   updateThemeLogo(logoFile) {
     const normalizedLogo = this.normalizeAssetPath(logoFile);
     if (!normalizedLogo) return;
-    const fallbackLogo = this.normalizeAssetPath("images/logo.webp") || "images/logo.webp";
+    const fallbackLogo = this.normalizeAssetPath("images/logos/logo.webp") || "images/logos/logo.webp";
     const logoTargets = document.querySelectorAll(
       "[data-theme-logo], img.logo-sm, img.hero-logo, img.admin-logo, #loader img, .brand img"
     );

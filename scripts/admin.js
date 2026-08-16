@@ -272,6 +272,11 @@ const STORAGE_LIMITS_KB = {
   carousel: 5000,
 };
 
+const STORAGE_CAPACITY_MB = 500;
+const BYTES_PER_MB = 1024 * 1024;
+const STORAGE_CAPACITY_BYTES = STORAGE_CAPACITY_MB * BYTES_PER_MB;
+const STORAGE_LIST_PAGE_SIZE = 100;
+
 const ITEM_TYPES = ["featured", "menu", "specials", "carousel"];
 const DISPLAY_ORDER_MANAGED_TYPES = new Set([
   "featured",
@@ -6368,79 +6373,320 @@ async function editCarouselItem(id) {
   }
 }
 
-/* ================== ESTIMATED STORAGE MANAGEMENT ================== */
+/* ================== STORAGE MANAGEMENT ================== */
 
-async function updateStorageUsage() {
+function formatStorageMb(bytes) {
+  const value = Math.max(0, Number(bytes) || 0) / BYTES_PER_MB;
+  return value.toFixed(2);
+}
+
+function getStoragePercent(usedBytes) {
+  if (!Number.isFinite(usedBytes) || usedBytes <= 0) return 0;
+  return Math.min((usedBytes / STORAGE_CAPACITY_BYTES) * 100, 100);
+}
+
+function getStorageState(percentage) {
+  if (percentage >= 90) return "danger";
+  if (percentage >= 80) return "warning";
+  return "ok";
+}
+
+function getAllStorageItems(itemsByType = {}) {
+  return [
+    ...(Array.isArray(itemsByType.featured) ? itemsByType.featured : []),
+    ...(Array.isArray(itemsByType.menu) ? itemsByType.menu : []),
+    ...(Array.isArray(itemsByType.specials) ? itemsByType.specials : []),
+    ...(Array.isArray(itemsByType.carousel) ? itemsByType.carousel : []),
+  ];
+}
+
+function parseStorageObjectSize(item) {
+  const metadata = item?.metadata || {};
+  const candidates = [
+    item?.size,
+    metadata.size,
+    metadata.contentLength,
+    metadata.content_length,
+    metadata.contentlength,
+    metadata["content-length"],
+  ];
+
+  for (const candidate of candidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value) && value >= 0) return value;
+  }
+
+  return null;
+}
+
+async function fetchStorageJson(url, options = {}, timeoutMs = 12000) {
+  const controller =
+    typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timeoutId =
+    controller && timeoutMs > 0
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : null;
+
   try {
-    const [featured, menu, specials, carousel] = await Promise.all([
-      loadDataFromSupabase(API_ENDPOINTS.FEATURED),
-      loadDataFromSupabase(API_ENDPOINTS.MENU),
-      loadDataFromSupabase(SPECIALS_ENDPOINT),
-      loadDataFromSupabase(API_ENDPOINTS.CAROUSEL),
-    ]);
+    const response = await fetch(url, {
+      ...options,
+      signal: controller?.signal,
+    });
 
-    const allItems = [
-      ...(Array.isArray(featured) ? featured : []),
-      ...(Array.isArray(menu) ? menu : []),
-      ...(Array.isArray(specials) ? specials : []),
-      ...(Array.isArray(carousel) ? carousel : []),
-    ];
-    let totalBytes = 0;
-    const unknownItems = [];
+    if (!response.ok) {
+      const message = await response.text().catch(() => "");
+      throw new Error(message || `Storage request failed (${response.status})`);
+    }
 
-    allItems.forEach((item) => {
-      const fileSize = Number(item?.file_size);
-      if (Number.isFinite(fileSize) && fileSize > 0) {
-        totalBytes += fileSize;
-      } else if (resolveRecordImage(item)) {
-        unknownItems.push(item);
+    return await response.json();
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function getBucketUsage(bucket) {
+  const session = await ensureValidSession();
+  if (!session?.access_token) {
+    throw new Error("Authentication required to inspect storage");
+  }
+
+  let offset = 0;
+  let totalBytes = 0;
+  let objectCount = 0;
+  let unknownCount = 0;
+
+  while (true) {
+    const objects = await fetchStorageJson(
+      `${SUPABASE_CONFIG.URL}/storage/v1/object/list/${encodeURIComponent(bucket)}`,
+      {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_CONFIG.ANON_KEY,
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          limit: STORAGE_LIST_PAGE_SIZE,
+          offset,
+          sortBy: { column: "name", order: "asc" },
+        }),
+      },
+    );
+
+    if (!Array.isArray(objects)) {
+      throw new Error(`Unexpected storage response for ${bucket}`);
+    }
+
+    objects.forEach((item) => {
+      objectCount += 1;
+      const size = parseStorageObjectSize(item);
+      if (Number.isFinite(size)) {
+        totalBytes += size;
+      } else if (item?.id || item?.metadata) {
+        unknownCount += 1;
       }
     });
 
-    if (unknownItems.length > 0) {
-      const sizePromises = unknownItems.map(async (item) => {
-        const imageUrl = resolveRecordImage(item);
-        if (!imageUrl) return 0;
+    if (objects.length < STORAGE_LIST_PAGE_SIZE) break;
+    offset += STORAGE_LIST_PAGE_SIZE;
+  }
 
-        try {
-          const response = await fetch(imageUrl, { method: "HEAD" });
-          const contentLength = Number(response.headers.get("content-length"));
-          return Number.isFinite(contentLength) ? contentLength : 0;
-        } catch (error) {
-          console.warn("Failed to fetch image size for", imageUrl, error);
-          return 0;
-        }
-      });
-      const sizes = await Promise.all(sizePromises);
-      sizes.forEach((size) => {
-        totalBytes += size;
-      });
+  return { bucket, totalBytes, objectCount, unknownCount };
+}
+
+async function getActualStorageUsage() {
+  const buckets = Array.from(new Set(Object.values(STORAGE_BUCKETS)));
+  const results = await Promise.all(buckets.map((bucket) => getBucketUsage(bucket)));
+
+  return results.reduce(
+    (acc, result) => {
+      acc.usedBytes += result.totalBytes;
+      acc.objectCount += result.objectCount;
+      acc.unknownCount += result.unknownCount;
+      return acc;
+    },
+    {
+      source: "bucket",
+      usedBytes: 0,
+      objectCount: 0,
+      unknownCount: 0,
+    },
+  );
+}
+
+async function getRemoteImageSize(imageUrl) {
+  if (!imageUrl) return null;
+
+  try {
+    const response = await fetch(imageUrl, {
+      method: "HEAD",
+      cache: "no-store",
+    });
+    const contentLength = Number(response.headers.get("content-length"));
+    return Number.isFinite(contentLength) && contentLength >= 0
+      ? contentLength
+      : null;
+  } catch (error) {
+    console.warn("Failed to fetch image size for", imageUrl, error);
+    return null;
+  }
+}
+
+async function getEstimatedStorageUsage(itemsByType) {
+  const allItems = getAllStorageItems(itemsByType);
+  const seenImages = new Set();
+  const unknownImages = [];
+  let usedBytes = 0;
+
+  allItems.forEach((item) => {
+    const imageUrl = toSafeString(resolveRecordImage(item)).trim();
+    if (!imageUrl || seenImages.has(imageUrl)) return;
+
+    seenImages.add(imageUrl);
+    const fileSize = Number(item?.file_size);
+
+    if (Number.isFinite(fileSize) && fileSize > 0) {
+      usedBytes += fileSize;
+    } else {
+      unknownImages.push(imageUrl);
+    }
+  });
+
+  const measuredSizes = await Promise.all(
+    unknownImages.map((imageUrl) => getRemoteImageSize(imageUrl)),
+  );
+  const unknownCount = measuredSizes.filter((size) => !Number.isFinite(size)).length;
+
+  measuredSizes.forEach((size) => {
+    if (Number.isFinite(size) && size > 0) {
+      usedBytes += size;
+    }
+  });
+
+  return {
+    source: "estimate",
+    usedBytes,
+    itemCount: allItems.length,
+    objectCount: seenImages.size,
+    unknownCount,
+  };
+}
+
+async function loadStorageItemsForEstimate() {
+  const [featured, menu, specials, carousel] = await Promise.all([
+    loadDataFromSupabase(API_ENDPOINTS.FEATURED),
+    loadDataFromSupabase(API_ENDPOINTS.MENU),
+    loadDataFromSupabase(SPECIALS_ENDPOINT),
+    loadDataFromSupabase(API_ENDPOINTS.CAROUSEL),
+  ]);
+
+  return { featured, menu, specials, carousel };
+}
+
+function renderStorageUsage(usage) {
+  const usedBytes = Math.max(0, Number(usage?.usedBytes) || 0);
+  const remainingBytes = Math.max(STORAGE_CAPACITY_BYTES - usedBytes, 0);
+  const percentage = getStoragePercent(usedBytes);
+  const percentageText = percentage.toFixed(1);
+  const state = getStorageState(percentage);
+  const mbUsed = formatStorageMb(usedBytes);
+  const mbLeft = formatStorageMb(remainingBytes);
+  const unknownCount = Number(usage?.unknownCount) || 0;
+
+  const storageUsedEl = document.getElementById("storage-used");
+  const storageLeftEl = document.getElementById("storage-left");
+  const storagePercentEl = document.getElementById("storage-percent");
+  const storageSourceEl = document.getElementById("storage-source");
+  const storageFillEl = document.getElementById("storage-fill");
+  const storageBarEl = document.querySelector(".storage-bar");
+  const storageInfoEl = document.getElementById("storage-info");
+
+  if (storageUsedEl) storageUsedEl.textContent = `${mbUsed} MB`;
+  if (storageLeftEl) storageLeftEl.textContent = `${mbLeft} MB`;
+  if (storagePercentEl) storagePercentEl.textContent = `${percentageText}%`;
+
+  if (storageFillEl) {
+    storageFillEl.style.width = `${percentage}%`;
+    storageFillEl.dataset.state = state;
+  }
+
+  if (storageBarEl) {
+    storageBarEl.setAttribute("aria-valuenow", percentageText);
+    storageBarEl.setAttribute(
+      "aria-valuetext",
+      `${mbUsed} MB used, ${mbLeft} MB left`,
+    );
+    storageBarEl.title = `${mbUsed} MB used of ${STORAGE_CAPACITY_MB} MB`;
+  }
+
+  const unmeasuredNote =
+    unknownCount > 0 ? ` ${unknownCount} file(s) could not be measured.` : "";
+  const sourceText =
+    usage?.source === "bucket"
+      ? `Actual Supabase Storage usage across ${usage.objectCount || 0} file(s).${unmeasuredNote}`
+      : `Estimated from saved media records across ${usage?.objectCount || 0} image(s).${unmeasuredNote}`;
+
+  if (storageSourceEl) storageSourceEl.textContent = sourceText;
+  if (storageInfoEl) {
+    storageInfoEl.textContent =
+      `${mbUsed} MB used / ${STORAGE_CAPACITY_MB} MB total ` +
+      `(${mbLeft} MB left, ${percentageText}%)${unmeasuredNote}`;
+  }
+
+  return {
+    mbUsed,
+    mbLeft,
+    percentage: percentageText,
+    state,
+    unknownCount,
+  };
+}
+
+async function updateStorageUsage(preloadedItemsByType = null) {
+  try {
+    let usage;
+
+    try {
+      usage = await getActualStorageUsage();
+    } catch (bucketError) {
+      console.warn(
+        "Falling back to estimated media storage usage:",
+        bucketError,
+      );
+      const itemsByType =
+        preloadedItemsByType || (await loadStorageItemsForEstimate());
+      usage = await getEstimatedStorageUsage(itemsByType);
     }
 
-    const mbUsed = (totalBytes / (1024 * 1024)).toFixed(2);
-    const percentage = Math.min((Number(mbUsed) / 500) * 100, 100).toFixed(1);
+    const rendered = renderStorageUsage(usage);
+    const usedPercentage = Number(rendered.percentage);
 
-    const storageUsedEl = document.getElementById("storage-used");
-    const storageFillEl = document.getElementById("storage-fill");
-    const storageInfoEl = document.getElementById("storage-info");
-
-    if (storageUsedEl) storageUsedEl.textContent = mbUsed;
-    if (storageFillEl) storageFillEl.style.width = `${percentage}%`;
-    if (storageInfoEl) storageInfoEl.textContent = `${mbUsed} MB / 500 MB`;
-
-    if (Number(mbUsed) > 450) {
-      showNotification("CRITICAL: Estimated media usage is at 90%+!", "error");
-    } else if (Number(mbUsed) > 400) {
+    if (usedPercentage >= 90) {
+      showNotification("CRITICAL: Media storage usage is at 90%+!", "error");
+    } else if (usedPercentage >= 80) {
       showNotification(
-        `Warning: estimated media usage is high (${mbUsed} MB).`,
+        `Warning: media storage usage is high (${rendered.mbUsed} MB).`,
         "warning",
       );
     }
 
-    return { mbUsed, itemCount: allItems.length };
+    return {
+      ...usage,
+      ...rendered,
+      itemCount:
+        usage.itemCount ||
+        getAllStorageItems(preloadedItemsByType || {}).length ||
+        0,
+    };
   } catch (error) {
-    console.error("Error updating estimated storage usage:", error);
-    return { mbUsed: 0, itemCount: 0 };
+    console.error("Error updating storage usage:", error);
+    const fallback = renderStorageUsage({
+      source: "estimate",
+      usedBytes: 0,
+      objectCount: 0,
+      unknownCount: 0,
+    });
+    return { ...fallback, itemCount: 0 };
   }
 }
 

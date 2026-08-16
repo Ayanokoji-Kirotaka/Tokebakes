@@ -1300,5 +1300,5 @@ ORDER BY schemaname, tablename, policyname;
 --
 -- 2) Set an initial active theme:
 -- INSERT INTO public.website_themes (theme_name, css_file, logo_file, is_active)
--- VALUES ('Default', 'styles/style.css', 'images/logo.webp', true);
+-- VALUES ('Default', 'styles/style.css', 'images/logos/logo.webp', true);
 
