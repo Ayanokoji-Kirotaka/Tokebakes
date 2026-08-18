@@ -5645,8 +5645,6 @@ function isHomePageRuntime() {
 
 function setupHomeScrollReveal() {
   const selectors = [
-    ".about-preview",
-    ".about-features .feature",
     ".featured",
     ".menu-section",
     ".specials-section",

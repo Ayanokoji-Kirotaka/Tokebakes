@@ -276,6 +276,7 @@ const STORAGE_CAPACITY_MB = 500;
 const BYTES_PER_MB = 1024 * 1024;
 const STORAGE_CAPACITY_BYTES = STORAGE_CAPACITY_MB * BYTES_PER_MB;
 const STORAGE_LIST_PAGE_SIZE = 100;
+const STORAGE_REQUEST_TIMEOUT_MS = 12000;
 
 const ITEM_TYPES = ["featured", "menu", "specials", "carousel"];
 const DISPLAY_ORDER_MANAGED_TYPES = new Set([
@@ -3650,7 +3651,9 @@ async function uploadToStorage(bucket, path, blob) {
     throw new Error(errorText || "Upload failed");
   }
 
-  return `${SUPABASE_CONFIG.URL}/storage/v1/object/public/${bucket}/${path}`;
+  return `${SUPABASE_CONFIG.URL}/storage/v1/object/public/${bucket}/${encodeURIComponent(
+    path
+  )}`;
 }
 
 function extractStoragePath(url, bucket) {
@@ -6400,6 +6403,12 @@ function getAllStorageItems(itemsByType = {}) {
   ];
 }
 
+function getPanelStorageImageCount(itemsByType = {}) {
+  return getAllStorageItems(itemsByType).filter((item) =>
+    toSafeString(resolveRecordImage(item)).trim(),
+  ).length;
+}
+
 function parseStorageObjectSize(item) {
   const metadata = item?.metadata || {};
   const candidates = [
@@ -6419,7 +6428,11 @@ function parseStorageObjectSize(item) {
   return null;
 }
 
-async function fetchStorageJson(url, options = {}, timeoutMs = 12000) {
+async function fetchStorageJson(
+  url,
+  options = {},
+  timeoutMs = STORAGE_REQUEST_TIMEOUT_MS,
+) {
   const controller =
     typeof AbortController !== "undefined" ? new AbortController() : null;
   const timeoutId =
@@ -6466,6 +6479,7 @@ async function getBucketUsage(bucket) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          prefix: "",
           limit: STORAGE_LIST_PAGE_SIZE,
           offset,
           sortBy: { column: "name", order: "asc" },
@@ -6517,10 +6531,17 @@ async function getActualStorageUsage() {
 async function getRemoteImageSize(imageUrl) {
   if (!imageUrl) return null;
 
+  const controller =
+    typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), STORAGE_REQUEST_TIMEOUT_MS)
+    : null;
+
   try {
     const response = await fetch(imageUrl, {
       method: "HEAD",
       cache: "no-store",
+      signal: controller?.signal,
     });
     const contentLength = Number(response.headers.get("content-length"));
     return Number.isFinite(contentLength) && contentLength >= 0
@@ -6529,6 +6550,8 @@ async function getRemoteImageSize(imageUrl) {
   } catch (error) {
     console.warn("Failed to fetch image size for", imageUrl, error);
     return null;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
 
@@ -6566,7 +6589,7 @@ async function getEstimatedStorageUsage(itemsByType) {
   return {
     source: "estimate",
     usedBytes,
-    itemCount: allItems.length,
+    itemCount: getPanelStorageImageCount(itemsByType),
     objectCount: seenImages.size,
     unknownCount,
   };
@@ -6597,34 +6620,19 @@ function renderStorageUsage(usage) {
   const storageLeftEl = document.getElementById("storage-left");
   const storagePercentEl = document.getElementById("storage-percent");
   const storageSourceEl = document.getElementById("storage-source");
-  const storageFillEl = document.getElementById("storage-fill");
-  const storageBarEl = document.querySelector(".storage-bar");
   const storageInfoEl = document.getElementById("storage-info");
 
   if (storageUsedEl) storageUsedEl.textContent = `${mbUsed} MB`;
   if (storageLeftEl) storageLeftEl.textContent = `${mbLeft} MB`;
   if (storagePercentEl) storagePercentEl.textContent = `${percentageText}%`;
 
-  if (storageFillEl) {
-    storageFillEl.style.width = `${percentage}%`;
-    storageFillEl.dataset.state = state;
-  }
-
-  if (storageBarEl) {
-    storageBarEl.setAttribute("aria-valuenow", percentageText);
-    storageBarEl.setAttribute(
-      "aria-valuetext",
-      `${mbUsed} MB used, ${mbLeft} MB left`,
-    );
-    storageBarEl.title = `${mbUsed} MB used of ${STORAGE_CAPACITY_MB} MB`;
-  }
-
   const unmeasuredNote =
     unknownCount > 0 ? ` ${unknownCount} file(s) could not be measured.` : "";
+  const panelImageCount = Number(usage?.itemCount) || 0;
   const sourceText =
     usage?.source === "bucket"
-      ? `Actual Supabase Storage usage across ${usage.objectCount || 0} file(s).${unmeasuredNote}`
-      : `Estimated from saved media records across ${usage?.objectCount || 0} image(s).${unmeasuredNote}`;
+      ? `Actual Supabase Storage usage across ${panelImageCount} image(s) in the panel.${unmeasuredNote}`
+      : `Estimated from saved media records across ${panelImageCount} image(s) in the panel.${unmeasuredNote}`;
 
   if (storageSourceEl) storageSourceEl.textContent = sourceText;
   if (storageInfoEl) {
@@ -6645,6 +6653,7 @@ function renderStorageUsage(usage) {
 async function updateStorageUsage(preloadedItemsByType = null) {
   try {
     let usage;
+    let itemsByTypeForPanel = preloadedItemsByType;
 
     try {
       usage = await getActualStorageUsage();
@@ -6653,9 +6662,14 @@ async function updateStorageUsage(preloadedItemsByType = null) {
         "Falling back to estimated media storage usage:",
         bucketError,
       );
-      const itemsByType =
+      itemsByTypeForPanel =
         preloadedItemsByType || (await loadStorageItemsForEstimate());
-      usage = await getEstimatedStorageUsage(itemsByType);
+      usage = await getEstimatedStorageUsage(itemsByTypeForPanel);
+    }
+
+    const panelImageCount = getPanelStorageImageCount(itemsByTypeForPanel || {});
+    if (panelImageCount > 0) {
+      usage.itemCount = panelImageCount;
     }
 
     const rendered = renderStorageUsage(usage);
@@ -6675,7 +6689,7 @@ async function updateStorageUsage(preloadedItemsByType = null) {
       ...rendered,
       itemCount:
         usage.itemCount ||
-        getAllStorageItems(preloadedItemsByType || {}).length ||
+        getPanelStorageImageCount(preloadedItemsByType || {}) ||
         0,
     };
   } catch (error) {
@@ -6692,12 +6706,37 @@ async function updateStorageUsage(preloadedItemsByType = null) {
 
 async function updateItemCounts() {
   try {
-    const [featured, menu, specials, carousel] = await Promise.all([
-      loadDataFromSupabase(API_ENDPOINTS.FEATURED),
-      loadDataFromSupabase(API_ENDPOINTS.MENU),
-      loadDataFromSupabase(SPECIALS_ENDPOINT),
-      loadDataFromSupabase(API_ENDPOINTS.CAROUSEL), // Added carousel
-    ]);
+    const [featuredResult, menuResult, specialsResult, carouselResult] =
+      await Promise.allSettled([
+        loadDataFromSupabase(API_ENDPOINTS.FEATURED),
+        loadDataFromSupabase(API_ENDPOINTS.MENU),
+        loadDataFromSupabase(SPECIALS_ENDPOINT),
+        loadDataFromSupabase(API_ENDPOINTS.CAROUSEL), // Added carousel
+      ]);
+    const featured =
+      featuredResult.status === "fulfilled" && Array.isArray(featuredResult.value)
+        ? featuredResult.value
+        : [];
+    const menu =
+      menuResult.status === "fulfilled" && Array.isArray(menuResult.value)
+        ? menuResult.value
+        : [];
+    const specials =
+      specialsResult.status === "fulfilled" && Array.isArray(specialsResult.value)
+        ? specialsResult.value
+        : [];
+    const carousel =
+      carouselResult.status === "fulfilled" && Array.isArray(carouselResult.value)
+        ? carouselResult.value
+        : [];
+
+    [featuredResult, menuResult, specialsResult, carouselResult].forEach(
+      (result) => {
+        if (result.status === "rejected") {
+          console.warn("Failed to load item count source:", result.reason);
+        }
+      },
+    );
 
     const countFeatured = document.getElementById("count-featured");
     const countMenu = document.getElementById("count-menu");
@@ -6709,9 +6748,10 @@ async function updateItemCounts() {
     if (countSpecials) countSpecials.textContent = specials.length || 0;
     if (countCarousel) countCarousel.textContent = carousel.length || 0;
 
-    await updateStorageUsage();
+    await updateStorageUsage({ featured, menu, specials, carousel });
   } catch (error) {
     console.error("Error updating counts:", error);
+    await updateStorageUsage();
   }
 }
 
@@ -7192,8 +7232,10 @@ async function initAdminPanel() {
 
     if (currentAdmin) {
       try {
-        await loadAdminTabData("featured", true);
-        await updateItemCounts();
+        await Promise.allSettled([
+          loadAdminTabData("featured", true),
+          updateItemCounts(),
+        ]);
         preloadAdminTabsInBackground();
       } catch (error) {
         console.error("Error loading initial data:", error);
